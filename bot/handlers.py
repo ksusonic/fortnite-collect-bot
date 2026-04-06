@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+import asyncio
+import time
+
+from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReactionTypeEmoji
 
 from bot.db import (
     Session,
@@ -14,7 +17,14 @@ from bot.db import (
     save_session,
     sessions,
 )
-from bot.messages import SQUAD_SIZE, build_gather_text, build_keyboard, random_style
+from bot.messages import (
+    SQUAD_SIZE,
+    SESSION_TIMEOUT,
+    build_expired_text,
+    build_gather_text,
+    build_keyboard,
+    random_style,
+)
 
 router = Router()
 
@@ -29,6 +39,17 @@ def _display_name(user) -> str:
 async def cmd_fort(message: Message) -> None:
     user = message.from_user
     if user is None:
+        return
+
+    has_active = any(
+        s for s in sessions.values()
+        if s.chat_id == message.chat.id and not s.is_complete
+    )
+    if has_active:
+        try:
+            await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
+        except TelegramBadRequest:
+            pass
         return
 
     name = _display_name(user)
@@ -119,3 +140,26 @@ async def on_callback(callback: CallbackQuery) -> None:
         pass
 
     await callback.answer()
+
+
+async def expire_sessions(bot: Bot) -> None:
+    """Background task: expire sessions older than SESSION_TIMEOUT."""
+    while True:
+        await asyncio.sleep(60)
+        now = time.time()
+        expired = [
+            s for s in sessions.values()
+            if not s.is_complete and now - s.created_at > SESSION_TIMEOUT
+        ]
+        for session in expired:
+            session.is_complete = True
+            await mark_complete(session.message_id)
+            try:
+                await bot.edit_message_text(
+                    text=build_expired_text(session),
+                    chat_id=session.chat_id,
+                    message_id=session.message_id,
+                )
+            except TelegramBadRequest:
+                pass
+            sessions.pop(session.message_id, None)

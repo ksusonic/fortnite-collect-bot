@@ -137,6 +137,23 @@ def build_gather_text(session: Session) -> str:
     )
 
 
+SESSION_TIMEOUT = 60 * 60  # 1 hour
+
+
+def build_expired_text(session: Session) -> str:
+    style = _STYLES[session.style % len(_STYLES)]
+    go_count = len(session.go_players)
+    initiator = _user_link(session.initiator_id, session.initiator_name)
+    header = style.header.format(name=initiator)
+
+    return (
+        f"{header}\n\n"
+        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{_player_list(session.go_players)}\n\n"
+        f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
+        f"\u23f0 Время вышло — сбор отменён."
+    )
+
+
 def build_keyboard(go_count: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
