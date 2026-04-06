@@ -6,8 +6,15 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from bot.db import Session, load_session, mark_complete, save_response, save_session, sessions
-from bot.messages import SQUAD_SIZE, build_gather_text, build_keyboard
+from bot.db import (
+    Session,
+    load_session,
+    mark_complete,
+    save_response,
+    save_session,
+    sessions,
+)
+from bot.messages import SQUAD_SIZE, build_gather_text, build_keyboard, random_style
 
 router = Router()
 
@@ -31,6 +38,7 @@ async def cmd_fort(message: Message) -> None:
         initiator_id=user.id,
         initiator_name=name,
         go_players={user.id: name},
+        style=random_style(),
     )
 
     text = build_gather_text(session)

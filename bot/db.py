@@ -20,6 +20,7 @@ class Session:
     go_players: dict[int, str] = field(default_factory=dict)
     pass_players: dict[int, str] = field(default_factory=dict)
     is_complete: bool = False
+    style: int = 0
     created_at: float = field(default_factory=time.time)
 
 
@@ -32,6 +33,7 @@ async def init_db() -> None:
                 initiator_id INTEGER NOT NULL,
                 initiator_name TEXT NOT NULL,
                 is_complete INTEGER NOT NULL DEFAULT 0,
+                style INTEGER NOT NULL DEFAULT 0,
                 created_at REAL NOT NULL
             )"""
         )
@@ -53,21 +55,24 @@ async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (message_id, chat_id, initiator_id, initiator_name, is_complete, style, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
                 session.initiator_id,
                 session.initiator_name,
                 int(session.is_complete),
+                session.style,
                 session.created_at,
             ),
         )
         await db.commit()
 
 
-async def save_response(message_id: int, user_id: int, user_name: str, response: str) -> None:
+async def save_response(
+    message_id: int, user_id: int, user_name: str, response: str
+) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO responses
@@ -94,6 +99,7 @@ async def load_session(message_id: int) -> Session | None:
             initiator_id=row["initiator_id"],
             initiator_name=row["initiator_name"],
             is_complete=bool(row["is_complete"]),
+            style=row["style"],
             created_at=row["created_at"],
         )
 
@@ -123,7 +129,9 @@ async def load_active_sessions() -> list[Session]:
     result: list[Session] = []
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT message_id FROM sessions WHERE is_complete = 0")
+        cursor = await db.execute(
+            "SELECT message_id FROM sessions WHERE is_complete = 0"
+        )
         rows = await cursor.fetchall()
 
     for row in rows:
