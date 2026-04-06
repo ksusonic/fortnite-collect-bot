@@ -11,8 +11,10 @@ from aiogram.types import CallbackQuery, Message, ReactionTypeEmoji
 
 from bot.db import (
     Session,
+    get_chat_stats,
     load_session,
     mark_complete,
+    mark_expired,
     save_response,
     save_session,
     sessions,
@@ -23,6 +25,7 @@ from bot.messages import (
     build_expired_text,
     build_gather_text,
     build_keyboard,
+    build_stats_text,
     random_style,
 )
 
@@ -80,6 +83,17 @@ async def cmd_fort(message: Message) -> None:
 
 @router.message(Command("fort"))
 async def cmd_fort_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_stats(message: Message) -> None:
+    stats = await get_chat_stats(message.chat.id)
+    await message.answer(build_stats_text(stats))
+
+
+@router.message(Command("stats"))
+async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
@@ -153,7 +167,8 @@ async def expire_sessions(bot: Bot) -> None:
         ]
         for session in expired:
             session.is_complete = True
-            await mark_complete(session.message_id)
+            session.is_expired = True
+            await mark_expired(session.message_id)
             try:
                 await bot.edit_message_text(
                     text=build_expired_text(session),

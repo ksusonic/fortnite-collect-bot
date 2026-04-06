@@ -20,8 +20,10 @@ class Session:
     go_players: dict[int, str] = field(default_factory=dict)
     pass_players: dict[int, str] = field(default_factory=dict)
     is_complete: bool = False
+    is_expired: bool = False
     style: int = 0
     created_at: float = field(default_factory=time.time)
+    completed_at: float | None = None
 
 
 async def init_db() -> None:
@@ -33,10 +35,21 @@ async def init_db() -> None:
                 initiator_id INTEGER NOT NULL,
                 initiator_name TEXT NOT NULL,
                 is_complete INTEGER NOT NULL DEFAULT 0,
+                is_expired INTEGER NOT NULL DEFAULT 0,
                 style INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                completed_at REAL
             )"""
         )
+        # Migration: add columns if upgrading from older schema
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN is_expired INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN completed_at REAL")
+        except Exception:
+            pass
         await db.execute(
             """CREATE TABLE IF NOT EXISTS responses (
                 message_id INTEGER NOT NULL,
@@ -55,16 +68,18 @@ async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, style, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, style, created_at, completed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
                 session.initiator_id,
                 session.initiator_name,
                 int(session.is_complete),
+                int(session.is_expired),
                 session.style,
                 session.created_at,
+                session.completed_at,
             ),
         )
         await db.commit()
@@ -99,8 +114,10 @@ async def load_session(message_id: int) -> Session | None:
             initiator_id=row["initiator_id"],
             initiator_name=row["initiator_name"],
             is_complete=bool(row["is_complete"]),
+            is_expired=bool(row["is_expired"]),
             style=row["style"],
             created_at=row["created_at"],
+            completed_at=row["completed_at"],
         )
 
         cursor = await db.execute(
@@ -119,10 +136,110 @@ async def load_session(message_id: int) -> Session | None:
 async def mark_complete(message_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE sessions SET is_complete = 1 WHERE message_id = ?",
-            (message_id,),
+            "UPDATE sessions SET is_complete = 1, completed_at = ? WHERE message_id = ?",
+            (time.time(), message_id),
         )
         await db.commit()
+
+
+async def mark_expired(message_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE sessions SET is_complete = 1, is_expired = 1, completed_at = ? WHERE message_id = ?",
+            (time.time(), message_id),
+        )
+        await db.commit()
+
+
+@dataclass
+class ChatStats:
+    total_sessions: int = 0
+    completed_sessions: int = 0
+    expired_sessions: int = 0
+    active_sessions: int = 0
+    top_players: list[tuple[str, int]] = field(default_factory=list)  # (name, go_count)
+    top_initiators: list[tuple[str, int]] = field(default_factory=list)  # (name, session_count)
+    top_passers: list[tuple[str, int]] = field(default_factory=list)  # (name, pass_count)
+    avg_fill_seconds: float | None = None
+    fastest_fill_seconds: float | None = None
+
+
+async def get_chat_stats(chat_id: int) -> ChatStats:
+    stats = ChatStats()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Session counts
+        cur = await db.execute(
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ?", (chat_id,)
+        )
+        stats.total_sessions = (await cur.fetchone())["cnt"]
+
+        cur = await db.execute(
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0",
+            (chat_id,),
+        )
+        stats.completed_sessions = (await cur.fetchone())["cnt"]
+
+        cur = await db.execute(
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_expired = 1",
+            (chat_id,),
+        )
+        stats.expired_sessions = (await cur.fetchone())["cnt"]
+
+        stats.active_sessions = stats.total_sessions - stats.completed_sessions - stats.expired_sessions
+
+        # Top players (most "go" responses in this chat)
+        cur = await db.execute(
+            """SELECT r.user_name, COUNT(*) as cnt
+               FROM responses r
+               JOIN sessions s ON r.message_id = s.message_id
+               WHERE s.chat_id = ? AND r.response = 'go'
+               GROUP BY r.user_id
+               ORDER BY cnt DESC
+               LIMIT 10""",
+            (chat_id,),
+        )
+        stats.top_players = [(row["user_name"], row["cnt"]) for row in await cur.fetchall()]
+
+        # Top initiators
+        cur = await db.execute(
+            """SELECT initiator_name, COUNT(*) as cnt
+               FROM sessions
+               WHERE chat_id = ?
+               GROUP BY initiator_id
+               ORDER BY cnt DESC
+               LIMIT 5""",
+            (chat_id,),
+        )
+        stats.top_initiators = [(row["initiator_name"], row["cnt"]) for row in await cur.fetchall()]
+
+        # Top passers
+        cur = await db.execute(
+            """SELECT r.user_name, COUNT(*) as cnt
+               FROM responses r
+               JOIN sessions s ON r.message_id = s.message_id
+               WHERE s.chat_id = ? AND r.response = 'pass'
+               GROUP BY r.user_id
+               ORDER BY cnt DESC
+               LIMIT 5""",
+            (chat_id,),
+        )
+        stats.top_passers = [(row["user_name"], row["cnt"]) for row in await cur.fetchall()]
+
+        # Average and fastest fill time (only completed, non-expired sessions with completed_at)
+        cur = await db.execute(
+            """SELECT AVG(completed_at - created_at) as avg_t, MIN(completed_at - created_at) as min_t
+               FROM sessions
+               WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0 AND completed_at IS NOT NULL""",
+            (chat_id,),
+        )
+        row = await cur.fetchone()
+        if row and row["avg_t"] is not None:
+            stats.avg_fill_seconds = row["avg_t"]
+            stats.fastest_fill_seconds = row["min_t"]
+
+    return stats
 
 
 async def load_active_sessions() -> list[Session]:

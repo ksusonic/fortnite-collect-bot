@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 if TYPE_CHECKING:
-    from bot.db import Session
+    from bot.db import ChatStats, Session
 
 SQUAD_SIZE = 4
 
@@ -152,6 +152,84 @@ def build_expired_text(session: Session) -> str:
         f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
         f"\u23f0 Время вышло — сбор отменён."
     )
+
+
+def _bar(value: int, max_value: int, width: int = 8) -> str:
+    if max_value == 0:
+        return ""
+    filled = round(value / max_value * width)
+    return "\u2588" * filled + "\u2591" * (width - filled)
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours = int(minutes // 60)
+    mins = minutes % 60
+    return f"{hours}h {mins}m"
+
+
+def build_stats_text(stats: ChatStats) -> str:
+    if stats.total_sessions == 0:
+        return "\U0001f4ca <b>Статистика</b>\n\nПока нет данных — начните с /fort!"
+
+    lines: list[str] = []
+    lines.append("\U0001f4ca <b>СТАТИСТИКА СБОРОВ</b> \U0001f4ca")
+    lines.append("")
+
+    # Overview
+    lines.append("\U0001f3ae <b>Сборы:</b>")
+    lines.append(f"  Всего: <b>{stats.total_sessions}</b>")
+    lines.append(f"  \u2705 Собрано: <b>{stats.completed_sessions}</b>")
+    lines.append(f"  \u23f0 Истекло: <b>{stats.expired_sessions}</b>")
+    if stats.active_sessions > 0:
+        lines.append(f"  \U0001f7e1 Активных: <b>{stats.active_sessions}</b>")
+
+    if stats.total_sessions > 0:
+        rate = stats.completed_sessions / stats.total_sessions * 100
+        lines.append(f"  Процент сборки: <b>{rate:.0f}%</b>")
+
+    # Timing
+    if stats.avg_fill_seconds is not None:
+        lines.append("")
+        lines.append("\u23f1 <b>Скорость сбора:</b>")
+        lines.append(f"  Среднее: <b>{_format_duration(stats.avg_fill_seconds)}</b>")
+        lines.append(f"  Рекорд: <b>{_format_duration(stats.fastest_fill_seconds)}</b> \U0001f525")
+
+    # Top players
+    if stats.top_players:
+        lines.append("")
+        lines.append("\U0001f3c6 <b>Топ игроков (по участию):</b>")
+        max_cnt = stats.top_players[0][1]
+        medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
+        for i, (name, cnt) in enumerate(stats.top_players[:5]):
+            medal = medals[i] if i < len(medals) else f"  {i + 1}."
+            bar = _bar(cnt, max_cnt)
+            lines.append(f"{medal} {html.escape(name)}  {bar} <b>{cnt}</b>")
+
+    # Top initiators
+    if stats.top_initiators:
+        lines.append("")
+        lines.append("\U0001f4e2 <b>Топ зачинщиков:</b>")
+        max_cnt = stats.top_initiators[0][1]
+        for i, (name, cnt) in enumerate(stats.top_initiators[:3]):
+            bar = _bar(cnt, max_cnt, 6)
+            lines.append(f"  {i + 1}. {html.escape(name)}  {bar} <b>{cnt}</b>")
+
+    # Top passers
+    if stats.top_passers:
+        lines.append("")
+        lines.append("\U0001f634 <b>Топ пасующих:</b>")
+        max_cnt = stats.top_passers[0][1]
+        for i, (name, cnt) in enumerate(stats.top_passers[:3]):
+            bar = _bar(cnt, max_cnt, 6)
+            lines.append(f"  {i + 1}. {html.escape(name)}  {bar} <b>{cnt}</b>")
+
+    return "\n".join(lines)
 
 
 def build_keyboard(go_count: int) -> InlineKeyboardMarkup:
