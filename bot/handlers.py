@@ -22,6 +22,7 @@ from bot.db import (
 from bot.messages import (
     SQUAD_SIZE,
     SESSION_TIMEOUT,
+    build_cancelled_text,
     build_expired_text,
     build_gather_text,
     build_keyboard,
@@ -84,6 +85,62 @@ async def cmd_fort(message: Message) -> None:
 
 @router.message(Command("fort"))
 async def cmd_fort_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_refort(message: Message) -> None:
+    user = message.from_user
+    if user is None:
+        return
+
+    # Отменяем активный сбор, если есть
+    active_session = next(
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        None,
+    )
+    if active_session is not None:
+        active_session.is_complete = True
+        active_session.is_expired = True
+        await mark_expired(active_session.message_id)
+        try:
+            await message.bot.edit_message_text(
+                text=build_cancelled_text(active_session),
+                chat_id=active_session.chat_id,
+                message_id=active_session.message_id,
+            )
+        except TelegramBadRequest:
+            pass
+        sessions.pop(active_session.message_id, None)
+
+    # Создаём новый сбор
+    name = _display_name(user)
+    slots = generate_time_slots()
+    session = Session(
+        chat_id=message.chat.id,
+        message_id=0,
+        initiator_id=user.id,
+        initiator_name=name,
+        style=random_style(),
+        time_slots=slots,
+    )
+
+    text = build_gather_text(session)
+    keyboard = build_keyboard(len(session.go_players), time_slots=slots)
+    sent = await message.answer(text, reply_markup=keyboard)
+
+    session.message_id = sent.message_id
+    sessions[sent.message_id] = session
+    await save_session(session)
+
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
+
+
+@router.message(Command("refort"))
+async def cmd_refort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 

@@ -192,6 +192,22 @@ def build_expired_text(session: Session) -> str:
     )
 
 
+def build_cancelled_text(session: Session) -> str:
+    style = _STYLES[session.style % len(_STYLES)]
+    go_count = len(session.go_players)
+    initiator = _user_link(session.initiator_id, session.initiator_name)
+    header = style.header.format(name=initiator)
+    has_slots = bool(session.time_slots)
+    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
+
+    return (
+        f"{header}\n\n"
+        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
+        f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
+        f"\U0001f504 Сбор отменён — запущен новый."
+    )
+
+
 def _bar(value: int, max_value: int, width: int = 8) -> str:
     if max_value == 0:
         return ""
