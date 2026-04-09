@@ -27,7 +27,7 @@ class Session:
     completed_at: float | None = None
     time_slots: list[str] = field(default_factory=list)
     player_slots: dict[int, str] = field(default_factory=dict)  # user_id -> slot
-    tag_line: str = ""
+    tagged_users: dict[int, str] = field(default_factory=dict)  # user_id -> name
 
 
 async def init_db() -> None:
@@ -97,7 +97,7 @@ async def save_session(session: Session) -> None:
                 session.created_at,
                 session.completed_at,
                 json.dumps(session.time_slots) if session.time_slots else None,
-                session.tag_line,
+                json.dumps({str(k): v for k, v in session.tagged_users.items()}) if session.tagged_users else None,
             ),
         )
         await db.commit()
@@ -128,7 +128,11 @@ async def load_session(message_id: int) -> Session | None:
 
         raw_slots = row["time_slots"] if "time_slots" in row.keys() else None
         time_slots = json.loads(raw_slots) if raw_slots else []
-        tag_line = row["tag_line"] if "tag_line" in row.keys() else ""
+        raw_tag = row["tag_line"] if "tag_line" in row.keys() else None
+        try:
+            tagged_users = {int(k): v for k, v in json.loads(raw_tag).items()} if raw_tag else {}
+        except (ValueError, AttributeError):
+            tagged_users = {}
 
         session = Session(
             chat_id=row["chat_id"],
@@ -141,7 +145,7 @@ async def load_session(message_id: int) -> Session | None:
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             time_slots=time_slots,
-            tag_line=tag_line,
+            tagged_users=tagged_users,
         )
 
         cursor = await db.execute(
