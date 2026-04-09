@@ -3,12 +3,15 @@ from __future__ import annotations
 import html
 import random
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 if TYPE_CHECKING:
     from bot.db import ChatStats, Session
+
+MSK = timezone(timedelta(hours=3))
 
 SQUAD_SIZE = 4
 
@@ -101,6 +104,12 @@ def random_style() -> int:
     return random.randrange(len(_STYLES))
 
 
+def generate_time_slots(count: int = 3) -> list[str]:
+    now = datetime.now(MSK)
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    return [(next_hour + timedelta(hours=i)).strftime("%H:%M") for i in range(count)]
+
+
 def _user_link(user_id: int, name: str) -> str:
     return f'<a href="tg://user?id={user_id}">{html.escape(name)}</a>'
 
@@ -114,16 +123,43 @@ def _player_list(players: dict[int, str]) -> str:
     )
 
 
+def _player_list_by_slots(session: Session) -> str:
+    if not session.go_players:
+        return "  (пока пусто)"
+    slots_grouped: dict[str, list[tuple[int, str]]] = {s: [] for s in session.time_slots}
+    for uid, name in session.go_players.items():
+        slot = session.player_slots.get(uid)
+        if slot and slot in slots_grouped:
+            slots_grouped[slot].append((uid, name))
+    lines: list[str] = []
+    idx = 1
+    for slot, players in slots_grouped.items():
+        if not players:
+            lines.append(f"\U0001f554 {slot}: (пусто)")
+            continue
+        lines.append(f"\U0001f554 {slot}:")
+        for uid, name in players:
+            lines.append(f"  {idx}. {_user_link(uid, name)}")
+            idx += 1
+    return "\n".join(lines)
+
+
 def build_gather_text(session: Session) -> str:
     style = _STYLES[session.style % len(_STYLES)]
     go_count = len(session.go_players)
     initiator = _user_link(session.initiator_id, session.initiator_name)
+    has_slots = bool(session.time_slots)
+    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     if session.is_complete:
-        return (
+        header = (
             f"{style.done_header}\n\n"
             f"\U0001f3c6 Скуад готов к бою!\n\n"
-            f"\U0001f44a Состав:\n{_player_list(session.go_players)}\n\n"
+        )
+        return (
+            f"{header}"
+            f"\U0001f44a Состав ({go_count}):\n{player_text}\n\n"
+            f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
             f"{style.done_footer}"
         )
 
@@ -131,7 +167,7 @@ def build_gather_text(session: Session) -> str:
 
     return (
         f"{header}\n\n"
-        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{_player_list(session.go_players)}\n\n"
+        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
         f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
         f"{style.cta}"
     )
@@ -145,10 +181,12 @@ def build_expired_text(session: Session) -> str:
     go_count = len(session.go_players)
     initiator = _user_link(session.initiator_id, session.initiator_name)
     header = style.header.format(name=initiator)
+    has_slots = bool(session.time_slots)
+    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     return (
         f"{header}\n\n"
-        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{_player_list(session.go_players)}\n\n"
+        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
         f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
         f"\u23f0 Время вышло — сбор отменён."
     )
@@ -232,7 +270,21 @@ def build_stats_text(stats: ChatStats) -> str:
     return "\n".join(lines)
 
 
-def build_keyboard(go_count: int) -> InlineKeyboardMarkup:
+def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> InlineKeyboardMarkup:
+    if time_slots:
+        slot_buttons = [
+            InlineKeyboardButton(
+                text=f"\U0001f554 {slot}",
+                callback_data=f"slot:{slot}",
+            )
+            for slot in time_slots
+        ]
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                slot_buttons,
+                [InlineKeyboardButton(text="\u274c Пас", callback_data="pass")],
+            ]
+        )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [

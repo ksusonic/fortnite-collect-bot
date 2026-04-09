@@ -26,6 +26,7 @@ from bot.messages import (
     build_gather_text,
     build_keyboard,
     build_stats_text,
+    generate_time_slots,
     random_style,
 )
 
@@ -56,24 +57,24 @@ async def cmd_fort(message: Message) -> None:
         return
 
     name = _display_name(user)
+    slots = generate_time_slots()
     session = Session(
         chat_id=message.chat.id,
         message_id=0,
         initiator_id=user.id,
         initiator_name=name,
-        go_players={user.id: name},
         style=random_style(),
+        time_slots=slots,
     )
 
     text = build_gather_text(session)
-    keyboard = build_keyboard(len(session.go_players))
+    keyboard = build_keyboard(len(session.go_players), time_slots=slots)
     sent = await message.answer(text, reply_markup=keyboard)
 
     session.message_id = sent.message_id
     sessions[sent.message_id] = session
 
     await save_session(session)
-    await save_response(sent.message_id, user.id, name, "go")
 
     try:
         await message.delete()
@@ -97,7 +98,7 @@ async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.callback_query(F.data.in_({"go", "pass"}))
+@router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
 async def on_callback(callback: CallbackQuery) -> None:
     if callback.message is None or callback.from_user is None:
         await callback.answer()
@@ -115,15 +116,29 @@ async def on_callback(callback: CallbackQuery) -> None:
         await callback.answer("Сбор устарел")
         return
 
-    if session.is_complete:
-        await callback.answer("Коробочка уже собрана!")
+    if session.is_expired:
+        await callback.answer("Сбор завершён.")
         return
 
     user_id = callback.from_user.id
     name = _display_name(callback.from_user)
-    action = callback.data
+    raw = callback.data
+    time_slot: str | None = None
 
-    if action == "go" and user_id in session.go_players:
+    if raw.startswith("slot:"):
+        action = "go"
+        time_slot = raw[5:]  # "slot:18:00" -> "18:00"
+        if time_slot not in session.time_slots:
+            await callback.answer("Слот недоступен.")
+            return
+        current_slot = session.player_slots.get(user_id)
+        if current_slot == time_slot:
+            await callback.answer("Ты уже записан на это время!")
+            return
+    else:
+        action = raw
+
+    if action == "go" and not time_slot and user_id in session.go_players:
         await callback.answer("Ты уже в деле!")
         return
     if action == "pass" and user_id in session.pass_players:
@@ -133,20 +148,23 @@ async def on_callback(callback: CallbackQuery) -> None:
     # Перемещение между списками
     session.go_players.pop(user_id, None)
     session.pass_players.pop(user_id, None)
+    session.player_slots.pop(user_id, None)
 
     if action == "go":
         session.go_players[user_id] = name
+        if time_slot:
+            session.player_slots[user_id] = time_slot
     else:
         session.pass_players[user_id] = name
 
-    await save_response(message_id, user_id, name, action)
+    await save_response(message_id, user_id, name, action, time_slot=time_slot)
 
-    if len(session.go_players) >= SQUAD_SIZE:
+    if not session.is_complete and len(session.go_players) >= SQUAD_SIZE:
         session.is_complete = True
         await mark_complete(message_id)
 
     text = build_gather_text(session)
-    keyboard = None if session.is_complete else build_keyboard(len(session.go_players))
+    keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)
 
     try:
         await callback.message.edit_text(text, reply_markup=keyboard)

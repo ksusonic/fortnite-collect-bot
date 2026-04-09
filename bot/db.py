@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -24,6 +25,8 @@ class Session:
     style: int = 0
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None
+    time_slots: list[str] = field(default_factory=list)
+    player_slots: dict[int, str] = field(default_factory=dict)  # user_id -> slot
 
 
 async def init_db() -> None:
@@ -50,6 +53,10 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE sessions ADD COLUMN completed_at REAL")
         except Exception:
             pass
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN time_slots TEXT")
+        except Exception:
+            pass
         await db.execute(
             """CREATE TABLE IF NOT EXISTS responses (
                 message_id INTEGER NOT NULL,
@@ -61,6 +68,10 @@ async def init_db() -> None:
                 FOREIGN KEY (message_id) REFERENCES sessions(message_id)
             )"""
         )
+        try:
+            await db.execute("ALTER TABLE responses ADD COLUMN time_slot TEXT")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -68,8 +79,8 @@ async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, style, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, style, created_at, completed_at, time_slots)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
@@ -80,20 +91,21 @@ async def save_session(session: Session) -> None:
                 session.style,
                 session.created_at,
                 session.completed_at,
+                json.dumps(session.time_slots) if session.time_slots else None,
             ),
         )
         await db.commit()
 
 
 async def save_response(
-    message_id: int, user_id: int, user_name: str, response: str
+    message_id: int, user_id: int, user_name: str, response: str, time_slot: str | None = None
 ) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO responses
-               (message_id, user_id, user_name, response, responded_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (message_id, user_id, user_name, response, time.time()),
+               (message_id, user_id, user_name, response, responded_at, time_slot)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (message_id, user_id, user_name, response, time.time(), time_slot),
         )
         await db.commit()
 
@@ -108,6 +120,9 @@ async def load_session(message_id: int) -> Session | None:
         if row is None:
             return None
 
+        raw_slots = row["time_slots"] if "time_slots" in row.keys() else None
+        time_slots = json.loads(raw_slots) if raw_slots else []
+
         session = Session(
             chat_id=row["chat_id"],
             message_id=row["message_id"],
@@ -118,15 +133,19 @@ async def load_session(message_id: int) -> Session | None:
             style=row["style"],
             created_at=row["created_at"],
             completed_at=row["completed_at"],
+            time_slots=time_slots,
         )
 
         cursor = await db.execute(
-            "SELECT user_id, user_name, response FROM responses WHERE message_id = ?",
+            "SELECT user_id, user_name, response, time_slot FROM responses WHERE message_id = ?",
             (message_id,),
         )
         async for resp_row in cursor:
             if resp_row["response"] == "go":
                 session.go_players[resp_row["user_id"]] = resp_row["user_name"]
+                slot = resp_row["time_slot"]
+                if slot:
+                    session.player_slots[resp_row["user_id"]] = slot
             else:
                 session.pass_players[resp_row["user_id"]] = resp_row["user_name"]
 
