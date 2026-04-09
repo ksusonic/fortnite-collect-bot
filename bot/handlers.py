@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, Message, ReactionTypeEmoji
 
 from bot.db import (
     Session,
+    get_chat_participants,
     get_chat_stats,
     load_session,
     mark_complete,
@@ -59,6 +60,9 @@ async def cmd_fort(message: Message) -> None:
 
     name = _display_name(user)
     slots = generate_time_slots()
+    participants = await get_chat_participants(message.chat.id)
+    # Exclude the initiator from the tag list
+    tagged_users = {uid: n for uid, n in participants if uid != user.id}
     session = Session(
         chat_id=message.chat.id,
         message_id=0,
@@ -66,6 +70,7 @@ async def cmd_fort(message: Message) -> None:
         initiator_name=name,
         style=random_style(),
         time_slots=slots,
+        tagged_users=tagged_users,
     )
 
     text = build_gather_text(session)
@@ -116,6 +121,9 @@ async def cmd_refort(message: Message) -> None:
     # Создаём новый сбор
     name = _display_name(user)
     slots = generate_time_slots()
+    participants = await get_chat_participants(message.chat.id)
+    # Exclude the initiator from the tag list
+    tagged_users = {uid: n for uid, n in participants if uid != user.id}
     session = Session(
         chat_id=message.chat.id,
         message_id=0,
@@ -123,6 +131,7 @@ async def cmd_refort(message: Message) -> None:
         initiator_name=name,
         style=random_style(),
         time_slots=slots,
+        tagged_users=tagged_users,
     )
 
     text = build_gather_text(session)

@@ -114,6 +114,13 @@ def _user_link(user_id: int, name: str) -> str:
     return f'<a href="tg://user?id={user_id}">{html.escape(name)}</a>'
 
 
+def build_tag_line(tagged_users: dict[int, str]) -> str:
+    if not tagged_users:
+        return ""
+    tags = " ".join(_user_link(uid, name) for uid, name in tagged_users.items())
+    return f"\U0001f4e3 {tags}"
+
+
 def _player_list(players: dict[int, str]) -> str:
     if not players:
         return "  (пока пусто)"
@@ -165,11 +172,15 @@ def build_gather_text(session: Session) -> str:
 
     header = style.header.format(name=initiator)
 
+    responded = set(session.go_players) | set(session.pass_players)
+    pending_tags = {uid: name for uid, name in session.tagged_users.items() if uid not in responded}
+    tag_part = f"\n\n{build_tag_line(pending_tags)}" if pending_tags else ""
     return (
         f"{header}\n\n"
         f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
         f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
         f"{style.cta}"
+        f"{tag_part}"
     )
 
 

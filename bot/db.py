@@ -27,6 +27,7 @@ class Session:
     completed_at: float | None = None
     time_slots: list[str] = field(default_factory=list)
     player_slots: dict[int, str] = field(default_factory=dict)  # user_id -> slot
+    tagged_users: dict[int, str] = field(default_factory=dict)  # user_id -> name
 
 
 async def init_db() -> None:
@@ -57,6 +58,10 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE sessions ADD COLUMN time_slots TEXT")
         except Exception:
             pass
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN tag_line TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
         await db.execute(
             """CREATE TABLE IF NOT EXISTS responses (
                 message_id INTEGER NOT NULL,
@@ -79,8 +84,8 @@ async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, style, created_at, completed_at, time_slots)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, style, created_at, completed_at, time_slots, tag_line)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
@@ -92,6 +97,7 @@ async def save_session(session: Session) -> None:
                 session.created_at,
                 session.completed_at,
                 json.dumps(session.time_slots) if session.time_slots else None,
+                json.dumps({str(k): v for k, v in session.tagged_users.items()}) if session.tagged_users else None,
             ),
         )
         await db.commit()
@@ -122,6 +128,11 @@ async def load_session(message_id: int) -> Session | None:
 
         raw_slots = row["time_slots"] if "time_slots" in row.keys() else None
         time_slots = json.loads(raw_slots) if raw_slots else []
+        raw_tag = row["tag_line"] if "tag_line" in row.keys() else None
+        try:
+            tagged_users = {int(k): v for k, v in json.loads(raw_tag).items()} if raw_tag else {}
+        except (ValueError, AttributeError):
+            tagged_users = {}
 
         session = Session(
             chat_id=row["chat_id"],
@@ -134,6 +145,7 @@ async def load_session(message_id: int) -> Session | None:
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             time_slots=time_slots,
+            tagged_users=tagged_users,
         )
 
         cursor = await db.execute(
@@ -259,6 +271,23 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
             stats.fastest_fill_seconds = row["min_t"]
 
     return stats
+
+
+async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
+    """Return distinct users who previously responded 'go' in this chat, most recent first."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT r.user_id, r.user_name
+               FROM responses r
+               JOIN sessions s ON r.message_id = s.message_id
+               WHERE s.chat_id = ? AND r.response = 'go'
+               GROUP BY r.user_id
+               ORDER BY MAX(r.responded_at) DESC
+               LIMIT 20""",
+            (chat_id,),
+        )
+        return [(row["user_id"], row["user_name"]) for row in await cursor.fetchall()]
 
 
 async def load_active_sessions() -> list[Session]:
