@@ -65,7 +65,8 @@ async def cmd_fort(message: Message) -> None:
         return
 
     has_active = any(
-        s for s in sessions.values()
+        s
+        for s in sessions.values()
         if s.chat_id == message.chat.id and not s.is_complete
     )
     if has_active:
@@ -110,7 +111,9 @@ async def cmd_fort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+@router.message(
+    Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
+)
 async def cmd_refort(message: Message) -> None:
     user = message.from_user
     if user is None:
@@ -118,7 +121,11 @@ async def cmd_refort(message: Message) -> None:
 
     # Отменяем активный сбор, если есть
     active_session = next(
-        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        (
+            s
+            for s in sessions.values()
+            if s.chat_id == message.chat.id and not s.is_complete
+        ),
         None,
     )
     if active_session is not None:
@@ -170,7 +177,9 @@ async def cmd_refort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+@router.message(
+    Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
+)
 async def cmd_stats(message: Message) -> None:
     stats = await get_chat_stats(message.chat.id)
     await message.answer(build_stats_text(stats))
@@ -184,7 +193,11 @@ async def cmd_stats_private(message: Message) -> None:
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
     active_session = next(
-        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        (
+            s
+            for s in sessions.values()
+            if s.chat_id == message.chat.id and not s.is_complete
+        ),
         None,
     )
     if active_session is not None:
@@ -204,6 +217,37 @@ async def cmd_rm(message: Message) -> None:
         await message.delete()
     except TelegramBadRequest:
         pass
+
+
+_PIZDA_REPLIES = [
+    "Болтать — не строить. Погнали лучше в Фортнайт",
+    "А королевку брал хоть раз? Или только языком?",
+    "Тебе бы так на поле рубиться, как тут болтаешь",
+    "Каждый раз одно и то же. Иди на свадьбах пой",
+    "Кто тебя в коробочку возьмёт с таким характером?",
+    "Тебе бы в фортике так языком работать — все бы боялись",
+    "Молчание — золото. Но ты явно не из богатых",
+    "Сократ говорил: «Заговори, чтобы я тебя увидел». Лучше бы ты молчал",
+]
+
+
+_PIDORA_REPLIES = [
+    "Зеркало забыл дома?",
+    "Ответ засчитан. Интеллект — нет",
+    "Это всё, на что тебя хватает?",
+    "Сам придумал или подсказали?",
+]
+
+
+@router.message(F.from_user.username == "pizdabalabol_bot")
+async def reply_to_pizdabalabol(message: Message) -> None:
+    if not message.text:
+        return
+    text = message.text.lower()
+    if "пидора ответ" in text:
+        await message.reply(random.choice(_PIDORA_REPLIES))
+    elif "пизда" in text:
+        await message.reply(random.choice(_PIZDA_REPLIES))
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
@@ -265,7 +309,14 @@ async def on_callback(callback: CallbackQuery) -> None:
     else:
         session.pass_players[user_id] = name
 
-    await save_response(message_id, user_id, name, action, time_slot=time_slot, is_bot=callback.from_user.is_bot)
+    await save_response(
+        message_id,
+        user_id,
+        name,
+        action,
+        time_slot=time_slot,
+        is_bot=callback.from_user.is_bot,
+    )
 
     if not session.is_complete and len(session.go_players) >= SQUAD_SIZE:
         session.is_complete = True
@@ -279,7 +330,9 @@ async def on_callback(callback: CallbackQuery) -> None:
             pass
 
     text = build_gather_text(session)
-    keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)
+    keyboard = build_keyboard(
+        len(session.go_players), time_slots=session.time_slots or None
+    )
 
     try:
         await callback.message.edit_text(text, reply_markup=keyboard)
@@ -297,8 +350,10 @@ async def expire_sessions(bot: Bot) -> None:
         now_msk = datetime.now(MSK)
         past_deadline = now_msk.hour >= PLAY_DEADLINE_HOUR
         expired = [
-            s for s in sessions.values()
-            if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
+            s
+            for s in sessions.values()
+            if not s.is_complete
+            and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
         ]
         for session in expired:
             session.is_complete = True
