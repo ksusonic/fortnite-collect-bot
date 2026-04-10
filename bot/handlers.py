@@ -21,7 +21,9 @@ from bot.db import (
     save_response,
     save_session,
     sessions,
+    set_feature,
 )
+from bot.news import fetch_news_digest
 from bot.messages import (
     MSK,
     PLAY_DEADLINE_HOUR,
@@ -188,6 +190,31 @@ async def cmd_stats(message: Message) -> None:
 @router.message(Command("stats"))
 async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("news"))
+async def cmd_news(message: Message) -> None:
+    result = await fetch_news_digest(message.chat.id)
+    if result is None:
+        await message.answer("Нет новых новостей Fortnite.")
+        return
+    text, image_url = result
+    if image_url and len(text) <= 1024:
+        await message.answer_photo(photo=image_url, caption=text)
+    else:
+        await message.answer(text)
+
+
+@router.message(Command("enable_news"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_enable_news(message: Message) -> None:
+    await set_feature(message.chat.id, "news", True)
+    await message.answer("Авто-новости Fortnite включены для этого чата.")
+
+
+@router.message(Command("disable_news"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_disable_news(message: Message) -> None:
+    await set_feature(message.chat.id, "news", False)
+    await message.answer("Авто-новости Fortnite выключены для этого чата.")
 
 
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
