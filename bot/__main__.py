@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from bot.changelog import broadcast_news
 from bot.db import init_db, load_active_sessions, sessions
 from bot.handlers import expire_sessions, router
+from bot.status import check_status_loop
 
 
 async def main() -> None:
@@ -29,6 +30,7 @@ async def main() -> None:
     await broadcast_news(bot)
 
     asyncio.create_task(expire_sessions(bot))
+    asyncio.create_task(check_status_loop(bot))
     await dp.start_polling(bot)
 
 
