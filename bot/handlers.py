@@ -24,8 +24,8 @@ from bot.db import (
     save_response,
     save_session,
     sessions,
-    set_feature,
 )
+from bot.db import get_active_chat_ids
 from bot.news import fetch_news_digest
 from bot.messages import (
     MSK,
@@ -252,17 +252,6 @@ async def cmd_shop(message: Message) -> None:
         await message.answer(text)
 
 
-@router.message(Command("enable_news"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_enable_news(message: Message) -> None:
-    await set_feature(message.chat.id, "news", True)
-    await message.answer("Авто-новости Fortnite включены для этого чата.")
-
-
-@router.message(Command("disable_news"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_disable_news(message: Message) -> None:
-    await set_feature(message.chat.id, "news", False)
-    await message.answer("Авто-новости Fortnite выключены для этого чата.")
-
 
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
@@ -313,15 +302,10 @@ _PIDORA_REPLIES = [
 ]
 
 
-@router.message(F.from_user.username == "pizdabalabol_bot")
-async def reply_to_pizdabalabol(message: Message) -> None:
-    if not message.text:
-        return
-    text = message.text.lower()
-    if "пидора ответ" in text:
-        await message.reply(random.choice(_PIDORA_REPLIES))
-    elif "пизда" in text:
-        await message.reply(random.choice(_PIZDA_REPLIES))
+@router.message(F.text.lower().in_({"да", "нет"}))
+async def reply_to_da_net(message: Message) -> None:
+    await asyncio.sleep(2)
+    await message.answer(random.choice(_PIZDA_REPLIES))
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
@@ -442,3 +426,47 @@ async def expire_sessions(bot: Bot) -> None:
             except TelegramBadRequest:
                 pass
             sessions.pop(session.message_id, None)
+
+
+SHOP_NOTIFY_HOUR = 20  # 20:00 MSK
+_shop_sent_date: str | None = None
+
+
+async def shop_notification_loop(bot: Bot) -> None:
+    """Background task: send daily shop updates at 20:00 MSK."""
+    global _shop_sent_date
+    await asyncio.sleep(30)
+
+    while True:
+        await asyncio.sleep(60)
+        now_msk = datetime.now(MSK)
+        today = now_msk.strftime("%Y-%m-%d")
+
+        if now_msk.hour != SHOP_NOTIFY_HOUR or _shop_sent_date == today:
+            continue
+
+        _shop_sent_date = today
+        chat_ids = await get_active_chat_ids()
+
+        for chat_id in chat_ids:
+            try:
+                result = await fetch_news_digest(chat_id)
+                if result is None:
+                    continue
+                text, image_urls = result
+                if len(image_urls) > 1 and len(text) <= 1024:
+                    media = [
+                        InputMediaPhoto(
+                            media=url,
+                            caption=text if i == 0 else None,
+                            parse_mode="HTML" if i == 0 else None,
+                        )
+                        for i, url in enumerate(image_urls[:10])
+                    ]
+                    await bot.send_media_group(chat_id=chat_id, media=media)
+                elif image_urls and len(text) <= 1024:
+                    await bot.send_photo(chat_id=chat_id, photo=image_urls[0], caption=text)
+                else:
+                    await bot.send_message(chat_id=chat_id, text=text)
+            except Exception:
+                logger.warning("Failed to send shop notification to %s", chat_id)

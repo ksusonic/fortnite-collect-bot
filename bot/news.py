@@ -4,6 +4,7 @@ import hashlib
 import html
 import logging
 import os
+from datetime import datetime, timezone
 
 import fortnite_api
 
@@ -12,6 +13,17 @@ from bot.db import get_seen_news_ids, mark_news_seen
 logger = logging.getLogger(__name__)
 
 MAX_SHOP_ITEMS = 10
+
+
+def _relative_date(dt: datetime) -> str:
+    today = datetime.now(timezone.utc).date()
+    d = dt.date() if dt.tzinfo else dt.date()
+    diff = (today - d).days
+    if diff == 0:
+        return "сегодня"
+    if diff == 1:
+        return "вчера"
+    return d.strftime("%d.%m.%Y")
 
 
 def _entry_image_url(entry: fortnite_api.ShopEntry) -> str | None:
@@ -60,7 +72,9 @@ async def fetch_news_digest(chat_id: int) -> tuple[str, list[str]] | None:
         if not name:
             continue
         price = f"{entry.final_price:,}".replace(",", " ")
-        shop_lines.append(f"{html.escape(name)} — {price} V-Bucks")
+        date_label = _relative_date(entry.in_date) if entry.in_date else ""
+        date_suffix = f" ({date_label})" if date_label else ""
+        shop_lines.append(f"{html.escape(name)} — {price} V-Bucks{date_suffix}")
         img = _entry_image_url(entry)
         if img:
             image_urls.append(img)
