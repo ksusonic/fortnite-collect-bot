@@ -87,6 +87,22 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS fortnite_news_seen (
+                chat_id INTEGER NOT NULL,
+                item_id TEXT NOT NULL,
+                seen_at REAL NOT NULL,
+                PRIMARY KEY (chat_id, item_id)
+            )"""
+        )
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS chat_features (
+                chat_id INTEGER NOT NULL,
+                feature TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (chat_id, feature)
+            )"""
+        )
         await db.commit()
 
 
@@ -373,6 +389,54 @@ async def set_last_seen_version(chat_id: int, version: str) -> None:
         await db.execute(
             "INSERT OR REPLACE INTO news_sent (chat_id, last_version) VALUES (?, ?)",
             (chat_id, version),
+        )
+        await db.commit()
+
+
+SEEN_RETENTION_DAYS = 30
+
+
+async def get_seen_news_ids(chat_id: int) -> set[str]:
+    cutoff = time.time() - SEEN_RETENTION_DAYS * 86400
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT item_id FROM fortnite_news_seen WHERE chat_id = ? AND seen_at > ?",
+            (chat_id, cutoff),
+        )
+        return {row[0] for row in await cursor.fetchall()}
+
+
+async def mark_news_seen(chat_id: int, item_ids: list[str]) -> None:
+    if not item_ids:
+        return
+    now = time.time()
+    cutoff = now - SEEN_RETENTION_DAYS * 86400
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            "INSERT OR IGNORE INTO fortnite_news_seen (chat_id, item_id, seen_at) VALUES (?, ?, ?)",
+            [(chat_id, item_id, now) for item_id in item_ids],
+        )
+        await db.execute(
+            "DELETE FROM fortnite_news_seen WHERE seen_at < ?", (cutoff,)
+        )
+        await db.commit()
+
+
+async def is_feature_enabled(chat_id: int, feature: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT enabled FROM chat_features WHERE chat_id = ? AND feature = ?",
+            (chat_id, feature),
+        )
+        row = await cursor.fetchone()
+        return bool(row and row[0])
+
+
+async def set_feature(chat_id: int, feature: str, enabled: bool) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO chat_features (chat_id, feature, enabled) VALUES (?, ?, ?)",
+            (chat_id, feature, int(enabled)),
         )
         await db.commit()
 

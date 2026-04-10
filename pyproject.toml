@@ -8,4 +8,5 @@ dependencies = [
     "aiogram>=3.20,<4",
     "python-dotenv>=1.1",
     "aiosqlite>=0.21",
+    "fortnite-api>=0.7",
 ]
