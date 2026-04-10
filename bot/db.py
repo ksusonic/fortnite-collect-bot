@@ -393,10 +393,15 @@ async def set_last_seen_version(chat_id: int, version: str) -> None:
         await db.commit()
 
 
+SEEN_RETENTION_DAYS = 30
+
+
 async def get_seen_news_ids(chat_id: int) -> set[str]:
+    cutoff = time.time() - SEEN_RETENTION_DAYS * 86400
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "SELECT item_id FROM fortnite_news_seen WHERE chat_id = ?", (chat_id,)
+            "SELECT item_id FROM fortnite_news_seen WHERE chat_id = ? AND seen_at > ?",
+            (chat_id, cutoff),
         )
         return {row[0] for row in await cursor.fetchall()}
 
@@ -405,10 +410,14 @@ async def mark_news_seen(chat_id: int, item_ids: list[str]) -> None:
     if not item_ids:
         return
     now = time.time()
+    cutoff = now - SEEN_RETENTION_DAYS * 86400
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executemany(
             "INSERT OR IGNORE INTO fortnite_news_seen (chat_id, item_id, seen_at) VALUES (?, ?, ?)",
             [(chat_id, item_id, now) for item_id in item_ids],
+        )
+        await db.execute(
+            "DELETE FROM fortnite_news_seen WHERE seen_at < ?", (cutoff,)
         )
         await db.commit()
 

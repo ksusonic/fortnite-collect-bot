@@ -37,6 +37,7 @@ async def fetch_news_digest(chat_id: int) -> tuple[str, str | None] | None:
     # BR news (motds)
     if news_br.motds:
         news_lines: list[str] = []
+        news_count = 0
         for motd in news_br.motds:
             if motd.hidden or motd.id in seen:
                 continue
@@ -47,7 +48,8 @@ async def fetch_news_digest(chat_id: int) -> tuple[str, str | None] | None:
             news_lines.append("")
             if image_url is None and motd.image:
                 image_url = motd.image
-            if len(news_lines) // 3 >= MAX_NEWS:
+            news_count += 1
+            if news_count >= MAX_NEWS:
                 break
         if news_lines:
             sections.append("\n".join(news_lines).rstrip())
