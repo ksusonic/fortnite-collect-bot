@@ -199,6 +199,67 @@ def build_gather_text(session: Session) -> str:
 SESSION_TIMEOUT = 60 * 60  # 1 hour
 
 
+@dataclass(frozen=True)
+class StatsStyle:
+    title: str
+    sessions_header: str
+    speed_header: str
+    record_comment: str
+    top_players_header: str
+    top_initiators_header: str
+    top_passers_header: str
+    streaks_header: str
+    best_hours_header: str
+
+
+_STATS_STYLES: list[StatsStyle] = [
+    StatsStyle(
+        title="\U0001f4ca <b>СТАТИСТИКА СБОРОВ</b> \U0001f4ca",
+        sessions_header="\U0001f3ae <b>Сборы:</b>",
+        speed_header="\u23f1 <b>Скорость сбора:</b>",
+        record_comment="Быстрее только пинг \U0001f3d3",
+        top_players_header="\U0001f3c6 <b>Топ игроков (по участию):</b>",
+        top_initiators_header="\U0001f4e2 <b>Топ зачинщиков:</b>",
+        top_passers_header="\U0001f634 <b>Топ пасующих:</b>",
+        streaks_header="\U0001f525 <b>Серии участия (подряд):</b>",
+        best_hours_header="\U0001f552 <b>Лучшее время для сбора:</b>",
+    ),
+    StatsStyle(
+        title="\U0001f575\ufe0f <b>РАЗВЕДДАННЫЕ ОТРЯДА</b> \U0001f575\ufe0f",
+        sessions_header="\U0001f4cb <b>Операции:</b>",
+        speed_header="\u26a1 <b>Время реакции:</b>",
+        record_comment="Спецназ завидует \U0001fae1",
+        top_players_header="\u2b50 <b>Лучшие бойцы:</b>",
+        top_initiators_header="\U0001f4e1 <b>Кто поднимает тревогу:</b>",
+        top_passers_header="\U0001f6cb <b>Диванные войска:</b>",
+        streaks_header="\U0001f4aa <b>Без пропусков:</b>",
+        best_hours_header="\U0001f3af <b>Час Х:</b>",
+    ),
+    StatsStyle(
+        title="\U0001f4c8 <b>АНАЛИТИКА НАГИБА</b> \U0001f4c8",
+        sessions_header="\U0001f3b0 <b>Катки:</b>",
+        speed_header="\U0001f680 <b>Сбор по таймеру:</b>",
+        record_comment="Кажется, кто-то ждал у кнопки \U0001f440",
+        top_players_header="\U0001f451 <b>Движки отряда:</b>",
+        top_initiators_header="\U0001f514 <b>Главные заводилы:</b>",
+        top_passers_header="\U0001f40c <b>Мастера отмазок:</b>",
+        streaks_header="\U0001f525 <b>На огне:</b>",
+        best_hours_header="\u23f0 <b>Золотой час:</b>",
+    ),
+    StatsStyle(
+        title="\U0001f9ee <b>ОТЧЁТ ШТАБА</b> \U0001f9ee",
+        sessions_header="\U0001f5c2 <b>Дела:</b>",
+        speed_header="\U0001f3ce <b>Скоростной режим:</b>",
+        record_comment="Формула-1 нервно курит \U0001f6ac",
+        top_players_header="\U0001f396 <b>Герои фронта:</b>",
+        top_initiators_header="\U0001f4ef <b>Горнисты:</b>",
+        top_passers_header="\U0001f3d6 <b>В отпуске:</b>",
+        streaks_header="\U0001f4a5 <b>Ударная серия:</b>",
+        best_hours_header="\U0001f319 <b>Пиковый час:</b>",
+    ),
+]
+
+
 def build_expired_text(session: Session) -> str:
     style = _STYLES[session.style % len(_STYLES)]
     go_count = len(session.go_players)
@@ -254,12 +315,13 @@ def build_stats_text(stats: ChatStats) -> str:
     if stats.total_sessions == 0:
         return "\U0001f4ca <b>Статистика</b>\n\nПока нет данных — начните с /fort!"
 
+    style = random.choice(_STATS_STYLES)
     lines: list[str] = []
-    lines.append("\U0001f4ca <b>СТАТИСТИКА СБОРОВ</b> \U0001f4ca")
+    lines.append(style.title)
     lines.append("")
 
     # Overview
-    lines.append("\U0001f3ae <b>Сборы:</b>")
+    lines.append(style.sessions_header)
     lines.append(f"  Всего: <b>{stats.total_sessions}</b>")
     lines.append(f"  \u2705 Собрано: <b>{stats.completed_sessions}</b>")
     lines.append(f"  \u23f0 Истекло: <b>{stats.expired_sessions}</b>")
@@ -273,14 +335,14 @@ def build_stats_text(stats: ChatStats) -> str:
     # Timing
     if stats.avg_fill_seconds is not None:
         lines.append("")
-        lines.append("\u23f1 <b>Скорость сбора:</b>")
+        lines.append(style.speed_header)
         lines.append(f"  Среднее: <b>{_format_duration(stats.avg_fill_seconds)}</b>")
-        lines.append(f"  Рекорд: <b>{_format_duration(stats.fastest_fill_seconds)}</b> \U0001f525")
+        lines.append(f"  Рекорд: <b>{_format_duration(stats.fastest_fill_seconds)}</b> — {style.record_comment}")
 
     # Top players
     if stats.top_players:
         lines.append("")
-        lines.append("\U0001f3c6 <b>Топ игроков (по участию):</b>")
+        lines.append(style.top_players_header)
         max_cnt = stats.top_players[0][1]
         medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
         for i, (name, cnt) in enumerate(stats.top_players[:5]):
@@ -291,7 +353,7 @@ def build_stats_text(stats: ChatStats) -> str:
     # Top initiators
     if stats.top_initiators:
         lines.append("")
-        lines.append("\U0001f4e2 <b>Топ зачинщиков:</b>")
+        lines.append(style.top_initiators_header)
         max_cnt = stats.top_initiators[0][1]
         for i, (name, cnt) in enumerate(stats.top_initiators[:3]):
             bar = _bar(cnt, max_cnt, 6)
@@ -300,11 +362,29 @@ def build_stats_text(stats: ChatStats) -> str:
     # Top passers
     if stats.top_passers:
         lines.append("")
-        lines.append("\U0001f634 <b>Топ пасующих:</b>")
+        lines.append(style.top_passers_header)
         max_cnt = stats.top_passers[0][1]
         for i, (name, cnt) in enumerate(stats.top_passers[:3]):
             bar = _bar(cnt, max_cnt, 6)
             lines.append(f"  {i + 1}. {html.escape(name)}  {bar} <b>{cnt}</b>")
+
+    # Streaks
+    if stats.top_streaks:
+        lines.append("")
+        lines.append(style.streaks_header)
+        streak_medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
+        for i, (name, cnt) in enumerate(stats.top_streaks[:3]):
+            medal = streak_medals[i] if i < len(streak_medals) else f"  {i + 1}."
+            fires = "\U0001f525" * min(cnt, 5)
+            lines.append(f"{medal} {html.escape(name)}  <b>{cnt}</b> {fires}")
+
+    # Best hours
+    if stats.best_hours:
+        lines.append("")
+        lines.append(style.best_hours_header)
+        for hour, cnt, avg_fill in stats.best_hours:
+            avg_text = _format_duration(avg_fill) if avg_fill else "\u2014"
+            lines.append(f"  {hour:02d}:00 \u2014 <b>{cnt}</b> сборов, среднее <b>{avg_text}</b>")
 
     return "\n".join(lines)
 

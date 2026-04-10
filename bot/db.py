@@ -193,6 +193,8 @@ class ChatStats:
     top_passers: list[tuple[str, int]] = field(default_factory=list)  # (name, pass_count)
     avg_fill_seconds: float | None = None
     fastest_fill_seconds: float | None = None
+    top_streaks: list[tuple[str, int]] = field(default_factory=list)  # (name, streak)
+    best_hours: list[tuple[int, int, float | None]] = field(default_factory=list)  # (hour, count, avg_fill_sec)
 
 
 async def get_chat_stats(chat_id: int) -> ChatStats:
@@ -269,6 +271,54 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
         if row and row["avg_t"] is not None:
             stats.avg_fill_seconds = row["avg_t"]
             stats.fastest_fill_seconds = row["min_t"]
+
+        # Streaks
+        cur = await db.execute(
+            """SELECT message_id FROM sessions
+               WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0
+               ORDER BY created_at DESC""",
+            (chat_id,),
+        )
+        completed_ids = [row["message_id"] for row in await cur.fetchall()]
+
+        if completed_ids:
+            placeholders = ",".join("?" * len(completed_ids))
+            cur = await db.execute(
+                f"""SELECT message_id, user_id, user_name FROM responses
+                    WHERE message_id IN ({placeholders}) AND response = 'go'""",
+                completed_ids,
+            )
+            go_by_session: dict[int, set[int]] = {mid: set() for mid in completed_ids}
+            user_names: dict[int, str] = {}
+            for row in await cur.fetchall():
+                go_by_session[row["message_id"]].add(row["user_id"])
+                user_names[row["user_id"]] = row["user_name"]
+
+            active = dict.fromkeys(go_by_session[completed_ids[0]], 1)
+            for mid in completed_ids[1:]:
+                go_users = go_by_session[mid]
+                active = {uid: cnt + 1 for uid, cnt in active.items() if uid in go_users}
+                if not active:
+                    break
+
+            stats.top_streaks = sorted(
+                [(user_names[uid], cnt) for uid, cnt in active.items()],
+                key=lambda x: -x[1],
+            )[:3]
+
+        # Best hours
+        cur = await db.execute(
+            """SELECT CAST(strftime('%H', created_at + 3*3600, 'unixepoch') AS INTEGER) AS hour,
+                      COUNT(*) AS cnt,
+                      AVG(completed_at - created_at) AS avg_fill
+               FROM sessions
+               WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0 AND completed_at IS NOT NULL
+               GROUP BY hour
+               ORDER BY cnt DESC, avg_fill ASC
+               LIMIT 2""",
+            (chat_id,),
+        )
+        stats.best_hours = [(row["hour"], row["cnt"], row["avg_fill"]) for row in await cur.fetchall()]
 
     return stats
 
