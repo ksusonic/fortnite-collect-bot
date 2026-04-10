@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
@@ -21,6 +22,8 @@ from bot.db import (
     sessions,
 )
 from bot.messages import (
+    MSK,
+    PLAY_DEADLINE_HOUR,
     SQUAD_SIZE,
     SESSION_TIMEOUT,
     build_cancelled_text,
@@ -245,9 +248,11 @@ async def expire_sessions(bot: Bot) -> None:
     while True:
         await asyncio.sleep(60)
         now = time.time()
+        now_msk = datetime.now(MSK)
+        past_deadline = now_msk.hour >= PLAY_DEADLINE_HOUR
         expired = [
             s for s in sessions.values()
-            if not s.is_complete and now - s.created_at > SESSION_TIMEOUT
+            if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
         ]
         for session in expired:
             session.is_complete = True

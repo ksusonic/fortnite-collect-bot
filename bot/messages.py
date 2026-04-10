@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 MSK = timezone(timedelta(hours=3))
 
 SQUAD_SIZE = 4
+PLAY_DEADLINE_HOUR = 23
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,14 @@ def random_style() -> int:
 def generate_time_slots(count: int = 3) -> list[str]:
     now = datetime.now(MSK)
     next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-    return [(next_hour + timedelta(hours=i)).strftime("%H:%M") for i in range(count)]
+    deadline = now.replace(hour=PLAY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
+    slots = []
+    for i in range(count):
+        slot_time = next_hour + timedelta(hours=i)
+        if slot_time > deadline:
+            break
+        slots.append(slot_time.strftime("%H:%M"))
+    return slots
 
 
 def _user_link(user_id: int, name: str) -> str:
