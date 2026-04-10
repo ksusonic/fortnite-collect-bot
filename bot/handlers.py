@@ -12,7 +12,7 @@ from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, ReactionTypeCustomEmoji, ReactionTypeEmoji, TelegramObject
+from aiogram.types import CallbackQuery, InputMediaPhoto, Message, ReactionTypeCustomEmoji, ReactionTypeEmoji, TelegramObject
 
 from bot.db import (
     Session,
@@ -229,15 +229,25 @@ async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(Command("news"))
-async def cmd_news(message: Message) -> None:
+@router.message(Command("shop"))
+async def cmd_shop(message: Message) -> None:
     result = await fetch_news_digest(message.chat.id)
     if result is None:
-        await message.answer("Нет новых новостей Fortnite.")
+        await message.answer("Нет новых обновлений магазина Fortnite.")
         return
-    text, image_url = result
-    if image_url and len(text) <= 1024:
-        await message.answer_photo(photo=image_url, caption=text)
+    text, image_urls = result
+    if len(image_urls) > 1 and len(text) <= 1024:
+        media = [
+            InputMediaPhoto(
+                media=url,
+                caption=text if i == 0 else None,
+                parse_mode="HTML" if i == 0 else None,
+            )
+            for i, url in enumerate(image_urls[:10])
+        ]
+        await message.answer_media_group(media=media)
+    elif image_urls and len(text) <= 1024:
+        await message.answer_photo(photo=image_urls[0], caption=text)
     else:
         await message.answer(text)
 
