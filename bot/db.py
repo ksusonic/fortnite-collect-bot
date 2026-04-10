@@ -63,6 +63,12 @@ async def init_db() -> None:
         except Exception:
             pass
         await db.execute(
+            """CREATE TABLE IF NOT EXISTS news_sent (
+                chat_id INTEGER PRIMARY KEY,
+                last_version TEXT NOT NULL
+            )"""
+        )
+        await db.execute(
             """CREATE TABLE IF NOT EXISTS responses (
                 message_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
@@ -338,6 +344,33 @@ async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
             (chat_id,),
         )
         return [(row["user_id"], row["user_name"]) for row in await cursor.fetchall()]
+
+
+async def get_active_chat_ids(days: int = 14) -> list[int]:
+    cutoff = time.time() - days * 86400
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT DISTINCT chat_id FROM sessions WHERE created_at > ?", (cutoff,)
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
+
+async def get_last_seen_version(chat_id: int) -> str | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT last_version FROM news_sent WHERE chat_id = ?", (chat_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_last_seen_version(chat_id: int, version: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO news_sent (chat_id, last_version) VALUES (?, ?)",
+            (chat_id, version),
+        )
+        await db.commit()
 
 
 async def load_active_sessions() -> list[Session]:

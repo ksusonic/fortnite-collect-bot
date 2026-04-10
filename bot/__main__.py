@@ -6,6 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 
+from bot.changelog import broadcast_news
 from bot.db import init_db, load_active_sessions, sessions
 from bot.handlers import expire_sessions, router
 
@@ -24,6 +25,8 @@ async def main() -> None:
     await init_db()
     for session in await load_active_sessions():
         sessions[session.message_id] = session
+
+    await broadcast_news(bot)
 
     asyncio.create_task(expire_sessions(bot))
     await dp.start_polling(bot)
