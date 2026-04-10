@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
-from aiogram import Bot, F, Router
+from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, ReactionTypeEmoji
+from aiogram.types import CallbackQuery, Message, ReactionTypeCustomEmoji, ReactionTypeEmoji, TelegramObject
 
 from bot.db import (
     Session,
@@ -38,7 +41,41 @@ from bot.messages import (
     random_style,
 )
 
+logger = logging.getLogger(__name__)
+
 router = Router()
+
+REACTION_EMOJI_PACK = "myfavoritetwitchemoji"
+_custom_emoji_ids: list[str] = []
+
+
+class CommandReactionMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if isinstance(event, Message) and event.text and event.text.startswith("/"):
+            if not _custom_emoji_ids:
+                try:
+                    bot: Bot = data["bot"]
+                    sticker_set = await bot.get_sticker_set(REACTION_EMOJI_PACK)
+                    _custom_emoji_ids.extend(
+                        s.custom_emoji_id for s in sticker_set.stickers if s.custom_emoji_id
+                    )
+                except Exception:
+                    logger.debug("Failed to load emoji pack %s", REACTION_EMOJI_PACK)
+            if _custom_emoji_ids:
+                try:
+                    emoji_id = random.choice(_custom_emoji_ids)
+                    await event.react([ReactionTypeCustomEmoji(custom_emoji_id=emoji_id)])
+                except TelegramBadRequest:
+                    pass
+        return await handler(event, data)
+
+
+router.message.middleware(CommandReactionMiddleware())
 
 
 def _display_name(user) -> str:
