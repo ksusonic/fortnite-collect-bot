@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from datetime import datetime
 
@@ -42,6 +43,19 @@ def _display_name(user) -> str:
     if user.username:
         return f"@{user.username}"
     return user.first_name or str(user.id)
+
+
+@router.message(Command("sticker"))
+async def cmd_sticker(message: Message) -> None:
+    try:
+        sticker_set = await message.bot.get_sticker_set("FortniteStick")
+        if sticker_set.stickers:
+            sticker = random.choice(sticker_set.stickers)
+            await message.answer_sticker(sticker.file_id)
+        else:
+            await message.answer("Стикерпак пуст.")
+    except TelegramBadRequest as e:
+        await message.answer(f"Ошибка: {e}")
 
 
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
@@ -256,6 +270,13 @@ async def on_callback(callback: CallbackQuery) -> None:
     if not session.is_complete and len(session.go_players) >= SQUAD_SIZE:
         session.is_complete = True
         await mark_complete(message_id)
+        try:
+            sticker_set = await callback.bot.get_sticker_set("FortniteStick")
+            if sticker_set.stickers:
+                sticker = random.choice(sticker_set.stickers)
+                await callback.message.answer_sticker(sticker.file_id)
+        except TelegramBadRequest:
+            pass
 
     text = build_gather_text(session)
     keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)
