@@ -20,11 +20,10 @@ async def fetch_news_digest(chat_id: int) -> tuple[str, str | None] | None:
     if not api_key:
         return ("<b>Fortnite News</b>\n\nAPI-ключ не настроен. Попросите админа задать FORTNITE_API_KEY.", None)
 
-    client = fortnite_api.Client(api_key=api_key, default_language=fortnite_api.GameLanguage.RUSSIAN)
-
     try:
-        news_br = await client.fetch_news_br()
-        shop = await client.fetch_shop()
+        async with fortnite_api.Client(api_key=api_key, default_language=fortnite_api.GameLanguage.RUSSIAN) as client:
+            news_br = await client.fetch_news_br()
+            shop = await client.fetch_shop()
     except Exception:
         logger.warning("Failed to fetch Fortnite news/shop", exc_info=True)
         return ("<b>Fortnite News</b>\n\nНе удалось получить данные. Попробуйте позже.", None)
