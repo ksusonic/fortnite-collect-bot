@@ -83,6 +83,10 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE responses ADD COLUMN time_slot TEXT")
         except Exception:
             pass
+        try:
+            await db.execute("ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -110,14 +114,14 @@ async def save_session(session: Session) -> None:
 
 
 async def save_response(
-    message_id: int, user_id: int, user_name: str, response: str, time_slot: str | None = None
+    message_id: int, user_id: int, user_name: str, response: str, time_slot: str | None = None, is_bot: bool = False
 ) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO responses
-               (message_id, user_id, user_name, response, responded_at, time_slot)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (message_id, user_id, user_name, response, time.time(), time_slot),
+               (message_id, user_id, user_name, response, responded_at, time_slot, is_bot)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (message_id, user_id, user_name, response, time.time(), time_slot, int(is_bot)),
         )
         await db.commit()
 
@@ -337,7 +341,7 @@ async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
             """SELECT r.user_id, r.user_name
                FROM responses r
                JOIN sessions s ON r.message_id = s.message_id
-               WHERE s.chat_id = ? AND r.response = 'go'
+               WHERE s.chat_id = ? AND r.response = 'go' AND r.is_bot = 0
                GROUP BY r.user_id
                ORDER BY MAX(r.responded_at) DESC
                LIMIT 20""",

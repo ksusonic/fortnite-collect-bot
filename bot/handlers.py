@@ -39,9 +39,9 @@ router = Router()
 
 
 def _display_name(user) -> str:
-    if user.first_name and user.last_name:
-        return f"{user.first_name} {user.last_name}"
-    return user.first_name or user.username or str(user.id)
+    if user.username:
+        return f"@{user.username}"
+    return user.first_name or str(user.id)
 
 
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
@@ -167,6 +167,31 @@ async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
+@router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_rm(message: Message) -> None:
+    active_session = next(
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        None,
+    )
+    if active_session is not None:
+        active_session.is_complete = True
+        active_session.is_expired = True
+        await mark_expired(active_session.message_id)
+        try:
+            await message.bot.delete_message(
+                chat_id=active_session.chat_id,
+                message_id=active_session.message_id,
+            )
+        except TelegramBadRequest:
+            pass
+        sessions.pop(active_session.message_id, None)
+
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
+
+
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
 async def on_callback(callback: CallbackQuery) -> None:
     if callback.message is None or callback.from_user is None:
@@ -226,7 +251,7 @@ async def on_callback(callback: CallbackQuery) -> None:
     else:
         session.pass_players[user_id] = name
 
-    await save_response(message_id, user_id, name, action, time_slot=time_slot)
+    await save_response(message_id, user_id, name, action, time_slot=time_slot, is_bot=callback.from_user.is_bot)
 
     if not session.is_complete and len(session.go_players) >= SQUAD_SIZE:
         session.is_complete = True
