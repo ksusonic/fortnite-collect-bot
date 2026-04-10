@@ -105,11 +105,14 @@ def random_style() -> int:
     return random.randrange(len(_STYLES))
 
 
+NOW_SLOT = "now"
+
+
 def generate_time_slots(count: int = 3) -> list[str]:
     now = datetime.now(MSK)
     next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     deadline = now.replace(hour=PLAY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
-    slots = []
+    slots = [NOW_SLOT]
     for i in range(count):
         slot_time = next_hour + timedelta(hours=i)
         if slot_time > deadline:
@@ -149,10 +152,11 @@ def _player_list_by_slots(session: Session) -> str:
     lines: list[str] = []
     idx = 1
     for slot, players in slots_grouped.items():
+        label = "Сейчас" if slot == NOW_SLOT else slot
         if not players:
-            lines.append(f"\U0001f554 {slot}: (пусто)")
+            lines.append(f"\U0001f554 {label}: (пусто)")
             continue
-        lines.append(f"\U0001f554 {slot}:")
+        lines.append(f"\U0001f554 {label}:")
         for uid, name in players:
             lines.append(f"  {idx}. {_user_link(uid, name)}")
             idx += 1
@@ -309,7 +313,7 @@ def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> Inline
     if time_slots:
         slot_buttons = [
             InlineKeyboardButton(
-                text=f"\U0001f554 {slot}",
+                text="\u26a1 Сейчас" if slot == NOW_SLOT else f"\U0001f554 {slot}",
                 callback_data=f"slot:{slot}",
             )
             for slot in time_slots
