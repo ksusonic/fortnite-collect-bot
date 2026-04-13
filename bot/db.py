@@ -63,12 +63,6 @@ async def init_db() -> None:
         except Exception:
             pass
         await db.execute(
-            """CREATE TABLE IF NOT EXISTS news_sent (
-                chat_id INTEGER PRIMARY KEY,
-                last_version TEXT NOT NULL
-            )"""
-        )
-        await db.execute(
             """CREATE TABLE IF NOT EXISTS responses (
                 message_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
@@ -87,14 +81,6 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS fortnite_news_seen (
-                chat_id INTEGER NOT NULL,
-                item_id TEXT NOT NULL,
-                seen_at REAL NOT NULL,
-                PRIMARY KEY (chat_id, item_id)
-            )"""
-        )
         await db.execute(
             """CREATE TABLE IF NOT EXISTS chat_features (
                 chat_id INTEGER NOT NULL,
@@ -373,53 +359,6 @@ async def get_active_chat_ids(days: int = 14) -> list[int]:
             "SELECT DISTINCT chat_id FROM sessions WHERE created_at > ?", (cutoff,)
         )
         return [row[0] for row in await cursor.fetchall()]
-
-
-async def get_last_seen_version(chat_id: int) -> str | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "SELECT last_version FROM news_sent WHERE chat_id = ?", (chat_id,)
-        )
-        row = await cursor.fetchone()
-        return row[0] if row else None
-
-
-async def set_last_seen_version(chat_id: int, version: str) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO news_sent (chat_id, last_version) VALUES (?, ?)",
-            (chat_id, version),
-        )
-        await db.commit()
-
-
-SEEN_RETENTION_DAYS = 30
-
-
-async def get_seen_news_ids(chat_id: int) -> set[str]:
-    cutoff = time.time() - SEEN_RETENTION_DAYS * 86400
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "SELECT item_id FROM fortnite_news_seen WHERE chat_id = ? AND seen_at > ?",
-            (chat_id, cutoff),
-        )
-        return {row[0] for row in await cursor.fetchall()}
-
-
-async def mark_news_seen(chat_id: int, item_ids: list[str]) -> None:
-    if not item_ids:
-        return
-    now = time.time()
-    cutoff = now - SEEN_RETENTION_DAYS * 86400
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.executemany(
-            "INSERT OR IGNORE INTO fortnite_news_seen (chat_id, item_id, seen_at) VALUES (?, ?, ?)",
-            [(chat_id, item_id, now) for item_id in item_ids],
-        )
-        await db.execute(
-            "DELETE FROM fortnite_news_seen WHERE seen_at < ?", (cutoff,)
-        )
-        await db.commit()
 
 
 async def is_feature_enabled(chat_id: int, feature: str) -> bool:

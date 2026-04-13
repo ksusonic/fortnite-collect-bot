@@ -12,7 +12,7 @@ from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InputMediaPhoto, Message, ReactionTypeCustomEmoji, ReactionTypeEmoji, TelegramObject
+from aiogram.types import CallbackQuery, Message, ReactionTypeCustomEmoji, ReactionTypeEmoji, TelegramObject
 
 from bot.db import (
     Session,
@@ -25,8 +25,6 @@ from bot.db import (
     save_session,
     sessions,
 )
-from bot.db import get_active_chat_ids
-from bot.news import fetch_news_digest
 from bot.messages import (
     MSK,
     PLAY_DEADLINE_HOUR,
@@ -229,30 +227,6 @@ async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(Command("shop"))
-async def cmd_shop(message: Message) -> None:
-    result = await fetch_news_digest(message.chat.id)
-    if result is None:
-        await message.answer("Нет новых обновлений магазина Fortnite.")
-        return
-    text, image_urls = result
-    if len(image_urls) > 1 and len(text) <= 1024:
-        media = [
-            InputMediaPhoto(
-                media=url,
-                caption=text if i == 0 else None,
-                parse_mode="HTML" if i == 0 else None,
-            )
-            for i, url in enumerate(image_urls[:10])
-        ]
-        await message.answer_media_group(media=media)
-    elif image_urls and len(text) <= 1024:
-        await message.answer_photo(photo=image_urls[0], caption=text)
-    else:
-        await message.answer(text)
-
-
-
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
     active_session = next(
@@ -428,45 +402,3 @@ async def expire_sessions(bot: Bot) -> None:
             sessions.pop(session.message_id, None)
 
 
-SHOP_NOTIFY_HOUR = 20  # 20:00 MSK
-_shop_sent_date: str | None = None
-
-
-async def shop_notification_loop(bot: Bot) -> None:
-    """Background task: send daily shop updates at 20:00 MSK."""
-    global _shop_sent_date
-    await asyncio.sleep(30)
-
-    while True:
-        await asyncio.sleep(60)
-        now_msk = datetime.now(MSK)
-        today = now_msk.strftime("%Y-%m-%d")
-
-        if now_msk.hour != SHOP_NOTIFY_HOUR or _shop_sent_date == today:
-            continue
-
-        _shop_sent_date = today
-        chat_ids = await get_active_chat_ids()
-
-        for chat_id in chat_ids:
-            try:
-                result = await fetch_news_digest(chat_id)
-                if result is None:
-                    continue
-                text, image_urls = result
-                if len(image_urls) > 1 and len(text) <= 1024:
-                    media = [
-                        InputMediaPhoto(
-                            media=url,
-                            caption=text if i == 0 else None,
-                            parse_mode="HTML" if i == 0 else None,
-                        )
-                        for i, url in enumerate(image_urls[:10])
-                    ]
-                    await bot.send_media_group(chat_id=chat_id, media=media)
-                elif image_urls and len(text) <= 1024:
-                    await bot.send_photo(chat_id=chat_id, photo=image_urls[0], caption=text)
-                else:
-                    await bot.send_message(chat_id=chat_id, text=text)
-            except Exception:
-                logger.warning("Failed to send shop notification to %s", chat_id)

@@ -28,12 +28,11 @@ uv run python -c "from bot.handlers import router"
 
 All bot code lives in `bot/`:
 
-- `__main__.py` — entry point: creates Bot/Dispatcher, initializes DB, restores active sessions from SQLite into in-memory cache, broadcasts changelog news, starts background expiry task, runs polling
+- `__main__.py` — entry point: creates Bot/Dispatcher, initializes DB, restores active sessions from SQLite into in-memory cache, starts background tasks, runs polling
 - `handlers.py` — aiogram Router with `/fort` command handler and callback query handler for "go"/"pass" buttons; also contains `expire_sessions()` background coroutine
-- `db.py` — SQLite persistence via aiosqlite; defines `Session` dataclass and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call. Also manages `news_sent` table for tracking changelog broadcast per chat.
-- `changelog.py` — parses `CHANGELOG.md` for latest release, broadcasts news to active chats on startup; skips chats that already received the current version
+- `db.py` — SQLite persistence via aiosqlite; defines `Session` dataclass and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call
 - `messages.py` — text/keyboard builders; contains `_STYLES` list (12 randomized gathering themes) and constants (`SQUAD_SIZE=4`, `SESSION_TIMEOUT=3600`)
-- `news.py` — Fortnite news digest via fortnite-api.com (py-wrapper): BR news + item shop, per-chat deduplication
+- `status.py` — Fortnite server status monitoring via Epic Games status API; sends alerts to active chats on status changes
 
 ## Key design decisions
 
@@ -47,4 +46,3 @@ All bot code lives in `bot/`:
 
 - `BOT_TOKEN` (required) — Telegram bot token
 - `DB_PATH` (optional) — SQLite database file path, defaults to `bot.db`
-- `FORTNITE_API_KEY` (optional) — API key from fortnite-api.com for `/news` command
