@@ -279,7 +279,8 @@ _PIDORA_REPLIES = [
 @router.message(F.text.lower().in_({"да", "нет"}))
 async def reply_to_da_net(message: Message) -> None:
     await asyncio.sleep(2)
-    await message.answer(random.choice(_PIZDA_REPLIES))
+    replies = _PIZDA_REPLIES if message.text.lower() == "да" else _PIDORA_REPLIES
+    await message.answer(random.choice(replies))
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
