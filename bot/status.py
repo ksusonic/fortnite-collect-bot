@@ -15,8 +15,20 @@ POLL_INTERVAL = 180  # 3 minutes
 ALERT_START_HOUR = 18
 ALERT_END_HOUR = 0
 
-STATUS_API = "https://status.epicgames.com/api/v2/status.json"
+COMPONENTS_API = "https://status.epicgames.com/api/v2/components.json"
 INCIDENTS_API = "https://status.epicgames.com/api/v2/incidents/unresolved.json"
+
+FORTNITE_GROUP_NAME = "Fortnite"
+
+# Worst component status → indicator
+_STATUS_TO_INDICATOR = {
+    "operational": "none",
+    "under_maintenance": "minor",
+    "degraded_performance": "minor",
+    "partial_outage": "major",
+    "major_outage": "critical",
+}
+_INDICATOR_SEVERITY = {"none": 0, "minor": 1, "major": 2, "critical": 3}
 
 MSK = timezone(timedelta(hours=3))
 
@@ -26,25 +38,66 @@ _last_status: ServerStatus | None = None
 @dataclass
 class ServerStatus:
     indicator: str  # "none" | "minor" | "major" | "critical"
-    description: str  # "All Systems Operational"
+    description: str  # human-readable summary
     incidents: list[str] = field(default_factory=list)  # active incident names
+
+
+def _find_fortnite_group(components: list[dict]) -> dict | None:
+    for c in components:
+        if c.get("group") and c.get("name") == FORTNITE_GROUP_NAME:
+            return c
+    return None
+
+
+def _derive_indicator(statuses: list[str]) -> tuple[str, list[str]]:
+    worst = "none"
+    problems: list[str] = []
+    for name, status in statuses:
+        ind = _STATUS_TO_INDICATOR.get(status, "none")
+        if _INDICATOR_SEVERITY[ind] > _INDICATOR_SEVERITY[worst]:
+            worst = ind
+        if status != "operational":
+            problems.append(f"{name}: {status.replace('_', ' ')}")
+    return worst, problems
 
 
 async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
     try:
-        async with session.get(STATUS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+        async with session.get(COMPONENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             data = await resp.json()
-            status = data["status"]
+            components = data.get("components", [])
+
+        group = _find_fortnite_group(components)
+        if group is None:
+            logger.warning("Fortnite group not found in components API")
+            return None
+
+        child_ids = set(group.get("components", []))
+        fortnite_components = [c for c in components if c["id"] in child_ids]
+        statuses = [(c["name"], c["status"]) for c in fortnite_components]
+
+        indicator, problems = _derive_indicator(statuses)
+        description = (
+            "All Fortnite Systems Operational"
+            if indicator == "none"
+            else "; ".join(problems)
+        )
 
         incidents: list[str] = []
         async with session.get(INCIDENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             data = await resp.json()
+            group_id = group["id"]
             for inc in data.get("incidents", []):
-                incidents.append(inc["name"])
+                affected = inc.get("components", [])
+                if any(
+                    comp.get("group_id") == group_id or comp.get("id") in child_ids
+                    for comp in affected
+                ):
+                    incidents.append(inc["name"])
 
         return ServerStatus(
-            indicator=status["indicator"],
-            description=status["description"],
+            indicator=indicator,
+            description=description,
             incidents=incidents,
         )
     except Exception:
