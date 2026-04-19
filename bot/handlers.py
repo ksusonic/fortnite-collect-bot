@@ -83,19 +83,6 @@ def _display_name(user) -> str:
     return user.first_name or str(user.id)
 
 
-@router.message(Command("sticker"))
-async def cmd_sticker(message: Message) -> None:
-    try:
-        sticker_set = await message.bot.get_sticker_set("FortniteStick")
-        if sticker_set.stickers:
-            sticker = random.choice(sticker_set.stickers)
-            await message.answer_sticker(sticker.file_id)
-        else:
-            await message.answer("Стикерпак пуст.")
-    except TelegramBadRequest as e:
-        await message.answer(f"Ошибка: {e}")
-
-
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_fort(message: Message) -> None:
     user = message.from_user
@@ -283,8 +270,7 @@ _WELCOME_TEMPLATE = (
     "\U0001f3ae /fort — собрать отряд из 4 человек\n"
     "\U0001f504 /refort — пересоздать текущий сбор\n"
     "\U0001f5d1 /rm — отменить активный сбор\n"
-    "\U0001f4ca /stats — статистика чата\n"
-    "\U0001f3f7 /sticker — случайный Fortnite-стикер\n\n"
+    "\U0001f4ca /stats — статистика чата\n\n"
     "Ещё слежу за статусом серверов Epic и сообщу, когда всё упадёт \U0001f4a5"
 )
 
