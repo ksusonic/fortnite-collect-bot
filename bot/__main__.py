@@ -14,6 +14,9 @@ from bot.status import check_status_loop
 async def main() -> None:
     load_dotenv()
 
+    if not os.getenv("OPENAI_API_KEY"):
+        print("roast disabled: OPENAI_API_KEY not set")
+
     token = os.getenv("BOT_TOKEN")
     if not token:
         raise SystemExit("BOT_TOKEN is not set in .env")

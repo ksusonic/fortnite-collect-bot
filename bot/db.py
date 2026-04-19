@@ -47,7 +47,9 @@ async def init_db() -> None:
         )
         # Migration: add columns if upgrading from older schema
         try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN is_expired INTEGER NOT NULL DEFAULT 0")
+            await db.execute(
+                "ALTER TABLE sessions ADD COLUMN is_expired INTEGER NOT NULL DEFAULT 0"
+            )
         except Exception:
             pass
         try:
@@ -59,7 +61,9 @@ async def init_db() -> None:
         except Exception:
             pass
         try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN tag_line TEXT NOT NULL DEFAULT ''")
+            await db.execute(
+                "ALTER TABLE sessions ADD COLUMN tag_line TEXT NOT NULL DEFAULT ''"
+            )
         except Exception:
             pass
         await db.execute(
@@ -78,7 +82,9 @@ async def init_db() -> None:
         except Exception:
             pass
         try:
-            await db.execute("ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
+            await db.execute(
+                "ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0"
+            )
         except Exception:
             pass
         await db.execute(
@@ -109,21 +115,36 @@ async def save_session(session: Session) -> None:
                 session.created_at,
                 session.completed_at,
                 json.dumps(session.time_slots) if session.time_slots else None,
-                json.dumps({str(k): v for k, v in session.tagged_users.items()}) if session.tagged_users else None,
+                json.dumps({str(k): v for k, v in session.tagged_users.items()})
+                if session.tagged_users
+                else None,
             ),
         )
         await db.commit()
 
 
 async def save_response(
-    message_id: int, user_id: int, user_name: str, response: str, time_slot: str | None = None, is_bot: bool = False
+    message_id: int,
+    user_id: int,
+    user_name: str,
+    response: str,
+    time_slot: str | None = None,
+    is_bot: bool = False,
 ) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO responses
                (message_id, user_id, user_name, response, responded_at, time_slot, is_bot)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (message_id, user_id, user_name, response, time.time(), time_slot, int(is_bot)),
+            (
+                message_id,
+                user_id,
+                user_name,
+                response,
+                time.time(),
+                time_slot,
+                int(is_bot),
+            ),
         )
         await db.commit()
 
@@ -142,8 +163,10 @@ async def load_session(message_id: int) -> Session | None:
         time_slots = json.loads(raw_slots) if raw_slots else []
         raw_tag = row["tag_line"] if "tag_line" in row.keys() else None
         try:
-            tagged_users = {int(k): v for k, v in json.loads(raw_tag).items()} if raw_tag else {}
-        except (ValueError, AttributeError):
+            tagged_users = (
+                {int(k): v for k, v in json.loads(raw_tag).items()} if raw_tag else {}
+            )
+        except ValueError, AttributeError:
             tagged_users = {}
 
         session = Session(
@@ -201,12 +224,18 @@ class ChatStats:
     expired_sessions: int = 0
     active_sessions: int = 0
     top_players: list[tuple[str, int]] = field(default_factory=list)  # (name, go_count)
-    top_initiators: list[tuple[str, int]] = field(default_factory=list)  # (name, session_count)
-    top_passers: list[tuple[str, int]] = field(default_factory=list)  # (name, pass_count)
+    top_initiators: list[tuple[str, int]] = field(
+        default_factory=list
+    )  # (name, session_count)
+    top_passers: list[tuple[str, int]] = field(
+        default_factory=list
+    )  # (name, pass_count)
     avg_fill_seconds: float | None = None
     fastest_fill_seconds: float | None = None
     top_streaks: list[tuple[str, int]] = field(default_factory=list)  # (name, streak)
-    best_hours: list[tuple[int, int, float | None]] = field(default_factory=list)  # (hour, count, avg_fill_sec)
+    best_hours: list[tuple[int, int, float | None]] = field(
+        default_factory=list
+    )  # (hour, count, avg_fill_sec)
 
 
 async def get_chat_stats(chat_id: int) -> ChatStats:
@@ -232,7 +261,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
         )
         stats.expired_sessions = (await cur.fetchone())["cnt"]
 
-        stats.active_sessions = stats.total_sessions - stats.completed_sessions - stats.expired_sessions
+        stats.active_sessions = (
+            stats.total_sessions - stats.completed_sessions - stats.expired_sessions
+        )
 
         # Top players (most "go" responses in this chat)
         cur = await db.execute(
@@ -245,7 +276,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
                LIMIT 10""",
             (chat_id,),
         )
-        stats.top_players = [(row["user_name"], row["cnt"]) for row in await cur.fetchall()]
+        stats.top_players = [
+            (row["user_name"], row["cnt"]) for row in await cur.fetchall()
+        ]
 
         # Top initiators
         cur = await db.execute(
@@ -257,7 +290,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
                LIMIT 5""",
             (chat_id,),
         )
-        stats.top_initiators = [(row["initiator_name"], row["cnt"]) for row in await cur.fetchall()]
+        stats.top_initiators = [
+            (row["initiator_name"], row["cnt"]) for row in await cur.fetchall()
+        ]
 
         # Top passers
         cur = await db.execute(
@@ -270,7 +305,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
                LIMIT 5""",
             (chat_id,),
         )
-        stats.top_passers = [(row["user_name"], row["cnt"]) for row in await cur.fetchall()]
+        stats.top_passers = [
+            (row["user_name"], row["cnt"]) for row in await cur.fetchall()
+        ]
 
         # Average and fastest fill time (only completed, non-expired sessions with completed_at)
         cur = await db.execute(
@@ -309,7 +346,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
             active = dict.fromkeys(go_by_session[completed_ids[0]], 1)
             for mid in completed_ids[1:]:
                 go_users = go_by_session[mid]
-                active = {uid: cnt + 1 for uid, cnt in active.items() if uid in go_users}
+                active = {
+                    uid: cnt + 1 for uid, cnt in active.items() if uid in go_users
+                }
                 if not active:
                     break
 
@@ -330,7 +369,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
                LIMIT 2""",
             (chat_id,),
         )
-        stats.best_hours = [(row["hour"], row["cnt"], row["avg_fill"]) for row in await cur.fetchall()]
+        stats.best_hours = [
+            (row["hour"], row["cnt"], row["avg_fill"]) for row in await cur.fetchall()
+        ]
 
     return stats
 

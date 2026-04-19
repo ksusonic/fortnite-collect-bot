@@ -63,7 +63,9 @@ def _derive_indicator(statuses: list[str]) -> tuple[str, list[str]]:
 
 async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
     try:
-        async with session.get(COMPONENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+        async with session.get(
+            COMPONENTS_API, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
             data = await resp.json()
             components = data.get("components", [])
 
@@ -84,7 +86,9 @@ async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
         )
 
         incidents: list[str] = []
-        async with session.get(INCIDENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+        async with session.get(
+            INCIDENTS_API, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
             data = await resp.json()
             group_id = group["id"]
             for inc in data.get("incidents", []):
@@ -138,16 +142,14 @@ def build_alert(change_type: str, status: ServerStatus) -> str:
         return "\n".join(lines)
 
     # restored
-    return (
-        "<b>✅ Серверы Fortnite снова работают!</b>\n\n"
-        "Погнали катать! /fort"
-    )
+    return "<b>✅ Серверы Fortnite снова работают!</b>\n\nПогнали катать! /fort"
 
 
 async def check_status_loop(bot: object) -> None:
     global _last_status
 
     from aiogram import Bot
+
     assert isinstance(bot, Bot)
 
     await asyncio.sleep(10)  # let the bot start up
@@ -169,7 +171,9 @@ async def check_status_loop(bot: object) -> None:
                                 try:
                                     await bot.send_message(chat_id, text)
                                 except Exception:
-                                    logger.warning("Failed to send status alert to %s", chat_id)
+                                    logger.warning(
+                                        "Failed to send status alert to %s", chat_id
+                                    )
                         _last_status = status
                 else:
                     _last_status = None
