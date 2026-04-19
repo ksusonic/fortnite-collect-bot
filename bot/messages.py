@@ -135,18 +135,13 @@ def build_tag_line(tagged_users: dict[int, str]) -> str:
 def _player_list(players: dict[int, str]) -> str:
     if not players:
         return "  (пока пусто)"
-    return "\n".join(
-        f"  {i}. {_user_link(uid, name)}"
-        for i, (uid, name) in enumerate(players.items(), 1)
-    )
+    return "\n".join(f"  {i}. {_user_link(uid, name)}" for i, (uid, name) in enumerate(players.items(), 1))
 
 
 def _player_list_by_slots(session: Session) -> str:
     if not session.go_players:
         return "  (пока пусто)"
-    slots_grouped: dict[str, list[tuple[int, str]]] = {
-        s: [] for s in session.time_slots
-    }
+    slots_grouped: dict[str, list[tuple[int, str]]] = {s: [] for s in session.time_slots}
     for uid, name in session.go_players.items():
         slot = session.player_slots.get(uid)
         if slot and slot in slots_grouped:
@@ -170,11 +165,7 @@ def build_gather_text(session: Session) -> str:
     go_count = len(session.go_players)
     initiator = _user_link(session.initiator_id, session.initiator_name)
     has_slots = bool(session.time_slots)
-    player_text = (
-        _player_list_by_slots(session)
-        if has_slots
-        else _player_list(session.go_players)
-    )
+    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     if session.is_complete:
         header = f"{style.done_header}\n\n\U0001f3c6 Скуад готов к бою!\n\n"
@@ -188,9 +179,7 @@ def build_gather_text(session: Session) -> str:
     header = style.header.format(name=initiator)
 
     responded = set(session.go_players) | set(session.pass_players)
-    pending_tags = {
-        uid: name for uid, name in session.tagged_users.items() if uid not in responded
-    }
+    pending_tags = {uid: name for uid, name in session.tagged_users.items() if uid not in responded}
     tag_part = f"\n\n{build_tag_line(pending_tags)}" if pending_tags else ""
     return (
         f"{header}\n\n"
@@ -271,11 +260,7 @@ def build_expired_text(session: Session) -> str:
     initiator = _user_link(session.initiator_id, session.initiator_name)
     header = style.header.format(name=initiator)
     has_slots = bool(session.time_slots)
-    player_text = (
-        _player_list_by_slots(session)
-        if has_slots
-        else _player_list(session.go_players)
-    )
+    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     return (
         f"{header}\n\n"
@@ -291,11 +276,7 @@ def build_cancelled_text(session: Session) -> str:
     initiator = _user_link(session.initiator_id, session.initiator_name)
     header = style.header.format(name=initiator)
     has_slots = bool(session.time_slots)
-    player_text = (
-        _player_list_by_slots(session)
-        if has_slots
-        else _player_list(session.go_players)
-    )
+    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     return (
         f"{header}\n\n"
@@ -350,9 +331,7 @@ def build_stats_text(stats: ChatStats) -> str:
         lines.append("")
         lines.append(style.speed_header)
         lines.append(f"  Среднее: <b>{_format_duration(stats.avg_fill_seconds)}</b>")
-        lines.append(
-            f"  Рекорд: <b>{_format_duration(stats.fastest_fill_seconds)}</b> — {style.record_comment}"
-        )
+        lines.append(f"  Рекорд: <b>{_format_duration(stats.fastest_fill_seconds)}</b> — {style.record_comment}")
 
     # Top players
     if stats.top_players:
@@ -399,16 +378,12 @@ def build_stats_text(stats: ChatStats) -> str:
         lines.append(style.best_hours_header)
         for hour, cnt, avg_fill in stats.best_hours:
             avg_text = _format_duration(avg_fill) if avg_fill else "\u2014"
-            lines.append(
-                f"  {hour:02d}:00 \u2014 <b>{cnt}</b> сборов, среднее <b>{avg_text}</b>"
-            )
+            lines.append(f"  {hour:02d}:00 \u2014 <b>{cnt}</b> сборов, среднее <b>{avg_text}</b>")
 
     return "\n".join(lines)
 
 
-def build_keyboard(
-    go_count: int, time_slots: list[str] | None = None
-) -> InlineKeyboardMarkup:
+def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> InlineKeyboardMarkup:
     if time_slots:
         slot_buttons = [
             InlineKeyboardButton(

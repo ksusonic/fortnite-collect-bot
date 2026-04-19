@@ -10,3 +10,18 @@ dependencies = [
     "aiosqlite>=0.21",
     "openai>=1.60",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.10",
+    "pre-commit>=4.0",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"

@@ -63,9 +63,7 @@ def _derive_indicator(statuses: list[str]) -> tuple[str, list[str]]:
 
 async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
     try:
-        async with session.get(
-            COMPONENTS_API, timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
+        async with session.get(COMPONENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             data = await resp.json()
             components = data.get("components", [])
 
@@ -79,24 +77,15 @@ async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
         statuses = [(c["name"], c["status"]) for c in fortnite_components]
 
         indicator, problems = _derive_indicator(statuses)
-        description = (
-            "All Fortnite Systems Operational"
-            if indicator == "none"
-            else "; ".join(problems)
-        )
+        description = "All Fortnite Systems Operational" if indicator == "none" else "; ".join(problems)
 
         incidents: list[str] = []
-        async with session.get(
-            INCIDENTS_API, timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
+        async with session.get(INCIDENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             data = await resp.json()
             group_id = group["id"]
             for inc in data.get("incidents", []):
                 affected = inc.get("components", [])
-                if any(
-                    comp.get("group_id") == group_id or comp.get("id") in child_ids
-                    for comp in affected
-                ):
+                if any(comp.get("group_id") == group_id or comp.get("id") in child_ids for comp in affected):
                     incidents.append(inc["name"])
 
         return ServerStatus(
@@ -171,9 +160,7 @@ async def check_status_loop(bot: object) -> None:
                                 try:
                                     await bot.send_message(chat_id, text)
                                 except Exception:
-                                    logger.warning(
-                                        "Failed to send status alert to %s", chat_id
-                                    )
+                                    logger.warning("Failed to send status alert to %s", chat_id)
                         _last_status = status
                 else:
                     _last_status = None

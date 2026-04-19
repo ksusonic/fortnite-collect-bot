@@ -34,12 +34,11 @@ from bot.db import (
     sessions,
     set_feature,
 )
-from bot.roast import generate_roast, remember_message, should_roast
 from bot.messages import (
     MSK,
     PLAY_DEADLINE_HOUR,
-    SQUAD_SIZE,
     SESSION_TIMEOUT,
+    SQUAD_SIZE,
     build_cancelled_text,
     build_expired_text,
     build_gather_text,
@@ -48,6 +47,7 @@ from bot.messages import (
     generate_time_slots,
     random_style,
 )
+from bot.roast import generate_roast, remember_message, should_roast
 
 logger = logging.getLogger(__name__)
 
@@ -69,19 +69,13 @@ class CommandReactionMiddleware(BaseMiddleware):
                 try:
                     bot: Bot = data["bot"]
                     sticker_set = await bot.get_sticker_set(REACTION_EMOJI_PACK)
-                    _custom_emoji_ids.extend(
-                        s.custom_emoji_id
-                        for s in sticker_set.stickers
-                        if s.custom_emoji_id
-                    )
+                    _custom_emoji_ids.extend(s.custom_emoji_id for s in sticker_set.stickers if s.custom_emoji_id)
                 except Exception:
                     logger.debug("Failed to load emoji pack %s", REACTION_EMOJI_PACK)
             if _custom_emoji_ids:
                 try:
                     emoji_id = random.choice(_custom_emoji_ids)
-                    await event.react(
-                        [ReactionTypeCustomEmoji(custom_emoji_id=emoji_id)]
-                    )
+                    await event.react([ReactionTypeCustomEmoji(custom_emoji_id=emoji_id)])
                 except TelegramBadRequest:
                     pass
         return await handler(event, data)
@@ -96,30 +90,13 @@ def _display_name(user) -> str:
     return user.first_name or str(user.id)
 
 
-@router.message(Command("sticker"))
-async def cmd_sticker(message: Message) -> None:
-    try:
-        sticker_set = await message.bot.get_sticker_set("FortniteStick")
-        if sticker_set.stickers:
-            sticker = random.choice(sticker_set.stickers)
-            await message.answer_sticker(sticker.file_id)
-        else:
-            await message.answer("Стикерпак пуст.")
-    except TelegramBadRequest as e:
-        await message.answer(f"Ошибка: {e}")
-
-
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_fort(message: Message) -> None:
     user = message.from_user
     if user is None:
         return
 
-    has_active = any(
-        s
-        for s in sessions.values()
-        if s.chat_id == message.chat.id and not s.is_complete
-    )
+    has_active = any(s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete)
     if has_active:
         try:
             await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
@@ -162,9 +139,7 @@ async def cmd_fort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(
-    Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
-)
+@router.message(Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_refort(message: Message) -> None:
     user = message.from_user
     if user is None:
@@ -172,11 +147,7 @@ async def cmd_refort(message: Message) -> None:
 
     # Отменяем активный сбор, если есть
     active_session = next(
-        (
-            s
-            for s in sessions.values()
-            if s.chat_id == message.chat.id and not s.is_complete
-        ),
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
         None,
     )
     if active_session is not None:
@@ -228,9 +199,7 @@ async def cmd_refort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(
-    Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
-)
+@router.message(Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_stats(message: Message) -> None:
     stats = await get_chat_stats(message.chat.id)
     await message.answer(build_stats_text(stats))
@@ -241,9 +210,7 @@ async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(
-    Command("roast"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
-)
+@router.message(Command("roast"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_roast(message: Message, command: CommandObject) -> None:
     arg = (command.args or "").strip().lower()
     if arg == "on":
@@ -259,11 +226,7 @@ async def cmd_roast(message: Message, command: CommandObject) -> None:
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
     active_session = next(
-        (
-            s
-            for s in sessions.values()
-            if s.chat_id == message.chat.id and not s.is_complete
-        ),
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
         None,
     )
     if active_session is not None:
@@ -305,6 +268,35 @@ _PIDORA_REPLIES = [
 ]
 
 
+_WELCOME_TEMPLATE = (
+    "\U0001f91d Вечер в хату, {mention}!\n\n"
+    "Я — бот для сбора скуада в Fortnite. Мои команды:\n"
+    "\U0001f3ae /fort — собрать отряд из 4 человек\n"
+    "\U0001f504 /refort — пересоздать текущий сбор\n"
+    "\U0001f5d1 /rm — отменить активный сбор\n"
+    "\U0001f4ca /stats — статистика чата\n\n"
+    "Ещё слежу за статусом серверов Epic и сообщу, когда всё упадёт \U0001f4a5"
+)
+
+
+@router.message(F.new_chat_members)
+async def greet_new_members(message: Message) -> None:
+    if not message.new_chat_members:
+        return
+    for member in message.new_chat_members:
+        if member.is_bot and member.id != message.bot.id:
+            continue
+        if member.id == message.bot.id:
+            mention = "ребзя"
+        else:
+            name = _display_name(member)
+            mention = f'<a href="tg://user?id={member.id}">{html.escape(name)}</a>'
+        try:
+            await message.answer(_WELCOME_TEMPLATE.format(mention=mention))
+        except TelegramBadRequest:
+            pass
+
+
 @router.message(F.text.lower().in_({"да", "нет"}))
 async def reply_to_da_net(message: Message) -> None:
     await asyncio.sleep(2)
@@ -312,9 +304,7 @@ async def reply_to_da_net(message: Message) -> None:
     await message.answer(random.choice(replies))
 
 
-@router.message(
-    F.chat.type.in_({"group", "supergroup"}) & F.text & ~F.text.startswith("/")
-)
+@router.message(F.chat.type.in_({"group", "supergroup"}) & F.text & ~F.text.startswith("/"))
 async def maybe_roast(message: Message) -> None:
     if not message.from_user or message.from_user.is_bot:
         return
@@ -411,9 +401,7 @@ async def on_callback(callback: CallbackQuery) -> None:
             pass
 
     text = build_gather_text(session)
-    keyboard = build_keyboard(
-        len(session.go_players), time_slots=session.time_slots or None
-    )
+    keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)
 
     try:
         await callback.message.edit_text(text, reply_markup=keyboard)
@@ -433,8 +421,7 @@ async def expire_sessions(bot: Bot) -> None:
         expired = [
             s
             for s in sessions.values()
-            if not s.is_complete
-            and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
+            if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
         ]
         for session in expired:
             session.is_complete = True

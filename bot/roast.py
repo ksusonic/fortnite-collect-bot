@@ -42,9 +42,7 @@ def should_roast(chat_id: int) -> bool:
     return random.random() < ROAST_PROBABILITY
 
 
-async def generate_roast(
-    chat_id: int, target_name: str, target_text: str
-) -> str | None:
+async def generate_roast(chat_id: int, target_name: str, target_text: str) -> str | None:
     global _client
     if not os.getenv("OPENAI_API_KEY"):
         return None
@@ -62,8 +60,7 @@ async def generate_roast(
     context_lines = "\n".join(f"{name}: {msg}" for name, msg in history)
     if context_lines:
         user_content = (
-            f"Недавние сообщения в чате:\n{context_lines}\n\n"
-            f"Ответь на сообщение от {target_name}: {target_text}"
+            f"Недавние сообщения в чате:\n{context_lines}\n\nОтветь на сообщение от {target_name}: {target_text}"
         )
     else:
         user_content = f"Ответь на сообщение от {target_name}: {target_text}"
