@@ -117,14 +117,27 @@ async def save_session(session: Session) -> None:
 
 
 async def save_response(
-    message_id: int, user_id: int, user_name: str, response: str, time_slot: str | None = None, is_bot: bool = False
+    message_id: int,
+    user_id: int,
+    user_name: str,
+    response: str,
+    time_slot: str | None = None,
+    is_bot: bool = False,
 ) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO responses
                (message_id, user_id, user_name, response, responded_at, time_slot, is_bot)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (message_id, user_id, user_name, response, time.time(), time_slot, int(is_bot)),
+            (
+                message_id,
+                user_id,
+                user_name,
+                response,
+                time.time(),
+                time_slot,
+                int(is_bot),
+            ),
         )
         await db.commit()
 

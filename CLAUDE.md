@@ -22,7 +22,23 @@ docker compose up -d
 
 # Check syntax/imports
 uv run python -c "from bot.handlers import router"
+
+# Lint & format
+uv run ruff check --fix
+uv run ruff format
+
+# Install pre-commit hooks (one-time)
+uv run pre-commit install
+
+# Run pre-commit on all files
+uv run pre-commit run --all-files
 ```
+
+## Linting & CI
+
+- **Pre-commit** (`.pre-commit-config.yaml`): runs `ruff-check --fix` and `ruff-format` on staged files. Install hooks with `uv run pre-commit install` after `uv sync`.
+- **CI** (`.github/workflows/lint.yml`): runs `ruff check` and `ruff format --check` on every PR via `astral-sh/ruff-action@v3`. Both must pass to merge.
+- **Ruff config** (`pyproject.toml`): line length 120, rules `E,F,W,I,B,UP`, double quotes.
 
 ## Architecture
 

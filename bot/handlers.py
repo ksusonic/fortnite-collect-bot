@@ -12,19 +12,27 @@ from typing import Any
 from aiogram import BaseMiddleware, Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, ReactionTypeCustomEmoji, ReactionTypeEmoji, TelegramObject
+from aiogram.filters import Command, CommandObject
+from aiogram.types import (
+    CallbackQuery,
+    Message,
+    ReactionTypeCustomEmoji,
+    ReactionTypeEmoji,
+    TelegramObject,
+)
 
 from bot.db import (
     Session,
     get_chat_participants,
     get_chat_stats,
+    is_feature_enabled,
     load_session,
     mark_complete,
     mark_expired,
     save_response,
     save_session,
     sessions,
+    set_feature,
 )
 from bot.messages import (
     MSK,
@@ -39,6 +47,7 @@ from bot.messages import (
     generate_time_slots,
     random_style,
 )
+from bot.roast import generate_roast, remember_message, should_roast
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +210,19 @@ async def cmd_stats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
+@router.message(Command("roast"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_roast(message: Message, command: CommandObject) -> None:
+    arg = (command.args or "").strip().lower()
+    if arg == "on":
+        await set_feature(message.chat.id, "roast", True)
+        await message.answer("Режим отборной брани включён. Готовьте жопы.")
+    elif arg == "off":
+        await set_feature(message.chat.id, "roast", False)
+        await message.answer("Ладно, хватит. Завязываю.")
+    else:
+        await message.answer("Использование: /roast on или /roast off")
+
+
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
     active_session = next(
@@ -280,6 +302,23 @@ async def reply_to_da_net(message: Message) -> None:
     await asyncio.sleep(2)
     replies = _PIZDA_REPLIES if message.text.lower() == "да" else _PIDORA_REPLIES
     await message.answer(random.choice(replies))
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}) & F.text & ~F.text.startswith("/"))
+async def maybe_roast(message: Message) -> None:
+    if not message.from_user or message.from_user.is_bot:
+        return
+    chat_id = message.chat.id
+    user_name = message.from_user.full_name or message.from_user.first_name or "Аноним"
+    text = message.text or ""
+    remember_message(chat_id, user_name, text)
+    if not await is_feature_enabled(chat_id, "roast"):
+        return
+    if not should_roast(chat_id):
+        return
+    reply = await generate_roast(chat_id, user_name, text)
+    if reply:
+        await message.reply(html.escape(reply))
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
