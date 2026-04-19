@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import random
 import time
@@ -274,6 +275,36 @@ _PIDORA_REPLIES = [
     "Это всё, на что тебя хватает?",
     "Сам придумал или подсказали?",
 ]
+
+
+_WELCOME_TEMPLATE = (
+    "\U0001f91d Вечер в хату, {mention}!\n\n"
+    "Я — бот для сбора скуада в Fortnite. Мои команды:\n"
+    "\U0001f3ae /fort — собрать отряд из 4 человек\n"
+    "\U0001f504 /refort — пересоздать текущий сбор\n"
+    "\U0001f5d1 /rm — отменить активный сбор\n"
+    "\U0001f4ca /stats — статистика чата\n"
+    "\U0001f3f7 /sticker — случайный Fortnite-стикер\n\n"
+    "Ещё слежу за статусом серверов Epic и сообщу, когда всё упадёт \U0001f4a5"
+)
+
+
+@router.message(F.new_chat_members)
+async def greet_new_members(message: Message) -> None:
+    if not message.new_chat_members:
+        return
+    for member in message.new_chat_members:
+        if member.is_bot and member.id != message.bot.id:
+            continue
+        if member.id == message.bot.id:
+            mention = "ребзя"
+        else:
+            name = _display_name(member)
+            mention = f'<a href="tg://user?id={member.id}">{html.escape(name)}</a>'
+        try:
+            await message.answer(_WELCOME_TEMPLATE.format(mention=mention))
+        except TelegramBadRequest:
+            pass
 
 
 @router.message(F.text.lower().in_({"да", "нет"}))
