@@ -96,7 +96,8 @@ async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, style, created_at, completed_at, time_slots, tag_line)
+               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired,
+                style, created_at, completed_at, time_slots, tag_line)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
@@ -131,9 +132,7 @@ async def save_response(
 async def load_session(message_id: int) -> Session | None:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM sessions WHERE message_id = ?", (message_id,)
-        )
+        cursor = await db.execute("SELECT * FROM sessions WHERE message_id = ?", (message_id,))
         row = await cursor.fetchone()
         if row is None:
             return None
@@ -143,7 +142,7 @@ async def load_session(message_id: int) -> Session | None:
         raw_tag = row["tag_line"] if "tag_line" in row.keys() else None
         try:
             tagged_users = {int(k): v for k, v in json.loads(raw_tag).items()} if raw_tag else {}
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             tagged_users = {}
 
         session = Session(
@@ -215,9 +214,7 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
         db.row_factory = aiosqlite.Row
 
         # Session counts
-        cur = await db.execute(
-            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ?", (chat_id,)
-        )
+        cur = await db.execute("SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ?", (chat_id,))
         stats.total_sessions = (await cur.fetchone())["cnt"]
 
         cur = await db.execute(
@@ -355,9 +352,7 @@ async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
 async def get_active_chat_ids(days: int = 14) -> list[int]:
     cutoff = time.time() - days * 86400
     async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "SELECT DISTINCT chat_id FROM sessions WHERE created_at > ?", (cutoff,)
-        )
+        cursor = await db.execute("SELECT DISTINCT chat_id FROM sessions WHERE created_at > ?", (cutoff,))
         return [row[0] for row in await cursor.fetchall()]
 
 
@@ -384,9 +379,7 @@ async def load_active_sessions() -> list[Session]:
     result: list[Session] = []
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT message_id FROM sessions WHERE is_complete = 0"
-        )
+        cursor = await db.execute("SELECT message_id FROM sessions WHERE is_complete = 0")
         rows = await cursor.fetchall()
 
     for row in rows:
