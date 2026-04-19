@@ -29,8 +29,8 @@ from bot.db import (
 from bot.messages import (
     MSK,
     PLAY_DEADLINE_HOUR,
-    SQUAD_SIZE,
     SESSION_TIMEOUT,
+    SQUAD_SIZE,
     build_cancelled_text,
     build_expired_text,
     build_gather_text,
@@ -60,9 +60,7 @@ class CommandReactionMiddleware(BaseMiddleware):
                 try:
                     bot: Bot = data["bot"]
                     sticker_set = await bot.get_sticker_set(REACTION_EMOJI_PACK)
-                    _custom_emoji_ids.extend(
-                        s.custom_emoji_id for s in sticker_set.stickers if s.custom_emoji_id
-                    )
+                    _custom_emoji_ids.extend(s.custom_emoji_id for s in sticker_set.stickers if s.custom_emoji_id)
                 except Exception:
                     logger.debug("Failed to load emoji pack %s", REACTION_EMOJI_PACK)
             if _custom_emoji_ids:
@@ -89,11 +87,7 @@ async def cmd_fort(message: Message) -> None:
     if user is None:
         return
 
-    has_active = any(
-        s
-        for s in sessions.values()
-        if s.chat_id == message.chat.id and not s.is_complete
-    )
+    has_active = any(s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete)
     if has_active:
         try:
             await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
@@ -136,9 +130,7 @@ async def cmd_fort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(
-    Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
-)
+@router.message(Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_refort(message: Message) -> None:
     user = message.from_user
     if user is None:
@@ -146,11 +138,7 @@ async def cmd_refort(message: Message) -> None:
 
     # Отменяем активный сбор, если есть
     active_session = next(
-        (
-            s
-            for s in sessions.values()
-            if s.chat_id == message.chat.id and not s.is_complete
-        ),
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
         None,
     )
     if active_session is not None:
@@ -202,9 +190,7 @@ async def cmd_refort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(
-    Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
-)
+@router.message(Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_stats(message: Message) -> None:
     stats = await get_chat_stats(message.chat.id)
     await message.answer(build_stats_text(stats))
@@ -218,11 +204,7 @@ async def cmd_stats_private(message: Message) -> None:
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
     active_session = next(
-        (
-            s
-            for s in sessions.values()
-            if s.chat_id == message.chat.id and not s.is_complete
-        ),
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
         None,
     )
     if active_session is not None:
@@ -380,9 +362,7 @@ async def on_callback(callback: CallbackQuery) -> None:
             pass
 
     text = build_gather_text(session)
-    keyboard = build_keyboard(
-        len(session.go_players), time_slots=session.time_slots or None
-    )
+    keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)
 
     try:
         await callback.message.edit_text(text, reply_markup=keyboard)
@@ -402,8 +382,7 @@ async def expire_sessions(bot: Bot) -> None:
         expired = [
             s
             for s in sessions.values()
-            if not s.is_complete
-            and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
+            if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
         ]
         for session in expired:
             session.is_complete = True
@@ -418,5 +397,3 @@ async def expire_sessions(bot: Bot) -> None:
             except TelegramBadRequest:
                 pass
             sessions.pop(session.message_id, None)
-
-

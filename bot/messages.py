@@ -135,10 +135,7 @@ def build_tag_line(tagged_users: dict[int, str]) -> str:
 def _player_list(players: dict[int, str]) -> str:
     if not players:
         return "  (пока пусто)"
-    return "\n".join(
-        f"  {i}. {_user_link(uid, name)}"
-        for i, (uid, name) in enumerate(players.items(), 1)
-    )
+    return "\n".join(f"  {i}. {_user_link(uid, name)}" for i, (uid, name) in enumerate(players.items(), 1))
 
 
 def _player_list_by_slots(session: Session) -> str:
@@ -171,10 +168,7 @@ def build_gather_text(session: Session) -> str:
     player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     if session.is_complete:
-        header = (
-            f"{style.done_header}\n\n"
-            f"\U0001f3c6 Скуад готов к бою!\n\n"
-        )
+        header = f"{style.done_header}\n\n\U0001f3c6 Скуад готов к бою!\n\n"
         return (
             f"{header}"
             f"\U0001f44a Состав ({go_count}):\n{player_text}\n\n"

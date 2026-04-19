@@ -77,11 +77,7 @@ async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
         statuses = [(c["name"], c["status"]) for c in fortnite_components]
 
         indicator, problems = _derive_indicator(statuses)
-        description = (
-            "All Fortnite Systems Operational"
-            if indicator == "none"
-            else "; ".join(problems)
-        )
+        description = "All Fortnite Systems Operational" if indicator == "none" else "; ".join(problems)
 
         incidents: list[str] = []
         async with session.get(INCIDENTS_API, timeout=aiohttp.ClientTimeout(total=15)) as resp:
@@ -89,10 +85,7 @@ async def fetch_status(session: aiohttp.ClientSession) -> ServerStatus | None:
             group_id = group["id"]
             for inc in data.get("incidents", []):
                 affected = inc.get("components", [])
-                if any(
-                    comp.get("group_id") == group_id or comp.get("id") in child_ids
-                    for comp in affected
-                ):
+                if any(comp.get("group_id") == group_id or comp.get("id") in child_ids for comp in affected):
                     incidents.append(inc["name"])
 
         return ServerStatus(
@@ -138,16 +131,14 @@ def build_alert(change_type: str, status: ServerStatus) -> str:
         return "\n".join(lines)
 
     # restored
-    return (
-        "<b>✅ Серверы Fortnite снова работают!</b>\n\n"
-        "Погнали катать! /fort"
-    )
+    return "<b>✅ Серверы Fortnite снова работают!</b>\n\nПогнали катать! /fort"
 
 
 async def check_status_loop(bot: object) -> None:
     global _last_status
 
     from aiogram import Bot
+
     assert isinstance(bot, Bot)
 
     await asyncio.sleep(10)  # let the bot start up
