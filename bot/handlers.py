@@ -325,6 +325,22 @@ async def reply_to_da_net(message: Message) -> None:
     await message.answer(random.choice(replies))
 
 
+async def _is_bot_mentioned(message: Message) -> bool:
+    if not message.entities:
+        return False
+    me = await message.bot.get_me()
+    text = message.text or ""
+    needle = f"@{me.username.lower()}" if me.username else None
+    for entity in message.entities:
+        if entity.type == "mention" and needle:
+            fragment = text[entity.offset : entity.offset + entity.length].lower()
+            if fragment == needle:
+                return True
+        elif entity.type == "text_mention" and entity.user and entity.user.id == me.id:
+            return True
+    return False
+
+
 @router.message(F.chat.type.in_({"group", "supergroup"}) & F.text & ~F.text.startswith("/"))
 async def maybe_roast(message: Message) -> None:
     if not message.from_user or message.from_user.is_bot:
@@ -337,12 +353,14 @@ async def maybe_roast(message: Message) -> None:
         logger.debug("roast skip: feature disabled for chat %s", chat_id)
         return
     reply_to = message.reply_to_message
-    forced = (
+    forced_by_reply = (
         reply_to is not None
         and reply_to.from_user is not None
         and reply_to.from_user.id == message.bot.id
         and is_roast_message(chat_id, reply_to.message_id)
     )
+    forced_by_mention = await _is_bot_mentioned(message)
+    forced = forced_by_reply or forced_by_mention
     custom_prob = await get_feature_value(chat_id, "roast")
     if not forced and not should_roast(chat_id, probability=custom_prob):
         return
