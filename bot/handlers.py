@@ -25,6 +25,7 @@ from bot.db import (
     Session,
     get_chat_participants,
     get_chat_stats,
+    get_feature_value,
     is_feature_enabled,
     load_session,
     mark_complete,
@@ -48,6 +49,7 @@ from bot.messages import (
     random_style,
 )
 from bot.roast import (
+    ROAST_PROBABILITY,
     generate_roast,
     is_roast_message,
     remember_message,
@@ -218,15 +220,28 @@ async def cmd_stats_private(message: Message) -> None:
 
 @router.message(Command("roast"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_roast(message: Message, command: CommandObject) -> None:
-    arg = (command.args or "").strip().lower()
-    if arg == "on":
-        await set_feature(message.chat.id, "roast", True)
-        await message.answer("Режим отборной брани включён. Готовьте жопы.")
-    elif arg == "off":
+    parts = (command.args or "").strip().lower().split()
+    action = parts[0] if parts else ""
+    if action == "off":
         await set_feature(message.chat.id, "roast", False)
         await message.answer("Ладно, хватит. Завязываю.")
-    else:
-        await message.answer("Использование: /roast on или /roast off")
+        return
+    if action == "on":
+        prob: float | None = None
+        if len(parts) >= 2:
+            try:
+                prob = float(parts[1])
+            except ValueError:
+                await message.answer("Вероятность должна быть числом от 0 до 1, например: /roast on 0.15")
+                return
+            if not 0.0 < prob <= 1.0:
+                await message.answer("Вероятность должна быть в диапазоне (0, 1], например: /roast on 0.15")
+                return
+        await set_feature(message.chat.id, "roast", True, value=prob)
+        shown = f"{prob:.2f}" if prob is not None else f"{ROAST_PROBABILITY:.2f} (по умолчанию)"
+        await message.answer(f"Режим отборной брани включён. Вероятность: {shown}")
+        return
+    await message.answer("Использование: /roast on [вероятность 0-1] или /roast off")
 
 
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
@@ -328,7 +343,8 @@ async def maybe_roast(message: Message) -> None:
         and reply_to.from_user.id == message.bot.id
         and is_roast_message(chat_id, reply_to.message_id)
     )
-    if not forced and not should_roast(chat_id):
+    custom_prob = await get_feature_value(chat_id, "roast")
+    if not forced and not should_roast(chat_id, probability=custom_prob):
         return
     logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
     reply = await generate_roast(chat_id, user_name, text)
