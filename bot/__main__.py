@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from aiogram import Bot, Dispatcher
@@ -10,12 +11,19 @@ from bot.db import init_db, load_active_sessions, sessions
 from bot.handlers import expire_sessions, router
 from bot.status import check_status_loop
 
+logger = logging.getLogger(__name__)
+
 
 async def main() -> None:
     load_dotenv()
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     if not os.getenv("OPENAI_API_KEY"):
-        print("roast disabled: OPENAI_API_KEY not set")
+        logger.warning("roast disabled: OPENAI_API_KEY not set")
 
     token = os.getenv("BOT_TOKEN")
     if not token:

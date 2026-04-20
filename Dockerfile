@@ -1,5 +1,7 @@
 FROM python:3.14-slim
 
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
