@@ -313,12 +313,15 @@ async def maybe_roast(message: Message) -> None:
     text = message.text or ""
     remember_message(chat_id, user_name, text)
     if not await is_feature_enabled(chat_id, "roast"):
+        logger.debug("roast skip: feature disabled for chat %s", chat_id)
         return
     if not should_roast(chat_id):
         return
+    logger.info("roast attempt: chat=%s user=%s", chat_id, user_name)
     reply = await generate_roast(chat_id, user_name, text)
     if reply:
         await message.reply(html.escape(reply))
+        logger.info("roast sent: chat=%s", chat_id)
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
