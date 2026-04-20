@@ -17,15 +17,31 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     load_dotenv()
 
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    from bot.db import DB_PATH
+    from bot.roast import MODEL, ROAST_COOLDOWN_SEC, ROAST_PROBABILITY
+
+    token = os.getenv("BOT_TOKEN")
+    logger.info(
+        "startup config: log_level=%s db_path=%s bot_token=%s openai_api_key=%s "
+        "roast_probability=%.3f roast_cooldown=%ss roast_model=%s",
+        log_level,
+        DB_PATH,
+        "set" if token else "missing",
+        "set" if os.getenv("OPENAI_API_KEY") else "missing",
+        ROAST_PROBABILITY,
+        ROAST_COOLDOWN_SEC,
+        MODEL,
     )
 
     if not os.getenv("OPENAI_API_KEY"):
         logger.warning("roast disabled: OPENAI_API_KEY not set")
 
-    token = os.getenv("BOT_TOKEN")
     if not token:
         raise SystemExit("BOT_TOKEN is not set in .env")
 

@@ -14,11 +14,11 @@ _LAST_ROAST: dict[int, float] = {}
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(3)
 _client = None
 
-ROAST_PROBABILITY = 0.05
-ROAST_COOLDOWN_SEC = 600
+ROAST_PROBABILITY = float(os.getenv("ROAST_PROBABILITY", "0.05"))
+ROAST_COOLDOWN_SEC = int(os.getenv("ROAST_COOLDOWN_SEC", "600"))
 HISTORY_SIZE = 5
 REQUEST_TIMEOUT = 15.0
-MODEL = "gpt-4o-mini"
+MODEL = os.getenv("ROAST_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = (
     "Ты — бот в русскоязычной геймерской группе Fortnite. Твоя задача — отвечать на сообщения"
@@ -37,14 +37,21 @@ def remember_message(chat_id: int, user_name: str, text: str) -> None:
 
 def should_roast(chat_id: int) -> bool:
     last = _LAST_ROAST.get(chat_id, 0.0)
-    if time.time() - last < ROAST_COOLDOWN_SEC:
+    elapsed = time.time() - last
+    if elapsed < ROAST_COOLDOWN_SEC:
+        logger.debug("roast skip: cooldown, %.1fs remaining", ROAST_COOLDOWN_SEC - elapsed)
         return False
-    return random.random() < ROAST_PROBABILITY
+    roll = random.random()
+    if roll >= ROAST_PROBABILITY:
+        logger.debug("roast skip: probability roll=%.3f threshold=%.3f", roll, ROAST_PROBABILITY)
+        return False
+    return True
 
 
 async def generate_roast(chat_id: int, target_name: str, target_text: str) -> str | None:
     global _client
     if not os.getenv("OPENAI_API_KEY"):
+        logger.warning("roast skip: OPENAI_API_KEY not set")
         return None
 
     if _client is None:
@@ -66,6 +73,7 @@ async def generate_roast(chat_id: int, target_name: str, target_text: str) -> st
         user_content = f"Ответь на сообщение от {target_name}: {target_text}"
 
     try:
+        logger.info("roast call: chat=%s model=%s target=%s", chat_id, MODEL, target_name)
         async with _GLOBAL_SEMAPHORE:
             response = await _client.chat.completions.create(
                 model=MODEL,
@@ -80,7 +88,9 @@ async def generate_roast(chat_id: int, target_name: str, target_text: str) -> st
         reply = response.choices[0].message.content
         if reply:
             _LAST_ROAST[chat_id] = time.time()
+            logger.info("roast ok: chat=%s len=%d", chat_id, len(reply))
             return reply.strip()
+        logger.warning("roast empty response: chat=%s", chat_id)
         return None
     except Exception:
         logger.warning("roast request failed", exc_info=True)
