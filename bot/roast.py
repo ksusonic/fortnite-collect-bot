@@ -11,12 +11,14 @@ logger = logging.getLogger(__name__)
 
 _RECENT: dict[int, deque] = {}
 _LAST_ROAST: dict[int, float] = {}
+_ROAST_MESSAGE_IDS: dict[int, deque[int]] = {}
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(3)
 _client = None
 
 ROAST_PROBABILITY = float(os.getenv("ROAST_PROBABILITY", "0.05"))
 ROAST_COOLDOWN_SEC = int(os.getenv("ROAST_COOLDOWN_SEC", "600"))
 HISTORY_SIZE = 5
+ROAST_TRACK_SIZE = 100
 REQUEST_TIMEOUT = 15.0
 MODEL = os.getenv("ROAST_MODEL", "gpt-4o-mini")
 
@@ -33,6 +35,16 @@ def remember_message(chat_id: int, user_name: str, text: str) -> None:
     if chat_id not in _RECENT:
         _RECENT[chat_id] = deque(maxlen=HISTORY_SIZE)
     _RECENT[chat_id].append((user_name, text))
+
+
+def remember_roast_message(chat_id: int, message_id: int) -> None:
+    if chat_id not in _ROAST_MESSAGE_IDS:
+        _ROAST_MESSAGE_IDS[chat_id] = deque(maxlen=ROAST_TRACK_SIZE)
+    _ROAST_MESSAGE_IDS[chat_id].append(message_id)
+
+
+def is_roast_message(chat_id: int, message_id: int) -> bool:
+    return message_id in _ROAST_MESSAGE_IDS.get(chat_id, ())
 
 
 def should_roast(chat_id: int) -> bool:

@@ -47,7 +47,13 @@ from bot.messages import (
     generate_time_slots,
     random_style,
 )
-from bot.roast import generate_roast, remember_message, should_roast
+from bot.roast import (
+    generate_roast,
+    is_roast_message,
+    remember_message,
+    remember_roast_message,
+    should_roast,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -315,13 +321,21 @@ async def maybe_roast(message: Message) -> None:
     if not await is_feature_enabled(chat_id, "roast"):
         logger.debug("roast skip: feature disabled for chat %s", chat_id)
         return
-    if not should_roast(chat_id):
+    reply_to = message.reply_to_message
+    forced = (
+        reply_to is not None
+        and reply_to.from_user is not None
+        and reply_to.from_user.id == message.bot.id
+        and is_roast_message(chat_id, reply_to.message_id)
+    )
+    if not forced and not should_roast(chat_id):
         return
-    logger.info("roast attempt: chat=%s user=%s", chat_id, user_name)
+    logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
     reply = await generate_roast(chat_id, user_name, text)
     if reply:
-        await message.reply(html.escape(reply))
-        logger.info("roast sent: chat=%s", chat_id)
+        sent = await message.reply(html.escape(reply))
+        remember_roast_message(chat_id, sent.message_id)
+        logger.info("roast sent: chat=%s forced=%s", chat_id, forced)
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))
