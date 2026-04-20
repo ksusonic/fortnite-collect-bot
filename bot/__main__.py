@@ -22,15 +22,18 @@ async def main() -> None:
         level=log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    aiogram_level = os.getenv("AIOGRAM_LOG_LEVEL", "WARNING").upper()
+    logging.getLogger("aiogram").setLevel(aiogram_level)
 
     from bot.db import DB_PATH
     from bot.roast import MODEL, ROAST_COOLDOWN_SEC, ROAST_PROBABILITY
 
     token = os.getenv("BOT_TOKEN")
     logger.info(
-        "startup config: log_level=%s db_path=%s bot_token=%s openai_api_key=%s "
-        "roast_probability=%.3f roast_cooldown=%ss roast_model=%s",
+        "startup config: log_level=%s aiogram_log_level=%s db_path=%s bot_token=%s "
+        "openai_api_key=%s roast_probability=%.3f roast_cooldown=%ss roast_model=%s",
         log_level,
+        aiogram_level,
         DB_PATH,
         "set" if token else "missing",
         "set" if os.getenv("OPENAI_API_KEY") else "missing",
