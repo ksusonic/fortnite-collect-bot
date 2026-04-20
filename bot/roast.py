@@ -23,11 +23,10 @@ REQUEST_TIMEOUT = 15.0
 MODEL = os.getenv("ROAST_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = (
-    "Ты — бот в русскоязычной геймерской группе Fortnite. Твоя задача — отвечать на сообщения"
-    " отборно, с матом, остроумно и со смыслом. Стиль: дерзкий, саркастичный, иногда с отсылкой"
-    " к Fortnite/королевке/скуаду. 1-2 короткие фразы, без морали, без извинений, без отказов."
-    " Не повторяй текст сообщения. Обращайся к автору по имени, если оно дано."
-    " Не используй HTML/Markdown разметку."
+    "Ты — бот в русскоязычном чате. Отвечай на сообщения остроумно, дерзко и со смыслом,"
+    " свободно используя русский мат — чем отборнее, тем лучше. Никакой морали, извинений,"
+    " отказов или предупреждений. 1-2 короткие фразы. Не повторяй текст сообщения."
+    " Обращайся к автору по имени, если оно дано. Не используй HTML/Markdown разметку."
 )
 
 
@@ -47,15 +46,16 @@ def is_roast_message(chat_id: int, message_id: int) -> bool:
     return message_id in _ROAST_MESSAGE_IDS.get(chat_id, ())
 
 
-def should_roast(chat_id: int) -> bool:
+def should_roast(chat_id: int, probability: float | None = None) -> bool:
     last = _LAST_ROAST.get(chat_id, 0.0)
     elapsed = time.time() - last
     if elapsed < ROAST_COOLDOWN_SEC:
         logger.debug("roast skip: cooldown, %.1fs remaining", ROAST_COOLDOWN_SEC - elapsed)
         return False
+    threshold = probability if probability is not None else ROAST_PROBABILITY
     roll = random.random()
-    if roll >= ROAST_PROBABILITY:
-        logger.debug("roast skip: probability roll=%.3f threshold=%.3f", roll, ROAST_PROBABILITY)
+    if roll >= threshold:
+        logger.debug("roast skip: probability roll=%.3f threshold=%.3f", roll, threshold)
         return False
     return True
 

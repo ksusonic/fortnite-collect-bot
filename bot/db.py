@@ -89,6 +89,10 @@ async def init_db() -> None:
                 PRIMARY KEY (chat_id, feature)
             )"""
         )
+        try:
+            await db.execute("ALTER TABLE chat_features ADD COLUMN value REAL")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -379,13 +383,23 @@ async def is_feature_enabled(chat_id: int, feature: str) -> bool:
         return bool(row and row[0])
 
 
-async def set_feature(chat_id: int, feature: str, enabled: bool) -> None:
+async def set_feature(chat_id: int, feature: str, enabled: bool, value: float | None = None) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT OR REPLACE INTO chat_features (chat_id, feature, enabled) VALUES (?, ?, ?)",
-            (chat_id, feature, int(enabled)),
+            "INSERT OR REPLACE INTO chat_features (chat_id, feature, enabled, value) VALUES (?, ?, ?, ?)",
+            (chat_id, feature, int(enabled), value),
         )
         await db.commit()
+
+
+async def get_feature_value(chat_id: int, feature: str) -> float | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT value FROM chat_features WHERE chat_id = ? AND feature = ?",
+            (chat_id, feature),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] is not None else None
 
 
 async def load_active_sessions() -> list[Session]:
