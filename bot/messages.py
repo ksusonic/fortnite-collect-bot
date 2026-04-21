@@ -27,76 +27,52 @@ class Style:
 
 _STYLES: list[Style] = [
     Style(
-        "\U0001f3ae СБОР КОРОБОЧКИ! \U0001f3ae\n\n\U0001f3d7 {name} собирает скуад на Fortnite!",
-        "Жмите кнопки ниже! \U0001f447",
-        "\U0001f3ae\U0001f525 КОРОБОЧКА СОБРАНА! \U0001f525\U0001f3ae",
-        "Всем удачи! Летим! \U0001f680",
+        "\U0001f3ae {name} объявляет сбор в Fortnite.",
+        "Отмечайтесь кнопками ниже.",
+        "✅ Сбор завершён.",
+        "Приятной игры.",
     ),
     Style(
-        "\U0001f6e9 АВТОБУС ОТПРАВЛЯЕТСЯ! \U0001f6e9\n\n{name} за рулём — запрыгивайте!",
-        "Осталось пару мест, пока не улетел! \u2708\ufe0f",
-        "\U0001f6e9\U0001f4a8 ВСЕ НА БОРТУ! \U0001f4a8\U0001f6e9",
-        "Автобус взлетает! Всем хорошего лута! \U0001f4b0",
+        "\U0001f3ae {name} собирает компанию на катку.",
+        "Места ещё есть.",
+        "✅ Все четверо в сборе.",
+        "Хорошей игры.",
     ),
     Style(
-        "\u2694\ufe0f ТРЕВОГА! СБОР ОТРЯДА! \u2694\ufe0f\n\nКомандир {name} объявляет построение!",
-        "Кто с нами? Записывайтесь! \U0001f4dd",
-        "\u2694\ufe0f\U0001f6e1 ОТРЯД СФОРМИРОВАН! \U0001f6e1\u2694\ufe0f",
-        "В бой! Победа будет за нами! \U0001f451",
+        "\U0001f3ae {name} приглашает в скуад.",
+        "Ответьте, пожалуйста.",
+        "✅ Состав полный.",
+        "Увидимся в лобби.",
     ),
     Style(
-        "\U0001f525 КТО ГОТОВ НАГИБАТЬ? \U0001f525\n\n{name} бросает вызов — нужна банда!",
-        "Налетайте, места ограничены! \U0001f3af",
-        "\U0001f525\U0001f4aa БАНДА В СБОРЕ! \U0001f4aa\U0001f525",
-        "Сейчас будет жарко! Го нагибать! \U0001f4a5",
+        "\U0001f3ae Сбор на Fortnite. Инициатор — {name}.",
+        "Отметьтесь, если в деле.",
+        "✅ Состав полный.",
+        "Начинаем.",
     ),
     Style(
-        "\U0001f30a ШТОРМ ПРИБЛИЖАЕТСЯ! \U0001f30a\n\n{name} ищет бойцов, чтобы пережить зону!",
-        "Нужны бойцы! Кто идёт? \u26a1",
-        "\U0001f30a\u26a1 СКУАД ГОТОВ К ШТОРМУ! \u26a1\U0001f30a",
-        "Шторм нам не страшен! Вперёд! \U0001f3c3\u200d\u2642\ufe0f",
+        "\U0001f3ae {name} предлагает партию в Fortnite.",
+        "Кто с нами?",
+        "✅ Все на месте.",
+        "Выдвигаемся.",
     ),
     Style(
-        "\U0001f3d7 СТРОИМ КОРОБОЧКУ! \U0001f3d7\n\n{name} уже поставил первую стену — нужны строители!",
-        "Подключайтесь! \U0001f9f1",
-        "\U0001f3d7\U0001f3c6 КОРОБОЧКА ПОСТРОЕНА! \U0001f3c6\U0001f3d7",
-        "Стены стоят, скуад готов! Погнали! \U0001f680",
+        "\U0001f514 {name} назначает катку.",
+        "Просьба отметиться ниже.",
+        "✅ Регистрация завершена.",
+        "Переходим к игре.",
     ),
     Style(
-        "\U0001f4e2 ВНИМАНИЕ! НАБОР В СКУАД! \U0001f4e2\n\n{name} открывает набор — не проспите!",
-        "Свободных мест всё меньше! \U0001f631",
-        "\U0001f4e2\U0001f389 СКУАД УКОМПЛЕКТОВАН! \U0001f389\U0001f4e2",
-        "Полный состав! Летим на вику! \U0001f60e",
+        "\U0001f3ae {name} ищет напарников на вечер.",
+        "Присоединяйтесь, если свободны.",
+        "✅ Группа собрана.",
+        "До встречи в игре.",
     ),
     Style(
-        "\U0001f3ae ФОРТНАЙТ ЗОВЁТ! \U0001f3ae\n\n{name} трубит в рог — пора в бой!",
-        "Откликнитесь, воины! \U0001f93a",
-        "\U0001f3ae\U0001f525 ВОИНЫ СОБРАЛИСЬ! \U0001f525\U0001f3ae",
-        "Четвёрка смерти готова! Удачи! \U0001f340",
-    ),
-    Style(
-        "\U0001f3b0 {name} КРУТИТ РУЛЕТКУ СКУАДА! \U0001f3b0\n\nКому сегодня повезёт попасть в команду?",
-        "Испытай удачу — жми кнопку! \U0001f340",
-        "\U0001f3b0\U0001f389 ДЖЕКПОТ! СКУАД СОБРАН! \U0001f389\U0001f3b0",
-        "Выпал полный состав! Крутим катки! \U0001f4ab",
-    ),
-    Style(
-        "\U0001f355 {name} ЗАКАЗЫВАЕТ ПИЦЦУ НА ЧЕТВЕРЫХ! \U0001f355\n\nНо вместо пиццы — катка в Fortnite!",
-        "Кто голоден до побед? \U0001f924",
-        "\U0001f355\U0001f525 ЗАКАЗ ГОТОВ! \U0001f525\U0001f355",
-        "Пицца доставлена, приятного нагиба! \U0001f37d\ufe0f",
-    ),
-    Style(
-        "\U0001f6f8 {name} ВЫЗЫВАЕТ ПОДКРЕПЛЕНИЕ! \U0001f6f8\n\nИнопланетное вторжение — нужен скуад!",
-        "Земля в опасности! Кто на защиту? \U0001f30d",
-        "\U0001f6f8\U0001f4a5 ПОДКРЕПЛЕНИЕ ПРИБЫЛО! \U0001f4a5\U0001f6f8",
-        "Пришельцы не пройдут! Атакуем! \U0001f47e",
-    ),
-    Style(
-        "\U0001f3ac КАСТИНГ НА ГЛАВНЫЕ РОЛИ! \U0001f3ac\n\nРежиссёр {name} ищет звёзд для блокбастера!",
-        "Покажите на что способны! \U0001f31f",
-        "\U0001f3ac\u2b50 КАСТ УТВЕРЖДЁН! \u2b50\U0001f3ac",
-        "Камера! Мотор! Погнали! \U0001f3ac",
+        "\U0001f4e2 {name} открывает набор в отряд.",
+        "Отметьте готовность ниже.",
+        "✅ Набор закрыт — команда готова.",
+        "Удачной катки.",
     ),
 ]
 
@@ -168,11 +144,10 @@ def build_gather_text(session: Session) -> str:
     player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     if session.is_complete:
-        header = f"{style.done_header}\n\n\U0001f3c6 Скуад готов к бою!\n\n"
         return (
-            f"{header}"
+            f"{style.done_header}\n\n"
             f"\U0001f44a Состав ({go_count}):\n{player_text}\n\n"
-            f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
+            f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
             f"{style.done_footer}"
         )
 
@@ -183,8 +158,8 @@ def build_gather_text(session: Session) -> str:
     tag_part = f"\n\n{build_tag_line(pending_tags)}" if pending_tags else ""
     return (
         f"{header}\n\n"
-        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
-        f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
+        f"✅ Го ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
+        f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
         f"{style.cta}"
         f"{tag_part}"
     )
@@ -208,48 +183,37 @@ class StatsStyle:
 
 _STATS_STYLES: list[StatsStyle] = [
     StatsStyle(
-        title="\U0001f4ca <b>СТАТИСТИКА СБОРОВ</b> \U0001f4ca",
+        title="\U0001f4ca <b>Статистика сборов</b>",
         sessions_header="\U0001f3ae <b>Сборы:</b>",
-        speed_header="\u23f1 <b>Скорость сбора:</b>",
-        record_comment="Быстрее только пинг \U0001f3d3",
-        top_players_header="\U0001f3c6 <b>Топ игроков (по участию):</b>",
-        top_initiators_header="\U0001f4e2 <b>Топ зачинщиков:</b>",
-        top_passers_header="\U0001f634 <b>Топ пасующих:</b>",
-        streaks_header="\U0001f525 <b>Серии участия (подряд):</b>",
+        speed_header="⏱ <b>Время сбора:</b>",
+        record_comment="рекорд чата",
+        top_players_header="\U0001f3c6 <b>Самые активные игроки:</b>",
+        top_initiators_header="\U0001f4e2 <b>Частые инициаторы:</b>",
+        top_passers_header="\U0001f634 <b>Чаще других пасуют:</b>",
+        streaks_header="\U0001f525 <b>Серии участия подряд:</b>",
         best_hours_header="\U0001f552 <b>Лучшее время для сбора:</b>",
     ),
     StatsStyle(
-        title="\U0001f575\ufe0f <b>РАЗВЕДДАННЫЕ ОТРЯДА</b> \U0001f575\ufe0f",
-        sessions_header="\U0001f4cb <b>Операции:</b>",
-        speed_header="\u26a1 <b>Время реакции:</b>",
-        record_comment="Спецназ завидует \U0001fae1",
-        top_players_header="\u2b50 <b>Лучшие бойцы:</b>",
-        top_initiators_header="\U0001f4e1 <b>Кто поднимает тревогу:</b>",
-        top_passers_header="\U0001f6cb <b>Диванные войска:</b>",
-        streaks_header="\U0001f4aa <b>Без пропусков:</b>",
-        best_hours_header="\U0001f3af <b>Час Х:</b>",
+        title="\U0001f4cb <b>Сводка по чату</b>",
+        sessions_header="\U0001f3ae <b>Всего сессий:</b>",
+        speed_header="⚡ <b>Скорость сбора:</b>",
+        record_comment="минимальное время",
+        top_players_header="⭐ <b>Лидеры по участию:</b>",
+        top_initiators_header="\U0001f4e1 <b>Кто чаще зовёт:</b>",
+        top_passers_header="\U0001f6cb <b>Кто чаще отказывается:</b>",
+        streaks_header="\U0001f4aa <b>Непрерывные серии:</b>",
+        best_hours_header="\U0001f3af <b>Пиковые часы:</b>",
     ),
     StatsStyle(
-        title="\U0001f4c8 <b>АНАЛИТИКА НАГИБА</b> \U0001f4c8",
-        sessions_header="\U0001f3b0 <b>Катки:</b>",
-        speed_header="\U0001f680 <b>Сбор по таймеру:</b>",
-        record_comment="Кажется, кто-то ждал у кнопки \U0001f440",
-        top_players_header="\U0001f451 <b>Движки отряда:</b>",
-        top_initiators_header="\U0001f514 <b>Главные заводилы:</b>",
-        top_passers_header="\U0001f40c <b>Мастера отмазок:</b>",
-        streaks_header="\U0001f525 <b>На огне:</b>",
-        best_hours_header="\u23f0 <b>Золотой час:</b>",
-    ),
-    StatsStyle(
-        title="\U0001f9ee <b>ОТЧЁТ ШТАБА</b> \U0001f9ee",
-        sessions_header="\U0001f5c2 <b>Дела:</b>",
-        speed_header="\U0001f3ce <b>Скоростной режим:</b>",
-        record_comment="Формула-1 нервно курит \U0001f6ac",
-        top_players_header="\U0001f396 <b>Герои фронта:</b>",
-        top_initiators_header="\U0001f4ef <b>Горнисты:</b>",
-        top_passers_header="\U0001f3d6 <b>В отпуске:</b>",
-        streaks_header="\U0001f4a5 <b>Ударная серия:</b>",
-        best_hours_header="\U0001f319 <b>Пиковый час:</b>",
+        title="\U0001f4c8 <b>Отчёт по сборам</b>",
+        sessions_header="\U0001f5c2 <b>Сессии:</b>",
+        speed_header="\U0001f680 <b>Среднее время до сбора:</b>",
+        record_comment="лучший результат",
+        top_players_header="\U0001f451 <b>Топ участников:</b>",
+        top_initiators_header="\U0001f514 <b>Топ инициаторов:</b>",
+        top_passers_header="\U0001f40c <b>Топ пропускающих:</b>",
+        streaks_header="\U0001f525 <b>Серии без пропусков:</b>",
+        best_hours_header="⏰ <b>Популярное время:</b>",
     ),
 ]
 
@@ -264,9 +228,9 @@ def build_expired_text(session: Session) -> str:
 
     return (
         f"{header}\n\n"
-        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
-        f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
-        f"\u23f0 Время вышло — сбор отменён."
+        f"✅ Го ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
+        f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
+        f"⏰ Время вышло — сбор отменён."
     )
 
 
@@ -280,8 +244,8 @@ def build_cancelled_text(session: Session) -> str:
 
     return (
         f"{header}\n\n"
-        f"\u2705 Го! ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
-        f"\u274c Пас:\n{_player_list(session.pass_players)}\n\n"
+        f"✅ Го ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
+        f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
         f"\U0001f504 Сбор отменён — запущен новый."
     )
 
@@ -290,7 +254,7 @@ def _bar(value: int, max_value: int, width: int = 8) -> str:
     if max_value == 0:
         return ""
     filled = round(value / max_value * width)
-    return "\u2588" * filled + "\u2591" * (width - filled)
+    return "█" * filled + "░" * (width - filled)
 
 
 def _format_duration(seconds: float) -> str:
@@ -307,7 +271,7 @@ def _format_duration(seconds: float) -> str:
 
 def build_stats_text(stats: ChatStats) -> str:
     if stats.total_sessions == 0:
-        return "\U0001f4ca <b>Статистика</b>\n\nПока нет данных — начните с /fort!"
+        return "\U0001f4ca <b>Статистика</b>\n\nПока нет данных — начните с /fort."
 
     style = random.choice(_STATS_STYLES)
     lines: list[str] = []
@@ -317,8 +281,8 @@ def build_stats_text(stats: ChatStats) -> str:
     # Overview
     lines.append(style.sessions_header)
     lines.append(f"  Всего: <b>{stats.total_sessions}</b>")
-    lines.append(f"  \u2705 Собрано: <b>{stats.completed_sessions}</b>")
-    lines.append(f"  \u23f0 Истекло: <b>{stats.expired_sessions}</b>")
+    lines.append(f"  ✅ Собрано: <b>{stats.completed_sessions}</b>")
+    lines.append(f"  ⏰ Истекло: <b>{stats.expired_sessions}</b>")
     if stats.active_sessions > 0:
         lines.append(f"  \U0001f7e1 Активных: <b>{stats.active_sessions}</b>")
 
@@ -377,8 +341,8 @@ def build_stats_text(stats: ChatStats) -> str:
         lines.append("")
         lines.append(style.best_hours_header)
         for hour, cnt, avg_fill in stats.best_hours:
-            avg_text = _format_duration(avg_fill) if avg_fill else "\u2014"
-            lines.append(f"  {hour:02d}:00 \u2014 <b>{cnt}</b> сборов, среднее <b>{avg_text}</b>")
+            avg_text = _format_duration(avg_fill) if avg_fill else "—"
+            lines.append(f"  {hour:02d}:00 — <b>{cnt}</b> сборов, среднее <b>{avg_text}</b>")
 
     return "\n".join(lines)
 
@@ -387,7 +351,7 @@ def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> Inline
     if time_slots:
         slot_buttons = [
             InlineKeyboardButton(
-                text="\u26a1 Сейчас" if slot == NOW_SLOT else f"\U0001f554 {slot}",
+                text="⚡ Сейчас" if slot == NOW_SLOT else f"\U0001f554 {slot}",
                 callback_data=f"slot:{slot}",
             )
             for slot in time_slots
@@ -395,18 +359,18 @@ def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> Inline
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 slot_buttons,
-                [InlineKeyboardButton(text="\u274c Пас", callback_data="pass")],
+                [InlineKeyboardButton(text="❌ Пас", callback_data="pass")],
             ]
         )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"\u2705 Го! ({go_count}/{SQUAD_SIZE})",
+                    text=f"✅ Го ({go_count}/{SQUAD_SIZE})",
                     callback_data="go",
                 ),
                 InlineKeyboardButton(
-                    text="\u274c Пас",
+                    text="❌ Пас",
                     callback_data="pass",
                 ),
             ]
