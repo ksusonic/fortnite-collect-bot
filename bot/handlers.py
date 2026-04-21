@@ -5,20 +5,16 @@ import html
 import logging
 import random
 import time
-from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
 
-from aiogram import BaseMiddleware, Bot, F, Router
+from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     CallbackQuery,
     Message,
-    ReactionTypeCustomEmoji,
     ReactionTypeEmoji,
-    TelegramObject,
 )
 
 from bot.db import (
@@ -60,36 +56,6 @@ from bot.roast import (
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-REACTION_EMOJI_PACK = "myfavoritetwitchemoji"
-_custom_emoji_ids: list[str] = []
-
-
-class CommandReactionMiddleware(BaseMiddleware):
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
-        if isinstance(event, Message) and event.text and event.text.startswith("/"):
-            if not _custom_emoji_ids:
-                try:
-                    bot: Bot = data["bot"]
-                    sticker_set = await bot.get_sticker_set(REACTION_EMOJI_PACK)
-                    _custom_emoji_ids.extend(s.custom_emoji_id for s in sticker_set.stickers if s.custom_emoji_id)
-                except Exception:
-                    logger.debug("Failed to load emoji pack %s", REACTION_EMOJI_PACK)
-            if _custom_emoji_ids:
-                try:
-                    emoji_id = random.choice(_custom_emoji_ids)
-                    await event.react([ReactionTypeCustomEmoji(custom_emoji_id=emoji_id)])
-                except TelegramBadRequest:
-                    pass
-        return await handler(event, data)
-
-
-router.message.middleware(CommandReactionMiddleware())
 
 
 def _display_name(user) -> str:
@@ -224,7 +190,7 @@ async def cmd_roast(message: Message, command: CommandObject) -> None:
     action = parts[0] if parts else ""
     if action == "off":
         await set_feature(message.chat.id, "roast", False)
-        await message.answer("Ладно, хватит. Завязываю.")
+        await message.answer("Режим язвительных ответов выключен.")
         return
     if action == "on":
         prob: float | None = None
@@ -239,7 +205,7 @@ async def cmd_roast(message: Message, command: CommandObject) -> None:
                 return
         await set_feature(message.chat.id, "roast", True, value=prob)
         shown = f"{prob:.2f}" if prob is not None else f"{ROAST_PROBABILITY:.2f} (по умолчанию)"
-        await message.answer(f"Режим отборной брани включён. Вероятность: {shown}")
+        await message.answer(f"Режим язвительных ответов включён. Вероятность: {shown}")
         return
     await message.answer("Использование: /roast on [вероятность 0-1] или /roast off")
 
@@ -270,33 +236,39 @@ async def cmd_rm(message: Message) -> None:
 
 
 _PIZDA_REPLIES = [
-    "Болтать — не строить. Погнали лучше в Фортнайт",
-    "А королевку брал хоть раз? Или только языком?",
-    "Тебе бы так на поле рубиться, как тут болтаешь",
-    "Каждый раз одно и то же. Иди на свадьбах пой",
-    "Кто тебя в коробочку возьмёт с таким характером?",
-    "Тебе бы в фортике так языком работать — все бы боялись",
-    "Молчание — золото. Но ты явно не из богатых",
-    "Сократ говорил: «Заговори, чтобы я тебя увидел». Лучше бы ты молчал",
+    "Смелое заявление.",
+    "Записал.",
+    "Звучит уверенно.",
+    "Принято к сведению.",
+    "Посмотрим в катке.",
+    "На словах все сильны.",
+    "Осталось подтвердить делом.",
+    "Допустим. А /fort?",
+    "Ну так жми /fort.",
+    "Хотелось бы верить.",
 ]
 
 
 _PIDORA_REPLIES = [
-    "Зеркало забыл дома?",
-    "Ответ засчитан. Интеллект — нет",
-    "Это всё, на что тебя хватает?",
-    "Сам придумал или подсказали?",
+    "Понял.",
+    "Фиксирую.",
+    "Ну как скажешь.",
+    "Принято.",
+    "Бывает.",
+    "Коротко и ясно.",
+    "Вопрос закрыт.",
+    "Не настаиваю.",
 ]
 
 
 _WELCOME_TEMPLATE = (
-    "\U0001f91d Вечер в хату, {mention}!\n\n"
-    "Я — бот для сбора скуада в Fortnite. Мои команды:\n"
+    "\U0001f44b Привет, {mention}.\n\n"
+    "Я бот для сбора скуада в Fortnite. Команды:\n"
     "\U0001f3ae /fort — собрать отряд из 4 человек\n"
     "\U0001f504 /refort — пересоздать текущий сбор\n"
     "\U0001f5d1 /rm — отменить активный сбор\n"
     "\U0001f4ca /stats — статистика чата\n\n"
-    "Ещё слежу за статусом серверов Epic и сообщу, когда всё упадёт \U0001f4a5"
+    "Также слежу за статусом серверов Epic и предупрежу, если они недоступны."
 )
 
 
@@ -308,7 +280,7 @@ async def greet_new_members(message: Message) -> None:
         if member.is_bot and member.id != message.bot.id:
             continue
         if member.id == message.bot.id:
-            mention = "ребзя"
+            mention = "всем"
         else:
             name = _display_name(member)
             mention = f'<a href="tg://user?id={member.id}">{html.escape(name)}</a>'
@@ -443,13 +415,6 @@ async def on_callback(callback: CallbackQuery) -> None:
     if not session.is_complete and len(session.go_players) >= SQUAD_SIZE:
         session.is_complete = True
         await mark_complete(message_id)
-        try:
-            sticker_set = await callback.bot.get_sticker_set("FortniteStick")
-            if sticker_set.stickers:
-                sticker = random.choice(sticker_set.stickers)
-                await callback.message.answer_sticker(sticker.file_id)
-        except TelegramBadRequest:
-            pass
 
     text = build_gather_text(session)
     keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)

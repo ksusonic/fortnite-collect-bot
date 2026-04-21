@@ -121,17 +121,17 @@ def detect_change(old: ServerStatus | None, new: ServerStatus) -> str | None:
 
 def build_alert(change_type: str, status: ServerStatus) -> str:
     if change_type in ("down", "degraded"):
-        lines = ["<b>⚠️ Проблемы с серверами Fortnite!</b>", ""]
+        lines = ["<b>⚠️ Проблемы с серверами Fortnite</b>", ""]
         for name in status.incidents:
             lines.append(f"🔴 {name}")
         if not status.incidents:
             lines.append(f"🔴 {status.description}")
         lines.append("")
-        lines.append("Серверы могут быть недоступны 🛠")
+        lines.append("Серверы могут быть недоступны.")
         return "\n".join(lines)
 
     # restored
-    return "<b>✅ Серверы Fortnite снова работают!</b>\n\nПогнали катать! /fort"
+    return "<b>✅ Серверы Fortnite снова в строю.</b>\n\nМожно собираться: /fort"
 
 
 async def check_status_loop(bot: object) -> None:
