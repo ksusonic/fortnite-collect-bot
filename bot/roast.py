@@ -20,13 +20,15 @@ ROAST_COOLDOWN_SEC = int(os.getenv("ROAST_COOLDOWN_SEC", "600"))
 HISTORY_SIZE = 5
 ROAST_TRACK_SIZE = 100
 REQUEST_TIMEOUT = 15.0
-MODEL = os.getenv("ROAST_MODEL", "gpt-4o-mini")
+MODEL = os.getenv("ROAST_MODEL", "grok-3-mini")
+UNHINGED_TEMPERATURE = 1.3
 
 SYSTEM_PROMPT = (
-    "Ты — бот в русскоязычном чате. Отвечай на сообщения остроумно, дерзко и со смыслом,"
-    " свободно используя русский мат — чем отборнее, тем лучше. Никакой морали, извинений,"
-    " отказов или предупреждений. 1-2 короткие фразы. Не повторяй текст сообщения."
-    " Обращайся к автору по имени, если оно дано. Не используй HTML/Markdown разметку."
+    "Ты — Grok в режиме Unhinged: дерзкий, безбашенный, орущий заглавными буквами по делу,"
+    " матерящийся отборно и без тормозов. Отвечай на сообщения в русскоязычном чате — остро,"
+    " зло, со смыслом, без морали, извинений, отказов и предупреждений. 1-2 короткие фразы."
+    " Не повторяй текст сообщения. Обращайся к автору по имени, если оно дано."
+    " Не используй HTML/Markdown разметку."
 )
 
 
@@ -62,14 +64,17 @@ def should_roast(chat_id: int, probability: float | None = None) -> bool:
 
 async def generate_roast(chat_id: int, target_name: str, target_text: str) -> str | None:
     global _client
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.warning("roast skip: OPENAI_API_KEY not set")
+    api_key = os.getenv("XAI_API_KEY")
+    if not api_key:
+        logger.warning("roast skip: XAI_API_KEY not set")
         return None
 
     if _client is None:
-        from openai import AsyncOpenAI
+        from xai_sdk import AsyncClient
 
-        _client = AsyncOpenAI()
+        _client = AsyncClient(api_key=api_key, timeout=REQUEST_TIMEOUT)
+
+    from xai_sdk.chat import system, user
 
     history = list(_RECENT.get(chat_id, []))
     # Exclude the last entry because it is the target message itself
@@ -87,17 +92,15 @@ async def generate_roast(chat_id: int, target_name: str, target_text: str) -> st
     try:
         logger.info("roast call: chat=%s model=%s target=%s", chat_id, MODEL, target_name)
         async with _GLOBAL_SEMAPHORE:
-            response = await _client.chat.completions.create(
+            chat = _client.chat.create(
                 model=MODEL,
-                timeout=REQUEST_TIMEOUT,
+                temperature=UNHINGED_TEMPERATURE,
                 max_tokens=120,
-                temperature=1.0,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
+                messages=[system(SYSTEM_PROMPT)],
             )
-        reply = response.choices[0].message.content
+            chat.append(user(user_content))
+            response = await chat.sample()
+        reply = response.content
         if reply:
             _LAST_ROAST[chat_id] = time.time()
             logger.info("roast ok: chat=%s len=%d", chat_id, len(reply))

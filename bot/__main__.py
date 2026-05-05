@@ -28,19 +28,19 @@ async def main() -> None:
 
     token = os.getenv("BOT_TOKEN")
     logger.info(
-        "startup config: log_level=%s db_path=%s bot_token=%s openai_api_key=%s "
+        "startup config: log_level=%s db_path=%s bot_token=%s xai_api_key=%s "
         "roast_probability=%.3f roast_cooldown=%ss roast_model=%s",
         log_level,
         DB_PATH,
         "set" if token else "missing",
-        "set" if os.getenv("OPENAI_API_KEY") else "missing",
+        "set" if os.getenv("XAI_API_KEY") else "missing",
         ROAST_PROBABILITY,
         ROAST_COOLDOWN_SEC,
         MODEL,
     )
 
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.warning("roast disabled: OPENAI_API_KEY not set")
+    if not os.getenv("XAI_API_KEY"):
+        logger.warning("roast disabled: XAI_API_KEY not set")
 
     if not token:
         raise SystemExit("BOT_TOKEN is not set in .env")
