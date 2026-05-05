@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
-import random
 import time
 from datetime import datetime
 
@@ -235,32 +234,6 @@ async def cmd_rm(message: Message) -> None:
         pass
 
 
-_PIZDA_REPLIES = [
-    "Смелое заявление.",
-    "Записал.",
-    "Звучит уверенно.",
-    "Принято к сведению.",
-    "Посмотрим в катке.",
-    "На словах все сильны.",
-    "Осталось подтвердить делом.",
-    "Допустим. А /fort?",
-    "Ну так жми /fort.",
-    "Хотелось бы верить.",
-]
-
-
-_PIDORA_REPLIES = [
-    "Понял.",
-    "Фиксирую.",
-    "Ну как скажешь.",
-    "Принято.",
-    "Бывает.",
-    "Коротко и ясно.",
-    "Вопрос закрыт.",
-    "Не настаиваю.",
-]
-
-
 _WELCOME_TEMPLATE = (
     "\U0001f44b Привет, {mention}.\n\n"
     "Я бот для сбора скуада в Fortnite. Команды:\n"
@@ -288,13 +261,6 @@ async def greet_new_members(message: Message) -> None:
             await message.answer(_WELCOME_TEMPLATE.format(mention=mention))
         except TelegramBadRequest:
             pass
-
-
-@router.message(F.text.lower().in_({"да", "нет"}))
-async def reply_to_da_net(message: Message) -> None:
-    await asyncio.sleep(2)
-    replies = _PIZDA_REPLIES if message.text.lower() == "да" else _PIDORA_REPLIES
-    await message.answer(random.choice(replies))
 
 
 async def _is_bot_mentioned(message: Message) -> bool:
