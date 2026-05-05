@@ -20,7 +20,6 @@ PLAY_DEADLINE_HOUR = 23
 @dataclass(frozen=True)
 class Style:
     header: str  # {name} — ссылка на инициатора
-    cta: str  # призыв к действию
     done_header: str
     done_footer: str
 
@@ -28,115 +27,96 @@ class Style:
 _STYLES: list[Style] = [
     Style(
         "\U0001f355 {name} заказал пиццу и зовёт в катку.",
-        "Кто присоединяется?",
         "✅ Пицца в пути, скуад в сборе.",
         "Приятной игры.",
     ),
     Style(
         "\U0001f4bb {name} закрыл ноут и сел за PC.",
-        "Кто свободен на вечер?",
         "✅ Все собрались.",
         "Поехали.",
     ),
     Style(
         "☕ {name} заварил чай и открыл Fortnite.",
-        "Место ещё есть.",
         "✅ Все четверо в сборе.",
         "Хорошей катки.",
     ),
     Style(
         "\U0001fa82 {name} готовится к прыжку.",
-        "Берём кого с собой?",
         "✅ Автобус укомплектован.",
         "Увидимся на острове.",
     ),
     Style(
         "\U0001f4c5 {name} нашёл свободный вечер.",
-        "Берём кого-то ещё?",
         "✅ Скуад собран.",
         "Поехали.",
     ),
     Style(
         "\U0001f4e6 {name} видит лут — нужна команда.",
-        "Кто в деле?",
         "✅ Скуад собран.",
         "К высадке.",
     ),
     Style(
         "\U0001f3c6 {name} объявил сбор на Victory Royale.",
-        "Кто готов?",
         "✅ Отряд укомплектован.",
         "Ни пуха.",
     ),
     Style(
         "\U0001f3a7 {name} надел наушники.",
-        "Кто сегодня играет?",
         "✅ Все в сборе.",
         "Удачной катки.",
     ),
     Style(
         "\U0001f319 {name} открывает вечернюю катку.",
-        "Отметьтесь, если свободны.",
         "✅ Все на местах.",
         "Хорошей игры.",
     ),
     Style(
         "\U0001f3ae {name} заебался работать — го катка.",
-        "Кто в деле?",
         "✅ Наконец-то все собрались.",
         "Поехали.",
     ),
     Style(
         "\U0001f9e0 {name} понял: без катки никуда.",
-        "Возражения не принимаются.",
         "✅ Гипотеза подтверждена — скуад собран.",
         "Переходим к практике.",
     ),
     Style(
         "\U0001f4a2 {name} предлагает забить на дела.",
-        "Кто со мной, ёпта?",
         "✅ Скуад собран.",
         "Погнали нагибать.",
     ),
     Style(
         "\U0001f37b {name} берёт пиво и зовёт ебашить.",
-        "Присоединяйтесь, блядь.",
         "✅ Все в сборе, заебись.",
         "Погнали.",
     ),
     Style(
         "\U0001f624 {name} пришёл с работы и охуел.",
-        "Кто катнёт, чтобы отпустило?",
         "✅ Спасены — все собрались.",
         "Поехали.",
     ),
     Style(
         "\U0001f393 {name} утверждает: Fortnite важнее сна.",
-        "Оппоненты приветствуются.",
         "✅ Научный совет в сборе.",
         "Приступаем к защите.",
     ),
     Style(
         "\U0001f919 {name} зовёт катнуть по-пацански.",
-        "Кто не ссыт — отмечайтесь.",
         "✅ Команда в сборе, пацаны.",
         "Погнали.",
     ),
     Style(
         "\U0001f3af {name} хочет кого-нибудь нахлобучить.",
-        "Нужны трое — отмечайтесь.",
         "✅ Скуад собран, ща всех нахлобучим.",
         "Поехали.",
     ),
     Style(
         "\U0001f31a {name} зовёт катнуть до полуночи.",
-        "Есть желающие?",
         "✅ Все четверо в сборе.",
         "До рассвета.",
     ),
     Style(
         "\U0001f37f {name} принёс снеки и зовёт играть.",
-        "Кто составит компанию?",
         "✅ Скуад собран — снеки на столе.",
         "Поехали.",
     ),
@@ -163,6 +143,9 @@ def generate_time_slots(count: int = 3) -> list[str]:
     return slots
 
 
+_DIVIDER = "─────────────────────"
+
+
 def _user_link(user_id: int, name: str) -> str:
     return f'<a href="tg://user?id={user_id}">{html.escape(name)}</a>'
 
@@ -176,13 +159,13 @@ def build_tag_line(tagged_users: dict[int, str]) -> str:
 
 def _player_list(players: dict[int, str]) -> str:
     if not players:
-        return "  (пока пусто)"
-    return "\n".join(f"  {i}. {_user_link(uid, name)}" for i, (uid, name) in enumerate(players.items(), 1))
+        return "   (пока пусто)"
+    return "\n".join(f"   {i}. {_user_link(uid, name)}" for i, (uid, name) in enumerate(players.items(), 1))
 
 
 def _player_list_by_slots(session: Session) -> str:
     if not session.go_players:
-        return "  (пока пусто)"
+        return "   (пока пусто)"
     slots_grouped: dict[str, list[tuple[int, str]]] = {s: [] for s in session.time_slots}
     for uid, name in session.go_players.items():
         slot = session.player_slots.get(uid)
@@ -190,15 +173,18 @@ def _player_list_by_slots(session: Session) -> str:
             slots_grouped[slot].append((uid, name))
     lines: list[str] = []
     idx = 1
+    empty_labels: list[str] = []
     for slot, players in slots_grouped.items():
         label = "Сейчас" if slot == NOW_SLOT else slot
         if not players:
-            lines.append(f"\U0001f554 {label}: (пусто)")
+            empty_labels.append(label)
             continue
         lines.append(f"\U0001f554 {label}:")
         for uid, name in players:
-            lines.append(f"  {idx}. {_user_link(uid, name)}")
+            lines.append(f"   {idx}. {_user_link(uid, name)}")
             idx += 1
+    if empty_labels:
+        lines.append(f"\U0001f554 Свободно: {' · '.join(empty_labels)}")
     return "\n".join(lines)
 
 
@@ -210,25 +196,36 @@ def build_gather_text(session: Session) -> str:
     player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
     if session.is_complete:
-        return (
-            f"{style.done_header}\n\n"
-            f"\U0001f44a Состав ({go_count}):\n{player_text}\n\n"
-            f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
-            f"{style.done_footer}"
-        )
+        lines = [
+            style.done_header,
+            _DIVIDER,
+            f"\U0001f44a <b>Состав</b> {go_count}",
+            player_text,
+            _DIVIDER,
+            "❌ <b>Пас</b>",
+            _player_list(session.pass_players),
+            _DIVIDER,
+            style.done_footer,
+        ]
+        return "\n".join(lines)
 
     header = style.header.format(name=initiator)
-
     responded = set(session.go_players) | set(session.pass_players)
     pending_tags = {uid: name for uid, name in session.tagged_users.items() if uid not in responded}
-    tag_part = f"\n\n{build_tag_line(pending_tags)}" if pending_tags else ""
-    return (
-        f"{header}\n\n"
-        f"✅ Го ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
-        f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
-        f"{style.cta}"
-        f"{tag_part}"
-    )
+
+    lines = [
+        header,
+        _DIVIDER,
+        f"✅ <b>Go</b> {go_count}/{SQUAD_SIZE}",
+        player_text,
+        _DIVIDER,
+        "❌ <b>Пас</b>",
+        _player_list(session.pass_players),
+    ]
+    if pending_tags:
+        lines.append("")
+        lines.append(build_tag_line(pending_tags))
+    return "\n".join(lines)
 
 
 SESSION_TIMEOUT = 60 * 60  # 1 hour
@@ -284,7 +281,7 @@ _STATS_STYLES: list[StatsStyle] = [
 ]
 
 
-def build_expired_text(session: Session) -> str:
+def _build_closed_text(session: Session, footer: str) -> str:
     style = _STYLES[session.style % len(_STYLES)]
     go_count = len(session.go_players)
     initiator = _user_link(session.initiator_id, session.initiator_name)
@@ -292,28 +289,26 @@ def build_expired_text(session: Session) -> str:
     has_slots = bool(session.time_slots)
     player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
-    return (
-        f"{header}\n\n"
-        f"✅ Го ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
-        f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
-        f"⏰ Время вышло — сбор отменён."
-    )
+    lines = [
+        header,
+        _DIVIDER,
+        f"✅ <b>Go</b> {go_count}/{SQUAD_SIZE}",
+        player_text,
+        _DIVIDER,
+        "❌ <b>Пас</b>",
+        _player_list(session.pass_players),
+        _DIVIDER,
+        footer,
+    ]
+    return "\n".join(lines)
+
+
+def build_expired_text(session: Session) -> str:
+    return _build_closed_text(session, "⏰ Время вышло — сбор отменён.")
 
 
 def build_cancelled_text(session: Session) -> str:
-    style = _STYLES[session.style % len(_STYLES)]
-    go_count = len(session.go_players)
-    initiator = _user_link(session.initiator_id, session.initiator_name)
-    header = style.header.format(name=initiator)
-    has_slots = bool(session.time_slots)
-    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
-
-    return (
-        f"{header}\n\n"
-        f"✅ Го ({go_count}/{SQUAD_SIZE}):\n{player_text}\n\n"
-        f"❌ Пас:\n{_player_list(session.pass_players)}\n\n"
-        f"\U0001f504 Сбор отменён — запущен новый."
-    )
+    return _build_closed_text(session, "\U0001f504 Сбор отменён — запущен новый.")
 
 
 def _bar(value: int, max_value: int, width: int = 8) -> str:
@@ -335,13 +330,10 @@ def _format_duration(seconds: float) -> str:
     return f"{hours}h {mins}m"
 
 
-_STATS_DIVIDER = "─────────────────────"
-
-
 def _section(lines: list[str], header: str, body: list[str]) -> None:
     if not body:
         return
-    lines.append(_STATS_DIVIDER)
+    lines.append(_DIVIDER)
     lines.append(header)
     lines.extend(body)
 
@@ -349,7 +341,7 @@ def _section(lines: list[str], header: str, body: list[str]) -> None:
 def build_stats_text(stats: ChatStats) -> str:
     if stats.total_sessions == 0:
         return (
-            f"\U0001f4ca <b>Статистика</b>\n{_STATS_DIVIDER}\n"
+            f"\U0001f4ca <b>Статистика</b>\n{_DIVIDER}\n"
             "Пока ничего не собрано.\n"
             "Запустите /fort, чтобы появились данные."
         )
@@ -449,7 +441,7 @@ def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> Inline
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"✅ Го ({go_count}/{SQUAD_SIZE})",
+                    text=f"✅ Go ({go_count}/{SQUAD_SIZE})",
                     callback_data="go",
                 ),
                 InlineKeyboardButton(
