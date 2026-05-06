@@ -86,3 +86,4 @@ All bot code lives in `bot/`:
 | `ROAST_HISTORY_SIZE` | no | `30` | Max messages (user + bot) kept per chat for roast context |
 | `ROAST_HISTORY_TTL_SEC` | no | `43200` | Idle seconds after which roast history is dropped on next message (default 12 h) |
 | `ROAST_MODEL` | no | `grok-3-mini` | xAI model id |
+| `ROAST_REQUEST_TIMEOUT` | no | `45` | xAI client RPC timeout in seconds |
