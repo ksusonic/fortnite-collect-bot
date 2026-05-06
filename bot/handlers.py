@@ -15,6 +15,7 @@ from aiogram.types import (
     Message,
     ReactionTypeEmoji,
 )
+from aiogram.utils.chat_action import ChatActionSender
 
 from bot.db import (
     Session,
@@ -303,7 +304,8 @@ async def maybe_roast(message: Message) -> None:
     if not forced and not should_roast(chat_id, probability=custom_prob):
         return
     logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
-    reply = await generate_roast(chat_id, user_name, text)
+    async with ChatActionSender.typing(bot=message.bot, chat_id=chat_id):
+        reply = await generate_roast(chat_id, user_name, text)
     if reply:
         sent = await message.reply(html.escape(reply))
         remember_roast_message(chat_id, sent.message_id)
