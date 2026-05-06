@@ -56,7 +56,7 @@ All bot code lives in `bot/`:
 - `handlers.py` — aiogram Router with command handlers (`/fort`, `/refort`, `/rm`, `/stats`, `/roast`), callback query handler for slot/`go`/`pass` buttons, `maybe_roast` for non-command group messages, welcome message for new chat members; also contains `expire_sessions()` background coroutine
 - `db.py` — SQLite persistence via aiosqlite; defines `Session`/`ChatStats` dataclasses and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call. Tables: `sessions`, `responses`, `chat_features`
 - `messages.py` — text/keyboard builders; contains `_STYLES` list (19 randomized gathering themes), `_STATS_STYLES` (3 stats layouts), `generate_time_slots()`, constants (`SQUAD_SIZE=4`, `SESSION_TIMEOUT=3600`, `PLAY_DEADLINE_HOUR=23`)
-- `roast.py` — xAI Grok integration (Unhinged persona via system prompt + `temperature=1.3`); manages per-chat history (last 5 messages), cooldown, probability roll, recent roast message-id tracking (so replies to bot's roasts force a new roast)
+- `roast.py` — xAI Grok integration (Unhinged persona via system prompt + `temperature=1.3`); manages per-chat dialog history (default 30 messages, both user and assistant turns) with 12-hour idle TTL, cooldown, probability roll, recent roast message-id tracking (so replies to bot's roasts force a new roast)
 - `status.py` — Fortnite server status monitoring via Epic Games status API; alerts active chats during 18:00–24:00 MSK on indicator changes (`down`/`degraded`/`restored`)
 
 ## Key design decisions
@@ -67,6 +67,7 @@ All bot code lives in `bot/`:
 - **Tagged users**: at `/fort`, pulls last 20 distinct `go`-responders from `responses` (excluding bots and the initiator) into `session.tagged_users`. They render as a `📣 @user1 @user2…` line until each responds.
 - **Per-chat feature toggles**: `chat_features` table stores `(chat_id, feature, enabled, value REAL)`. Currently used for `roast` with optional custom probability. Use `set_feature` / `is_feature_enabled` / `get_feature_value`.
 - **Roast forcing**: even with cooldown/probability not met, a reply to a known bot-roast message OR a `@bot` mention forces a roast. Bot tracks its own roast message ids per chat in a deque (size 100).
+- **Roast dialog memory**: `_RECENT[chat_id]` is a deque of `HistoryEntry(role, name, text, ts, message_id, reply_to_id)` capped at `ROAST_HISTORY_SIZE`. User messages and bot replies both go in (bot's roast captured after send). On any new entry, if the last record is older than `ROAST_HISTORY_TTL_SEC`, the deque is cleared first — so a chat that's been silent > 12 h starts a fresh context. `generate_roast` collapses adjacent user entries into one `user(...)` turn (lines `Имя: текст`) interleaved with `assistant(...)` turns; `reply_to_id` is resolved against the deque to inject `(в ответ на сообщение от X: «…»)` into the final user turn.
 - **Style index**: random style chosen at session creation, stored in DB `style` column, used consistently for all updates of that message.
 - **HTML parse mode**: set globally via `DefaultBotProperties`. User names rendered as `<a href="tg://user?id=...">` deep links with `html.escape()`. Roast text is also `html.escape()`-d before sending.
 - **DB migrations**: `init_db()` issues idempotent `ALTER TABLE ADD COLUMN ...` statements wrapped in `try/except` — schema upgrades run in-place on every startup, no migration framework. New columns must be nullable or have a default.
@@ -82,4 +83,6 @@ All bot code lives in `bot/`:
 | `LOG_LEVEL` | no | `INFO` | Python logging level |
 | `ROAST_PROBABILITY` | no | `0.05` | Default chance per non-command group message to trigger a roast |
 | `ROAST_COOLDOWN_SEC` | no | `600` | Min seconds between roasts per chat |
+| `ROAST_HISTORY_SIZE` | no | `30` | Max messages (user + bot) kept per chat for roast context |
+| `ROAST_HISTORY_TTL_SEC` | no | `43200` | Idle seconds after which roast history is dropped on next message (default 12 h) |
 | `ROAST_MODEL` | no | `grok-3-mini` | xAI model id |

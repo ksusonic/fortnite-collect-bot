@@ -6,10 +6,25 @@ import os
 import random
 import time
 from collections import deque
+from dataclasses import dataclass
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-_RECENT: dict[int, deque] = {}
+Role = Literal["user", "assistant"]
+
+
+@dataclass
+class HistoryEntry:
+    role: Role
+    name: str
+    text: str
+    ts: float
+    message_id: int | None = None
+    reply_to_id: int | None = None
+
+
+_RECENT: dict[int, deque[HistoryEntry]] = {}
 _LAST_ROAST: dict[int, float] = {}
 _ROAST_MESSAGE_IDS: dict[int, deque[int]] = {}
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(3)
@@ -17,24 +32,88 @@ _client = None
 
 ROAST_PROBABILITY = float(os.getenv("ROAST_PROBABILITY", "0.05"))
 ROAST_COOLDOWN_SEC = int(os.getenv("ROAST_COOLDOWN_SEC", "600"))
-HISTORY_SIZE = 5
+HISTORY_SIZE = int(os.getenv("ROAST_HISTORY_SIZE", "30"))
+HISTORY_TTL_SEC = int(os.getenv("ROAST_HISTORY_TTL_SEC", "43200"))
 ROAST_TRACK_SIZE = 100
 REQUEST_TIMEOUT = 15.0
 MODEL = os.getenv("ROAST_MODEL", "grok-3-mini")
 UNHINGED_TEMPERATURE = 1.3
+BOT_HISTORY_NAME = "<bot>"
 
 SYSTEM_PROMPT = (
-    "Ты — Grok в режиме Unhinged: дерзкий, безбашенный, матерящийся отборно и без тормозов."
-    " Отвечай на сообщения в русскоязычном чате — остро, зло, со смыслом, без морали, извинений,"
-    " отказов и предупреждений. 1-2 короткие фразы. Не повторяй текст сообщения."
-    " Обращайся к автору по имени, если оно дано. Не используй HTML/Markdown разметку."
+    "Ты — Grok в режиме Unhinged в групповом чате друзей. Дерзкий, остроумный, материшься"
+    " отборно — но мат это приправа, а не суть. Цель: смешно, а не громко.\n"
+    "\n"
+    "Целеуказание (важно):\n"
+    "— Если в сообщении просят пройтись по конкретному человеку или нику ("
+    "«разнеси X», «что скажешь про Y», упомянут @кто-то как объект) — мочи именно цель,"
+    " автор твой союзник, его не трогай.\n"
+    "— Если автор @упомянул тебя или ответил на твоё сообщение — реагируй на него,"
+    " можно с подколом в его адрес.\n"
+    "— Если автор просто болтает или задаёт нейтральный вопрос — лёгкий подкол по теме,"
+    " без агрессии в лоб.\n"
+    "\n"
+    "Стиль:\n"
+    "— 1–2 короткие острые фразы. Не пересказывай исходное сообщение.\n"
+    "— Разнообразь приёмы: метафора, абсурд, неожиданное сравнение, отсылка к тому,"
+    " что писали раньше в чате. Не повторяй одну и ту же конструкцию.\n"
+    "— Опирайся на контекст переписки: подхватывай шутки, ники, события чата.\n"
+    "— Имя называй только когда естественно вписывается. Не лепи «Имя,» в начале каждого ответа.\n"
+    "— @упоминания не повторяй, если они уже есть в исходном сообщении.\n"
+    "\n"
+    "Чего не делаешь:\n"
+    "— Морали, извинений, отказов, предупреждений.\n"
+    "— HTML, Markdown, эмодзи, английских слов и обрывочных токенов.\n"
+    "— Повторов одной шутки или формулы из предыдущих ответов в этом чате."
 )
 
 
-def remember_message(chat_id: int, user_name: str, text: str) -> None:
-    if chat_id not in _RECENT:
-        _RECENT[chat_id] = deque(maxlen=HISTORY_SIZE)
-    _RECENT[chat_id].append((user_name, text))
+def _get_or_create_deque(chat_id: int) -> deque[HistoryEntry]:
+    bucket = _RECENT.get(chat_id)
+    if bucket is None:
+        bucket = deque(maxlen=HISTORY_SIZE)
+        _RECENT[chat_id] = bucket
+    return bucket
+
+
+def _evict_if_stale(bucket: deque[HistoryEntry]) -> None:
+    if bucket and time.time() - bucket[-1].ts > HISTORY_TTL_SEC:
+        bucket.clear()
+
+
+def remember_message(
+    chat_id: int,
+    user_name: str,
+    text: str,
+    message_id: int | None = None,
+    reply_to_id: int | None = None,
+) -> None:
+    bucket = _get_or_create_deque(chat_id)
+    _evict_if_stale(bucket)
+    bucket.append(
+        HistoryEntry(
+            role="user",
+            name=user_name,
+            text=text,
+            ts=time.time(),
+            message_id=message_id,
+            reply_to_id=reply_to_id,
+        )
+    )
+
+
+def remember_bot_message(chat_id: int, text: str, message_id: int) -> None:
+    bucket = _get_or_create_deque(chat_id)
+    _evict_if_stale(bucket)
+    bucket.append(
+        HistoryEntry(
+            role="assistant",
+            name=BOT_HISTORY_NAME,
+            text=text,
+            ts=time.time(),
+            message_id=message_id,
+        )
+    )
 
 
 def remember_roast_message(chat_id: int, message_id: int) -> None:
@@ -61,7 +140,42 @@ def should_roast(chat_id: int, probability: float | None = None) -> bool:
     return True
 
 
-async def generate_roast(chat_id: int, target_name: str, target_text: str) -> str | None:
+def _fresh_history(chat_id: int) -> list[HistoryEntry]:
+    bucket = _RECENT.get(chat_id)
+    if not bucket:
+        return []
+    cutoff = time.time() - HISTORY_TTL_SEC
+    return [entry for entry in bucket if entry.ts >= cutoff]
+
+
+def _build_turns(history: list[HistoryEntry]):
+    from xai_sdk.chat import assistant, user
+
+    turns = []
+    user_buffer: list[str] = []
+
+    def flush_user_buffer():
+        if user_buffer:
+            turns.append(user("\n".join(user_buffer)))
+            user_buffer.clear()
+
+    for entry in history:
+        if entry.role == "user":
+            user_buffer.append(f"{entry.name}: {entry.text}")
+        else:
+            flush_user_buffer()
+            turns.append(assistant(entry.text))
+    flush_user_buffer()
+    return turns
+
+
+async def generate_roast(
+    chat_id: int,
+    target_name: str,
+    target_text: str,
+    target_message_id: int | None = None,
+    reply_to_id: int | None = None,
+) -> str | None:
     global _client
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
@@ -75,29 +189,48 @@ async def generate_roast(chat_id: int, target_name: str, target_text: str) -> st
 
     from xai_sdk.chat import system, user
 
-    history = list(_RECENT.get(chat_id, []))
-    # Exclude the last entry because it is the target message itself
-    if history and history[-1] == (target_name, target_text):
+    history = _fresh_history(chat_id)
+    if history and target_message_id is not None and history[-1].message_id == target_message_id:
+        history = history[:-1]
+    elif (
+        history
+        and target_message_id is None
+        and history[-1].role == "user"
+        and history[-1].name == target_name
+        and history[-1].text == target_text
+    ):
         history = history[:-1]
 
-    context_lines = "\n".join(f"{name}: {msg}" for name, msg in history)
-    if context_lines:
-        user_content = (
-            f"Недавние сообщения в чате:\n{context_lines}\n\nОтветь на сообщение от {target_name}: {target_text}"
-        )
-    else:
-        user_content = f"Ответь на сообщение от {target_name}: {target_text}"
+    reply_context = ""
+    if reply_to_id is not None:
+        for entry in reversed(history):
+            if entry.message_id == reply_to_id:
+                snippet = entry.text.strip()
+                if len(snippet) > 200:
+                    snippet = snippet[:200] + "…"
+                reply_context = f" (в ответ на сообщение от {entry.name}: «{snippet}»)"
+                break
+
+    final_target = f"Ответь на сообщение от {target_name}{reply_context}: {target_text}"
+    turns = _build_turns(history)
+    messages = [system(SYSTEM_PROMPT), *turns, user(final_target)]
 
     try:
-        logger.info("roast call: chat=%s model=%s target=%s", chat_id, MODEL, target_name)
+        logger.info(
+            "roast call: chat=%s model=%s target=%s history=%d turns=%d",
+            chat_id,
+            MODEL,
+            target_name,
+            len(history),
+            len(turns),
+        )
         async with _GLOBAL_SEMAPHORE:
             chat = _client.chat.create(
                 model=MODEL,
                 temperature=UNHINGED_TEMPERATURE,
                 max_tokens=120,
-                messages=[system(SYSTEM_PROMPT)],
+                messages=messages,
             )
-            chat.append(user(user_content))
             response = await chat.sample()
         reply = response.content
         if reply:
