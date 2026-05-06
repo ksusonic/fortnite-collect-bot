@@ -15,6 +15,7 @@ from aiogram.types import (
     Message,
     ReactionTypeEmoji,
 )
+from aiogram.utils.chat_action import ChatActionSender
 
 from bot.db import (
     Session,
@@ -47,6 +48,7 @@ from bot.roast import (
     ROAST_PROBABILITY,
     generate_roast,
     is_roast_message,
+    remember_bot_message,
     remember_message,
     remember_roast_message,
     should_roast,
@@ -286,11 +288,12 @@ async def maybe_roast(message: Message) -> None:
     chat_id = message.chat.id
     user_name = message.from_user.full_name or message.from_user.first_name or "Аноним"
     text = message.text or ""
-    remember_message(chat_id, user_name, text)
+    reply_to = message.reply_to_message
+    reply_to_id = reply_to.message_id if reply_to is not None else None
+    remember_message(chat_id, user_name, text, message_id=message.message_id, reply_to_id=reply_to_id)
     if not await is_feature_enabled(chat_id, "roast"):
         logger.debug("roast skip: feature disabled for chat %s", chat_id)
         return
-    reply_to = message.reply_to_message
     forced_by_reply = (
         reply_to is not None
         and reply_to.from_user is not None
@@ -303,10 +306,18 @@ async def maybe_roast(message: Message) -> None:
     if not forced and not should_roast(chat_id, probability=custom_prob):
         return
     logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
-    reply = await generate_roast(chat_id, user_name, text)
+    async with ChatActionSender.typing(bot=message.bot, chat_id=chat_id):
+        reply = await generate_roast(
+            chat_id,
+            user_name,
+            text,
+            target_message_id=message.message_id,
+            reply_to_id=reply_to_id,
+        )
     if reply:
         sent = await message.reply(html.escape(reply))
         remember_roast_message(chat_id, sent.message_id)
+        remember_bot_message(chat_id, reply, sent.message_id)
         logger.info("roast sent: chat=%s forced=%s", chat_id, forced)
 
 
