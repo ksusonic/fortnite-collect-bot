@@ -47,6 +47,7 @@ from bot.messages import (
 from bot.roast import (
     ROAST_PROBABILITY,
     generate_roast,
+    get_roast_lock,
     is_roast_message,
     remember_bot_message,
     remember_message,
@@ -302,23 +303,24 @@ async def maybe_roast(message: Message) -> None:
     )
     forced_by_mention = await _is_bot_mentioned(message)
     forced = forced_by_reply or forced_by_mention
-    custom_prob = await get_feature_value(chat_id, "roast")
-    if not forced and not should_roast(chat_id, probability=custom_prob):
-        return
-    logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
-    async with ChatActionSender.typing(bot=message.bot, chat_id=chat_id):
-        reply = await generate_roast(
-            chat_id,
-            user_name,
-            text,
-            target_message_id=message.message_id,
-            reply_to_id=reply_to_id,
-        )
-    if reply:
-        sent = await message.reply(html.escape(reply))
-        remember_roast_message(chat_id, sent.message_id)
-        remember_bot_message(chat_id, reply, sent.message_id)
-        logger.info("roast sent: chat=%s forced=%s", chat_id, forced)
+    async with get_roast_lock(chat_id):
+        custom_prob = await get_feature_value(chat_id, "roast")
+        if not forced and not should_roast(chat_id, probability=custom_prob):
+            return
+        logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
+        async with ChatActionSender.typing(bot=message.bot, chat_id=chat_id):
+            reply = await generate_roast(
+                chat_id,
+                user_name,
+                text,
+                target_message_id=message.message_id,
+                reply_to_id=reply_to_id,
+            )
+        if reply:
+            sent = await message.reply(html.escape(reply))
+            remember_roast_message(chat_id, sent.message_id)
+            remember_bot_message(chat_id, reply, sent.message_id)
+            logger.info("roast sent: chat=%s forced=%s", chat_id, forced)
 
 
 @router.callback_query(F.data.in_({"go", "pass"}) | F.data.startswith("slot:"))

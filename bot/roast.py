@@ -28,6 +28,7 @@ _RECENT: dict[int, deque[HistoryEntry]] = {}
 _LAST_ROAST: dict[int, float] = {}
 _ROAST_MESSAGE_IDS: dict[int, deque[int]] = {}
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(3)
+_ROAST_LOCKS: dict[int, asyncio.Lock] = {}
 _client = None
 
 ROAST_PROBABILITY = float(os.getenv("ROAST_PROBABILITY", "0.05"))
@@ -65,6 +66,10 @@ SYSTEM_PROMPT = (
     "— HTML, Markdown, обрывочных токенов.\n"
     "— Повторов одной шутки или формулы из своих предыдущих ответов в этом чате."
 )
+
+
+def get_roast_lock(chat_id: int) -> asyncio.Lock:
+    return _ROAST_LOCKS.setdefault(chat_id, asyncio.Lock())
 
 
 def _get_or_create_deque(chat_id: int) -> deque[HistoryEntry]:
