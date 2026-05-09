@@ -53,9 +53,15 @@ async def main() -> None:
     for session in await load_active_sessions():
         sessions[session.message_id] = session
 
-    asyncio.create_task(expire_sessions(bot))
-    asyncio.create_task(check_status_loop(bot))
-    await dp.start_polling(bot)
+    expire_task = asyncio.create_task(expire_sessions(bot))
+    status_task = asyncio.create_task(check_status_loop(bot))
+    try:
+        await dp.start_polling(bot)
+    finally:
+        for task in (expire_task, status_task):
+            task.cancel()
+        await asyncio.gather(expire_task, status_task, return_exceptions=True)
+        await bot.session.close()
 
 
 if __name__ == "__main__":
