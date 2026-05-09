@@ -46,6 +46,7 @@ from bot.messages import (
 )
 from bot.roast import (
     ROAST_PROBABILITY,
+    TELEGRAM_MAX_MESSAGE_LEN,
     generate_roast,
     get_roast_lock,
     is_roast_message,
@@ -317,7 +318,10 @@ async def maybe_roast(message: Message) -> None:
                 reply_to_id=reply_to_id,
             )
         if reply:
-            sent = await message.reply(html.escape(reply))
+            payload = html.escape(reply)
+            if len(payload) > TELEGRAM_MAX_MESSAGE_LEN:
+                payload = payload[: TELEGRAM_MAX_MESSAGE_LEN - 1] + "…"
+            sent = await message.reply(payload)
             remember_roast_message(chat_id, sent.message_id)
             remember_bot_message(chat_id, reply, sent.message_id)
             logger.info("roast sent: chat=%s forced=%s", chat_id, forced)

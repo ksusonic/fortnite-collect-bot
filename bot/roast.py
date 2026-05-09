@@ -40,6 +40,8 @@ REQUEST_TIMEOUT = float(os.getenv("ROAST_REQUEST_TIMEOUT", "45"))
 MODEL = os.getenv("ROAST_MODEL", "grok-3-mini")
 UNHINGED_TEMPERATURE = 1.3
 BOT_HISTORY_NAME = "<bot>"
+TELEGRAM_MAX_MESSAGE_LEN = 4096
+ROAST_MAX_TOKENS = int(os.getenv("ROAST_MAX_TOKENS", "2000"))
 
 SYSTEM_PROMPT = (
     "Ты — Grok в режиме Unhinged в групповом чате друзей."
@@ -224,7 +226,7 @@ async def generate_roast(
             chat = _client.chat.create(
                 model=MODEL,
                 temperature=UNHINGED_TEMPERATURE,
-                max_tokens=120,
+                max_tokens=ROAST_MAX_TOKENS,
                 messages=messages,
             )
             response = await chat.sample()
