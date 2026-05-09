@@ -69,11 +69,7 @@ SYSTEM_PROMPT = (
 
 
 def get_roast_lock(chat_id: int) -> asyncio.Lock:
-    lock = _ROAST_LOCKS.get(chat_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _ROAST_LOCKS[chat_id] = lock
-    return lock
+    return _ROAST_LOCKS.setdefault(chat_id, asyncio.Lock())
 
 
 def _get_or_create_deque(chat_id: int) -> deque[HistoryEntry]:
