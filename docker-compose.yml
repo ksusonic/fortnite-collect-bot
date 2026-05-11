@@ -1,6 +1,7 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/ksusonic/fortnite-collect-bot:main
+    pull_policy: always
     restart: unless-stopped
     env_file: .env
     environment:
