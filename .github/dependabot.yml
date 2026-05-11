@@ -10,27 +10,24 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      python-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      python:
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     groups:
-      actions-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
     groups:
-      docker-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      docker:
+        patterns:
+          - "*"
