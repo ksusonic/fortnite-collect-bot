@@ -8,7 +8,4 @@ services:
       DB_PATH: /app/data/bot.db
       XAI_API_KEY: ${XAI_API_KEY:-}
     volumes:
-      - bot-data:/app/data
-
-volumes:
-  bot-data:
+      - ./data:/app/data
