@@ -58,6 +58,8 @@ from bot.roast import (
 
 logger = logging.getLogger(__name__)
 
+FORT_REPLACE_COOLDOWN = 30  # seconds before a repeated /fort can replace an active session
+
 router = Router()
 
 
@@ -73,13 +75,33 @@ async def cmd_fort(message: Message) -> None:
     if user is None:
         return
 
-    has_active = any(s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete)
-    if has_active:
+    active_session = next(
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        None,
+    )
+    if active_session is not None:
+        if time.time() - active_session.created_at < FORT_REPLACE_COOLDOWN:
+            try:
+                await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
+            except TelegramBadRequest:
+                pass
+            try:
+                await message.delete()
+            except TelegramBadRequest:
+                pass
+            return
+        active_session.is_complete = True
+        active_session.is_expired = True
+        await mark_expired(active_session.message_id)
         try:
-            await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
+            await message.bot.edit_message_text(
+                text=build_cancelled_text(active_session),
+                chat_id=active_session.chat_id,
+                message_id=active_session.message_id,
+            )
         except TelegramBadRequest:
             pass
-        return
+        sessions.pop(active_session.message_id, None)
 
     name = _display_name(user)
     slots = generate_time_slots()
@@ -113,66 +135,6 @@ async def cmd_fort(message: Message) -> None:
 
 @router.message(Command("fort"))
 async def cmd_fort_private(message: Message) -> None:
-    await message.answer("Эта команда работает только в группах.")
-
-
-@router.message(Command("refort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_refort(message: Message) -> None:
-    user = message.from_user
-    if user is None:
-        return
-
-    # Отменяем активный сбор, если есть
-    active_session = next(
-        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
-        None,
-    )
-    if active_session is not None:
-        active_session.is_complete = True
-        active_session.is_expired = True
-        await mark_expired(active_session.message_id)
-        try:
-            await message.bot.edit_message_text(
-                text=build_cancelled_text(active_session),
-                chat_id=active_session.chat_id,
-                message_id=active_session.message_id,
-            )
-        except TelegramBadRequest:
-            pass
-        sessions.pop(active_session.message_id, None)
-
-    # Создаём новый сбор
-    name = _display_name(user)
-    slots = generate_time_slots()
-    participants = await get_chat_participants(message.chat.id)
-    # Exclude the initiator from the tag list
-    tagged_users = {uid: n for uid, n in participants if uid != user.id}
-    session = Session(
-        chat_id=message.chat.id,
-        message_id=0,
-        initiator_id=user.id,
-        initiator_name=name,
-        style=random_style(),
-        time_slots=slots,
-        tagged_users=tagged_users,
-    )
-
-    text = build_gather_text(session)
-    keyboard = build_keyboard(len(session.go_players), time_slots=slots)
-    sent = await message.answer(text, reply_markup=keyboard)
-
-    session.message_id = sent.message_id
-    sessions[sent.message_id] = session
-    await save_session(session)
-
-    try:
-        await message.delete()
-    except TelegramBadRequest:
-        pass
-
-
-@router.message(Command("refort"))
-async def cmd_refort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
@@ -242,7 +204,6 @@ _WELCOME_TEMPLATE = (
     "\U0001f44b Привет, {mention}.\n\n"
     "Я бот для сбора скуада в Fortnite. Команды:\n"
     "\U0001f3ae /fort — собрать отряд из 4 человек\n"
-    "\U0001f504 /refort — пересоздать текущий сбор\n"
     "\U0001f5d1 /rm — отменить активный сбор\n"
     "\U0001f4ca /stats — статистика чата\n\n"
     "Также слежу за статусом серверов Epic и предупрежу, если они недоступны."
