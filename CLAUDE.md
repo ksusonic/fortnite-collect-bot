@@ -36,8 +36,7 @@ uv run pre-commit run --all-files
 
 ## Bot commands (group chats only)
 
-- `/fort` — start a gathering session with time-slot buttons (Now + next hours up to 23:00 MSK)
-- `/refort` — cancel current active session and start a new one
+- `/fort` — start a gathering session with time-slot buttons (Now + next hours up to 23:00 MSK). If an active session exists, repeated `/fort` within `FORT_REPLACE_COOLDOWN` (30 s) gets a 👎 reaction; after the cooldown it cancels the old session and creates a new one.
 - `/rm` — cancel and delete current active session
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
 - `/roast on [0..1] | off` — toggle xAI Grok "Unhinged" replies; optional probability override (default `ROAST_PROBABILITY`)
@@ -53,7 +52,7 @@ uv run pre-commit run --all-files
 All bot code lives in `bot/`:
 
 - `__main__.py` — entry point: creates Bot/Dispatcher, initializes DB, restores active sessions from SQLite into in-memory cache, starts background tasks (`expire_sessions`, `check_status_loop`), runs polling
-- `handlers.py` — aiogram Router with command handlers (`/fort`, `/refort`, `/rm`, `/stats`, `/roast`), callback query handler for slot/`go`/`pass` buttons, `maybe_roast` for non-command group messages, welcome message for new chat members; also contains `expire_sessions()` background coroutine
+- `handlers.py` — aiogram Router with command handlers (`/fort`, `/rm`, `/stats`, `/roast`), callback query handler for slot/`go`/`pass` buttons, `maybe_roast` for non-command group messages, welcome message for new chat members; also contains `expire_sessions()` background coroutine
 - `db.py` — SQLite persistence via aiosqlite; defines `Session`/`ChatStats` dataclasses and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call. Tables: `sessions`, `responses`, `chat_features`
 - `messages.py` — text/keyboard builders; contains `_STYLES` list (19 randomized gathering themes), `_STATS_STYLES` (3 stats layouts), `generate_time_slots()`, constants (`SQUAD_SIZE=4`, `SESSION_TIMEOUT=3600`, `PLAY_DEADLINE_HOUR=23`)
 - `roast.py` — xAI Grok integration (Unhinged persona via system prompt + `temperature=1.3`); manages per-chat dialog history (default 30 messages, both user and assistant turns) with 12-hour idle TTL, cooldown, probability roll, recent roast message-id tracking (so replies to bot's roasts force a new roast)
@@ -62,7 +61,7 @@ All bot code lives in `bot/`:
 ## Key design decisions
 
 - **Dual storage**: in-memory `sessions` dict for fast access + SQLite for persistence across restarts. Cache is authoritative during runtime; SQLite is synced on every mutation.
-- **Session keyed by message_id**: each `/fort` creates one session tied to the bot's reply message_id. Only one active (incomplete) session per chat allowed (use `/refort` to replace).
+- **Session keyed by message_id**: each `/fort` creates one session tied to the bot's reply message_id. Only one active (incomplete) session per chat allowed; a repeat `/fort` only replaces it once `FORT_REPLACE_COOLDOWN` seconds have passed since the original (otherwise it's rejected with a 👎 reaction).
 - **Time slots**: `generate_time_slots()` returns `["now", "HH:00", ...]` up to `PLAY_DEADLINE_HOUR`. Slot buttons use callback data `slot:<slot>`. After `PLAY_DEADLINE_HOUR` the background expirer also closes any open session.
 - **Tagged users**: at `/fort`, pulls last 20 distinct `go`-responders from `responses` (excluding bots and the initiator) into `session.tagged_users`. They render as a `📣 @user1 @user2…` line until each responds.
 - **Per-chat feature toggles**: `chat_features` table stores `(chat_id, feature, enabled, value REAL)`. Currently used for `roast` with optional custom probability. Use `set_feature` / `is_feature_enabled` / `get_feature_value`.
