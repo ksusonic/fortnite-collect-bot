@@ -101,6 +101,18 @@ async def init_db() -> None:
                 last_roast REAL
             )"""
         )
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS epic_links (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                user_name TEXT NOT NULL,
+                epic_name TEXT NOT NULL,
+                epic_account_id TEXT NOT NULL,
+                linked_at REAL NOT NULL,
+                PRIMARY KEY (chat_id, user_id)
+            )"""
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_epic_links_chat ON epic_links (chat_id)")
         await db.commit()
 
 
@@ -461,3 +473,97 @@ async def load_active_sessions() -> list[Session]:
         if session is not None:
             result.append(session)
     return result
+
+
+@dataclass
+class EpicLink:
+    chat_id: int
+    user_id: int
+    user_name: str
+    epic_name: str
+    epic_account_id: str
+    linked_at: float
+
+
+async def save_epic_link(
+    chat_id: int,
+    user_id: int,
+    user_name: str,
+    epic_name: str,
+    epic_account_id: str,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO epic_links
+               (chat_id, user_id, user_name, epic_name, epic_account_id, linked_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (chat_id, user_id, user_name, epic_name, epic_account_id, time.time()),
+        )
+        await db.commit()
+
+
+async def get_epic_link(chat_id: int, user_id: int) -> EpicLink | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM epic_links WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return EpicLink(
+            chat_id=row["chat_id"],
+            user_id=row["user_id"],
+            user_name=row["user_name"],
+            epic_name=row["epic_name"],
+            epic_account_id=row["epic_account_id"],
+            linked_at=row["linked_at"],
+        )
+
+
+async def delete_epic_link(chat_id: int, user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM epic_links WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def get_chat_epic_links(chat_id: int) -> list[EpicLink]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM epic_links WHERE chat_id = ? ORDER BY linked_at ASC",
+            (chat_id,),
+        )
+        rows = await cursor.fetchall()
+    return [
+        EpicLink(
+            chat_id=row["chat_id"],
+            user_id=row["user_id"],
+            user_name=row["user_name"],
+            epic_name=row["epic_name"],
+            epic_account_id=row["epic_account_id"],
+            linked_at=row["linked_at"],
+        )
+        for row in rows
+    ]
+
+
+async def resolve_user_by_username(chat_id: int, username_with_at: str) -> tuple[int, str] | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT r.user_id, r.user_name
+               FROM responses r JOIN sessions s ON r.message_id = s.message_id
+               WHERE s.chat_id = ? AND LOWER(r.user_name) = LOWER(?) AND r.is_bot = 0
+               ORDER BY r.responded_at DESC LIMIT 1""",
+            (chat_id, username_with_at),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return row["user_id"], row["user_name"]

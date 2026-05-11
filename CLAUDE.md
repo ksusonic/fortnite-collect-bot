@@ -40,6 +40,11 @@ uv run pre-commit run --all-files
 - `/rm` — cancel and delete current active session
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
 - `/roast on [0..1] | off` — toggle xAI Grok "Unhinged" replies; optional probability override (default `ROAST_PROBABILITY`)
+- `/linkepic <EpicName>` — link caller's telegram id to a public Epic Games account (requires `FORTNITE_API_KEY`). The Epic account must have Public Game Stats enabled.
+- `/linkepicfor @user <EpicName>` — admin-only (`ADMIN_USER_ID`); link `@user` to an Epic account. `@user` must have responded at least once to `/fort` in this chat (resolved via `responses` table).
+- `/unlinkepic` — remove caller's Epic link in current chat
+- `/myfnstats` — caller's Fortnite lifetime stats (overall + solo/duo/squad)
+- `/teamstats` — aggregated lifetime stats for everyone in this chat who has linked an Epic account; per-mode top-3 by wins, team K/D, internal leaderboards
 
 ## Linting & CI
 
@@ -53,10 +58,11 @@ All bot code lives in `bot/`:
 
 - `__main__.py` — entry point: creates Bot/Dispatcher, initializes DB, restores active sessions from SQLite into in-memory cache, starts background tasks (`expire_sessions`, `check_status_loop`), runs polling
 - `handlers.py` — aiogram Router with command handlers (`/fort`, `/rm`, `/stats`, `/roast`), callback query handler for slot/`go`/`pass` buttons, `maybe_roast` for non-command group messages, welcome message for new chat members; also contains `expire_sessions()` background coroutine
-- `db.py` — SQLite persistence via aiosqlite; defines `Session`/`ChatStats` dataclasses and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call. Tables: `sessions`, `responses`, `chat_features`
-- `messages.py` — text/keyboard builders; contains `_STYLES` list (19 randomized gathering themes), `_STATS_STYLES` (3 stats layouts), `generate_time_slots()`, constants (`SQUAD_SIZE=4`, `SESSION_TIMEOUT=3600`, `PLAY_DEADLINE_HOUR=23`)
+- `db.py` — SQLite persistence via aiosqlite; defines `Session`/`ChatStats`/`EpicLink` dataclasses and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call. Tables: `sessions`, `responses`, `chat_features`, `roast_state`, `epic_links`
+- `messages.py` — text/keyboard builders; contains `_STYLES` list (19 randomized gathering themes), `_STATS_STYLES` (3 stats layouts), `generate_time_slots()`, constants (`SQUAD_SIZE=4`, `SESSION_TIMEOUT=3600`, `PLAY_DEADLINE_HOUR=23`); also `build_my_fn_stats_text`/`build_team_fn_stats_text` for Fortnite stat blocks
 - `roast.py` — xAI Grok integration (Unhinged persona via system prompt + `temperature=1.3`); manages per-chat dialog history (default 30 messages, both user and assistant turns) with 12-hour idle TTL, cooldown, probability roll, recent roast message-id tracking (so replies to bot's roasts force a new roast)
 - `status.py` — Fortnite server status monitoring via Epic Games status API; alerts active chats during 18:00–24:00 MSK on indicator changes (`down`/`degraded`/`restored`)
+- `fortnite.py` — `fortnite-api` SDK wrapper. Lazy singleton `Client` under `asyncio.Lock`, lifetime BR stats fetch (`fetch_stats(name=...)` / `fetch_stats(account_id=...)`), in-memory TTL cache keyed by `account_id` with per-account `asyncio.Lock` coalescing, `asyncio.wait_for` per request, exception mapping (`EpicNameNotFound`/`StatsPrivate`/`FortniteUnavailable`). `close()` shuts down the underlying aiohttp session at app exit.
 
 ## Key design decisions
 
@@ -71,6 +77,7 @@ All bot code lives in `bot/`:
 - **HTML parse mode**: set globally via `DefaultBotProperties`. User names rendered as `<a href="tg://user?id=...">` deep links with `html.escape()`. Roast text is also `html.escape()`-d before sending.
 - **DB migrations**: `init_db()` issues idempotent `ALTER TABLE ADD COLUMN ...` statements wrapped in `try/except` — schema upgrades run in-place on every startup, no migration framework. New columns must be nullable or have a default.
 - **DB_PATH env var**: defaults to `bot.db` locally; set to `/app/data/bot.db` in Docker via docker-compose to use the persistent `bot-data` volume.
+- **Fortnite stats are lifetime-only**: provider (`fortnite-api.com`) exposes only aggregated lifetime/season totals per Epic account, no per-match data and no squad history. Each player must enable Public Game Stats in their Fortnite settings or the API returns 403 (mapped to `StatsPrivate`). Cache lives in memory only (`STATS_TTL_SEC`, default 600 s) — restart drops it. No background prefetch; all fetches are on-demand. Per-account `asyncio.Lock` coalesces concurrent fetches of the same account during `/teamstats`.
 
 ## Environment variables
 
@@ -86,3 +93,7 @@ All bot code lives in `bot/`:
 | `ROAST_HISTORY_TTL_SEC` | no | `43200` | Idle seconds after which roast history is dropped on next message (default 12 h) |
 | `ROAST_MODEL` | no | `grok-3-mini` | xAI model id |
 | `ROAST_REQUEST_TIMEOUT` | no | `45` | xAI client RPC timeout in seconds |
+| `FORTNITE_API_KEY` | no | — | Required for `/linkepic`, `/myfnstats`, `/teamstats`; without it those commands answer "not configured" |
+| `FORTNITE_STATS_TTL_SEC` | no | `600` | In-memory TTL for cached Fortnite stats (per account_id) |
+| `FORTNITE_REQUEST_TIMEOUT` | no | `15` | Per-request timeout for the Fortnite API client (seconds) |
+| `ADMIN_USER_ID` | no | — | Telegram user_id of the single bot admin; required for `/linkepicfor`. Without it that command answers "not configured" |

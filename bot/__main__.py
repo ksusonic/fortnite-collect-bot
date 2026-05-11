@@ -41,13 +41,17 @@ async def main() -> None:
     from bot.roast import MODEL, ROAST_COOLDOWN_SEC, ROAST_PROBABILITY
 
     token = os.getenv("BOT_TOKEN")
+    admin_user_id = int(os.getenv("ADMIN_USER_ID", "0")) or None
     logger.info(
         "startup config: log_level=%s db_path=%s bot_token=%s xai_api_key=%s "
+        "fortnite_api_key=%s admin_user_id=%s "
         "roast_probability=%.3f roast_cooldown=%ss roast_model=%s",
         log_level,
         DB_PATH,
         "set" if token else "missing",
         "set" if os.getenv("XAI_API_KEY") else "missing",
+        "set" if os.getenv("FORTNITE_API_KEY") else "missing",
+        admin_user_id if admin_user_id is not None else "missing",
         ROAST_PROBABILITY,
         ROAST_COOLDOWN_SEC,
         MODEL,
@@ -55,6 +59,10 @@ async def main() -> None:
 
     if not os.getenv("XAI_API_KEY"):
         logger.warning("roast disabled: XAI_API_KEY not set")
+    if not os.getenv("FORTNITE_API_KEY"):
+        logger.warning("fortnite stats disabled: FORTNITE_API_KEY not set")
+    if admin_user_id is None:
+        logger.warning("admin link command disabled: ADMIN_USER_ID not set")
 
     if not token:
         raise SystemExit("BOT_TOKEN is not set in .env")
@@ -81,6 +89,9 @@ async def main() -> None:
             task.cancel()
         await asyncio.gather(*background_tasks, return_exceptions=True)
         await bot.session.close()
+        from bot import fortnite
+
+        await fortnite.close()
 
 
 if __name__ == "__main__":

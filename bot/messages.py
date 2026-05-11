@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 if TYPE_CHECKING:
-    from bot.db import ChatStats, Session
+    from bot.db import ChatStats, EpicLink, Session
+    from bot.fortnite import FortniteError, ModeStats, PlayerStats
 
 MSK = timezone(timedelta(hours=3))
 
@@ -418,6 +419,168 @@ def build_stats_text(stats: ChatStats) -> str:
             avg_text = _format_duration(avg_fill) if avg_fill else "—"
             body.append(f"   {hour:02d}:00 — <b>{cnt}</b> сборов, среднее <b>{avg_text}</b>")
         _section(lines, style.best_hours_header, body)
+
+    return "\n".join(lines)
+
+
+def _format_hours(minutes: int) -> str:
+    return f"{minutes // 60}ч {minutes % 60}м"
+
+
+def _format_mode_block(title: str, mode: ModeStats) -> list[str]:
+    return [
+        title,
+        f"   Матчи: <b>{mode.matches}</b>  ·  Победы: <b>{mode.wins}</b>  ·  K/D: <b>{mode.kd:.2f}</b>",
+        f"   Win rate: <b>{mode.win_rate * 100:.1f}%</b>  ·  Киллы: <b>{mode.kills}</b>",
+        f"   В игре: <b>{_format_hours(mode.minutes_played)}</b>",
+    ]
+
+
+def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
+    user_link = _user_link(link.user_id, link.user_name)
+    fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
+    lines: list[str] = [
+        f"\U0001f3ae <b>Fortnite stats</b> — {user_link}",
+        f"\U0001f3ad Epic: <b>{html.escape(stats.epic_name)}</b>",
+    ]
+    _section(lines, "\U0001f4ca <b>Overall</b>", _format_mode_block("Все режимы", stats.overall)[1:])
+    mode_blocks = (
+        ("\U0001f9cd <b>Solo</b>", stats.solo),
+        ("\U0001f465 <b>Duo</b>", stats.duo),
+        ("\U0001f46a <b>Squad</b>", stats.squad),
+    )
+    for title, mode in mode_blocks:
+        if mode is None:
+            continue
+        body = _format_mode_block(title, mode)
+        lines.append(_DIVIDER)
+        lines.extend(body)
+    lines.append(_DIVIDER)
+    lines.append(f"\U0001f553 Обновлено: {fetched_dt.strftime('%d.%m %H:%M')} MSK")
+    return "\n".join(lines)
+
+
+def _team_aggregate(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[int, int, int, float, float]:
+    total_matches = sum(s.overall.matches for _, s in successes)
+    total_wins = sum(s.overall.wins for _, s in successes)
+    total_kills = sum(s.overall.kills for _, s in successes)
+    total_deaths_est = sum(int(round(s.overall.kills / s.overall.kd)) if s.overall.kd > 0 else 0 for _, s in successes)
+    team_kd = total_kills / total_deaths_est if total_deaths_est > 0 else 0.0
+    team_win_rate = total_wins / total_matches if total_matches > 0 else 0.0
+    return total_matches, total_wins, total_kills, team_kd, team_win_rate
+
+
+def _top_by(
+    successes: list[tuple[EpicLink, PlayerStats]],
+    key,
+    *,
+    limit: int = 3,
+    min_matches: int = 0,
+) -> list[tuple[EpicLink, PlayerStats, float]]:
+    filtered = [(link, s, key(s)) for link, s in successes if s.overall.matches >= min_matches]
+    filtered.sort(key=lambda x: -x[2])
+    return filtered[:limit]
+
+
+def _mode_top_by_wins(
+    successes: list[tuple[EpicLink, PlayerStats]],
+    mode_attr: str,
+    limit: int = 3,
+) -> list[tuple[EpicLink, str, ModeStats]]:
+    rows: list[tuple[EpicLink, str, ModeStats]] = []
+    for link, stats in successes:
+        mode = getattr(stats, mode_attr)
+        if mode is None:
+            continue
+        rows.append((link, stats.epic_name, mode))
+    rows.sort(key=lambda x: -x[2].wins)
+    return rows[:limit]
+
+
+def build_team_fn_stats_text(
+    successes: list[tuple[EpicLink, PlayerStats]],
+    failures: list[tuple[EpicLink, FortniteError]],
+) -> str:
+    from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsPrivate
+
+    lines: list[str] = ["\U0001f3c6 <b>Командная Fortnite-статистика</b>"]
+
+    if not successes:
+        lines.append(_DIVIDER)
+        lines.append("Не удалось получить ни одну статистику.")
+    else:
+        total_matches, total_wins, total_kills, team_kd, team_win_rate = _team_aggregate(successes)
+        summary_body = [
+            f"   Игроков: <b>{len(successes)}</b>",
+            f"   Матчи: <b>{total_matches}</b>  ·  Победы: <b>{total_wins}</b>  ·  Киллы: <b>{total_kills}</b>",
+            f"   Командный K/D: <b>{team_kd:.2f}</b>  ·  Win rate: <b>{team_win_rate * 100:.1f}%</b>",
+        ]
+        _section(lines, "\U0001f4ca <b>Сводка</b>", summary_body)
+
+        wins_top = _top_by(successes, lambda s: s.overall.wins)
+        kills_top = _top_by(successes, lambda s: s.overall.kills)
+        kd_top = _top_by(successes, lambda s: s.overall.kd, min_matches=50)
+        medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
+
+        if wins_top:
+            body = [
+                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(s.epic_name)})  <b>{int(v)}</b>"
+                for i, (link, s, v) in enumerate(wins_top)
+            ]
+            _section(lines, "\U0001f3c5 <b>Топ по победам</b>", body)
+        if kills_top:
+            body = [
+                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(s.epic_name)})  <b>{int(v)}</b>"
+                for i, (link, s, v) in enumerate(kills_top)
+            ]
+            _section(lines, "\U0001f5e1 <b>Топ по киллам</b>", body)
+        if kd_top:
+            body = [
+                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(s.epic_name)})  <b>{v:.2f}</b>"
+                for i, (link, s, v) in enumerate(kd_top)
+            ]
+            _section(lines, "\U0001f4c8 <b>Топ по K/D</b> <i>(от 50 матчей)</i>", body)
+
+        for header, mode_attr in (
+            ("\U0001f9cd <b>Solo — топ побед</b>", "solo"),
+            ("\U0001f465 <b>Duo — топ побед</b>", "duo"),
+            ("\U0001f46a <b>Squad — топ побед</b>", "squad"),
+        ):
+            top = _mode_top_by_wins(successes, mode_attr)
+            if not top:
+                continue
+            body = [
+                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(epic_name)})  "
+                f"<b>{mode.wins}</b> побед  ·  K/D <b>{mode.kd:.2f}</b>"
+                for i, (link, epic_name, mode) in enumerate(top)
+            ]
+            _section(lines, header, body)
+
+    if failures:
+        not_found: list[EpicLink] = []
+        private: list[EpicLink] = []
+        unavailable: list[EpicLink] = []
+        for link, err in failures:
+            if isinstance(err, EpicNameNotFound):
+                not_found.append(link)
+            elif isinstance(err, StatsPrivate):
+                private.append(link)
+            elif isinstance(err, FortniteUnavailable):
+                unavailable.append(link)
+            else:
+                unavailable.append(link)
+
+        body: list[str] = []
+        if private:
+            names = ", ".join(_user_link(link.user_id, link.user_name) for link in private)
+            body.append(f"   \U0001f512 Приватный профиль: {names}")
+        if not_found:
+            names = ", ".join(_user_link(link.user_id, link.user_name) for link in not_found)
+            body.append(f"   \U0001f47b Не найден: {names}")
+        if unavailable:
+            names = ", ".join(_user_link(link.user_id, link.user_name) for link in unavailable)
+            body.append(f"   \U0001f6ab API недоступен: {names}")
+        _section(lines, "⚠️ <b>Без данных</b>", body)
 
     return "\n".join(lines)
 

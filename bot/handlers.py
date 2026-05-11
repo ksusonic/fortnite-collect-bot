@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import os
 import time
 from datetime import datetime
 
@@ -17,19 +18,31 @@ from aiogram.types import (
 )
 from aiogram.utils.chat_action import ChatActionSender
 
+from bot import fortnite
 from bot.db import (
     Session,
+    delete_epic_link,
+    get_chat_epic_links,
     get_chat_participants,
     get_chat_stats,
+    get_epic_link,
     get_feature_value,
     is_feature_enabled,
     load_session,
     mark_complete,
     mark_expired,
+    resolve_user_by_username,
+    save_epic_link,
     save_response,
     save_session,
     sessions,
     set_feature,
+)
+from bot.fortnite import (
+    EpicNameNotFound,
+    FortniteError,
+    FortniteUnavailable,
+    StatsPrivate,
 )
 from bot.messages import (
     MSK,
@@ -40,7 +53,9 @@ from bot.messages import (
     build_expired_text,
     build_gather_text,
     build_keyboard,
+    build_my_fn_stats_text,
     build_stats_text,
+    build_team_fn_stats_text,
     generate_time_slots,
     random_style,
 )
@@ -59,6 +74,25 @@ from bot.roast import (
 logger = logging.getLogger(__name__)
 
 FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /fort attempts
+
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
+
+TEAMSTATS_CONCURRENCY = 5
+
+
+def _is_bot_admin(user_id: int) -> bool:
+    return ADMIN_USER_ID is not None and user_id == ADMIN_USER_ID
+
+
+def _epic_error_text(exc: FortniteError) -> str:
+    if isinstance(exc, EpicNameNotFound):
+        return "Не нашёл такой Epic-аккаунт. Проверь ник."
+    if isinstance(exc, StatsPrivate):
+        return "Статистика этого аккаунта закрыта. Включи Public Game Stats в настройках Fortnite."
+    if isinstance(exc, FortniteUnavailable):
+        return "Fortnite API сейчас недоступен. Попробуй позже."
+    return "Не получилось получить статистику Fortnite."
+
 
 # Last successful /fort timestamp per (chat_id, user_id). In-memory only —
 # a bot restart resets the cooldown, which is acceptable for spam protection.
@@ -191,6 +225,167 @@ async def cmd_roast(message: Message, command: CommandObject) -> None:
         await message.answer(f"Режим язвительных ответов включён. Вероятность: {shown}")
         return
     await message.answer("Использование: /roast on [вероятность 0-1] или /roast off")
+
+
+@router.message(Command("linkepic"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_linkepic(message: Message, command: CommandObject) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    raw = (command.args or "").strip()
+    if not raw or len(raw) > 32:
+        await message.answer("Использование: /linkepic <EpicName>")
+        return
+    try:
+        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+            stats = await fortnite.fetch_stats(name=raw)
+    except FortniteError as exc:
+        await message.answer(_epic_error_text(exc))
+        return
+    await save_epic_link(
+        message.chat.id,
+        user.id,
+        _display_name(user),
+        stats.epic_name,
+        stats.epic_account_id,
+    )
+    user_link = f'<a href="tg://user?id={user.id}">{html.escape(_display_name(user))}</a>'
+    await message.answer(f"✅ {user_link} → Epic <b>{html.escape(stats.epic_name)}</b>")
+
+
+@router.message(Command("linkepic"))
+async def cmd_linkepic_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("linkepicfor"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_linkepicfor(message: Message, command: CommandObject) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    if ADMIN_USER_ID is None:
+        await message.answer("Админ-линковка не настроена.")
+        return
+    if not _is_bot_admin(user.id):
+        await message.answer("Команда только для админа бота.")
+        return
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    parts = (command.args or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Формат: /linkepicfor @username EpicName")
+        return
+    handle, epic_name = parts[0], parts[1].strip()
+    if not handle.startswith("@") or len(handle) < 2 or not epic_name or len(epic_name) > 32:
+        await message.answer("Формат: /linkepicfor @username EpicName")
+        return
+    resolved = await resolve_user_by_username(message.chat.id, handle)
+    if resolved is None:
+        await message.answer(
+            f"Не нашёл {html.escape(handle)} среди тех, кто отвечал на /fort в этом чате. "
+            "Попроси его сначала ткнуть кнопку в /fort."
+        )
+        return
+    target_user_id, target_user_name = resolved
+    try:
+        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+            stats = await fortnite.fetch_stats(name=epic_name)
+    except FortniteError as exc:
+        await message.answer(_epic_error_text(exc))
+        return
+    await save_epic_link(
+        message.chat.id,
+        target_user_id,
+        target_user_name,
+        stats.epic_name,
+        stats.epic_account_id,
+    )
+    target_link = f'<a href="tg://user?id={target_user_id}">{html.escape(target_user_name)}</a>'
+    await message.answer(f"✅ {target_link} → Epic <b>{html.escape(stats.epic_name)}</b> (залинковал админ)")
+
+
+@router.message(Command("linkepicfor"))
+async def cmd_linkepicfor_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("unlinkepic"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_unlinkepic(message: Message) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    removed = await delete_epic_link(message.chat.id, user.id)
+    if removed:
+        await message.answer("Линк снят.")
+    else:
+        await message.answer("У тебя не было линка.")
+
+
+@router.message(Command("unlinkepic"))
+async def cmd_unlinkepic_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("myfnstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_myfnstats(message: Message) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    link = await get_epic_link(message.chat.id, user.id)
+    if link is None:
+        await message.answer("Сначала /linkepic <EpicName>")
+        return
+    try:
+        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+            stats = await fortnite.fetch_stats(account_id=link.epic_account_id)
+    except FortniteError as exc:
+        await message.answer(_epic_error_text(exc))
+        return
+    await message.answer(build_my_fn_stats_text(link, stats))
+
+
+@router.message(Command("myfnstats"))
+async def cmd_myfnstats_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("teamstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_teamstats(message: Message) -> None:
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    links = await get_chat_epic_links(message.chat.id)
+    if not links:
+        await message.answer("Никто не залинкован. Используй /linkepic <EpicName>.")
+        return
+
+    sem = asyncio.Semaphore(TEAMSTATS_CONCURRENCY)
+
+    async def one(link):
+        async with sem:
+            try:
+                return link, await fortnite.fetch_stats(account_id=link.epic_account_id)
+            except FortniteError as exc:
+                return link, exc
+
+    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        results = await asyncio.gather(*(one(link) for link in links))
+
+    successes = [(link, r) for link, r in results if not isinstance(r, FortniteError)]
+    failures = [(link, r) for link, r in results if isinstance(r, FortniteError)]
+    await message.answer(build_team_fn_stats_text(successes, failures))
+
+
+@router.message(Command("teamstats"))
+async def cmd_teamstats_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
 
 
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
