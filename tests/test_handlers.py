@@ -10,6 +10,7 @@ from bot import handlers
 from bot.db import Session, save_session, sessions
 from bot.handlers import (
     FORT_REPLACE_COOLDOWN,
+    _fort_attempt_times,
     cmd_fort,
     on_callback,
     sweep_expired_sessions,
@@ -146,13 +147,15 @@ async def test_cmd_fort_replaces_when_no_active_session(tmp_db):
     sessions.pop(777, None)
 
 
-async def test_cmd_fort_within_cooldown_thumbs_down(tmp_db):
-    """Repeat /fort within FORT_REPLACE_COOLDOWN must react 👎 and NOT replace the session."""
+async def test_cmd_fort_same_user_within_cooldown_thumbs_down(tmp_db):
+    """The same user repeating /fort within FORT_REPLACE_COOLDOWN gets 👎."""
     session = _make_session(message_id=222, created_at=time.time() - (FORT_REPLACE_COOLDOWN - 5))
     await save_session(session)
     sessions[session.message_id] = session
+    # Simulate that user 1 has just done /fort.
+    _fort_attempt_times[(session.chat_id, 1)] = time.time() - (FORT_REPLACE_COOLDOWN - 5)
 
-    user = _make_user(user_id=2, username="spammer")
+    user = _make_user(user_id=1, username="host")
     msg = MagicMock()
     msg.from_user = user
     msg.chat = SimpleNamespace(id=session.chat_id, type="group")
@@ -170,11 +173,47 @@ async def test_cmd_fort_within_cooldown_thumbs_down(tmp_db):
     assert sessions[222].is_complete is False
 
 
+async def test_cmd_fort_other_user_not_blocked_by_someone_elses_cooldown(tmp_db):
+    """Per-user rate-limit: user A's recent /fort must NOT block user B's /fort.
+
+    Reproduces the P2.4 fix — under the old chat-wide cooldown one spammer
+    blocked the command for everyone.
+    """
+    session = _make_session(message_id=223, created_at=time.time() - (FORT_REPLACE_COOLDOWN - 10))
+    await save_session(session)
+    sessions[session.message_id] = session
+    # User 1 (spammer) just did /fort.
+    _fort_attempt_times[(session.chat_id, 1)] = time.time() - 1
+
+    user = _make_user(user_id=2, username="other")
+    msg = MagicMock()
+    msg.from_user = user
+    msg.chat = SimpleNamespace(id=session.chat_id, type="group")
+    msg.bot = MagicMock()
+    msg.bot.edit_message_text = AsyncMock()
+    msg.react = AsyncMock()
+    msg.delete = AsyncMock()
+    sent = MagicMock()
+    sent.message_id = 224
+    msg.answer = AsyncMock(return_value=sent)
+
+    await cmd_fort(msg)
+
+    msg.react.assert_not_awaited()
+    msg.answer.assert_awaited()
+    assert 224 in sessions
+    assert 223 not in sessions
+    sessions.pop(224, None)
+
+
 async def test_cmd_fort_after_cooldown_replaces_session(tmp_db):
-    """After FORT_REPLACE_COOLDOWN seconds, a new /fort cancels the previous and creates a new one."""
+    """After FORT_REPLACE_COOLDOWN seconds, a /fort by the same user replaces their stale session."""
     old = _make_session(message_id=333, created_at=time.time() - (FORT_REPLACE_COOLDOWN + 5))
+    old.initiator_id = 3
     await save_session(old)
     sessions[old.message_id] = old
+    # Same user attempted /fort more than the cooldown window ago.
+    _fort_attempt_times[(old.chat_id, 3)] = time.time() - (FORT_REPLACE_COOLDOWN + 5)
 
     user = _make_user(user_id=3, username="other")
     msg = MagicMock()
@@ -253,5 +292,7 @@ def test_session_timeout_is_one_hour():
 @pytest.fixture(autouse=True)
 def _clear_sessions_cache():
     handlers.sessions.clear()
+    handlers._fort_attempt_times.clear()
     yield
     handlers.sessions.clear()
+    handlers._fort_attempt_times.clear()

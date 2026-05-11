@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,14 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL = 180  # 3 minutes
 ALERT_START_HOUR = 18
 ALERT_END_HOUR = 0
+
+# Concurrent send_message calls during broadcast. Telegram allows ~30 msg/sec
+# globally for bots; 10 in flight keeps us well under that even with slow chats.
+BROADCAST_CONCURRENCY = 10
+# Per-(change-type) minimum interval between alerts. Coalesces rapid status
+# flapping (e.g., degraded ↔ partial_outage) without blocking genuine
+# transitions like down → restored.
+ALERT_MIN_INTERVAL_SEC = 300
 
 COMPONENTS_API = "https://status.epicgames.com/api/v2/components.json"
 INCIDENTS_API = "https://status.epicgames.com/api/v2/incidents/unresolved.json"
@@ -33,6 +42,8 @@ _INDICATOR_SEVERITY = {"none": 0, "minor": 1, "major": 2, "critical": 3}
 MSK = timezone(timedelta(hours=3))
 
 _last_status: ServerStatus | None = None
+# Per-change-type timestamp of the last broadcast, used for dedup.
+_last_alert_sent: dict[str, float] = {}
 
 
 @dataclass
@@ -134,6 +145,34 @@ def build_alert(change_type: str, status: ServerStatus) -> str:
     return "<b>✅ Серверы Fortnite снова в строю.</b>\n\nМожно собираться: /fort"
 
 
+def _should_emit_alert(change: str, now_ts: float) -> bool:
+    """Suppress repeat alerts of the same change type within ALERT_MIN_INTERVAL_SEC.
+
+    Different change types (e.g., "down" → "restored") always fire so users
+    still see genuine recovery; only same-type flapping is coalesced.
+    """
+    last = _last_alert_sent.get(change)
+    if last is not None and now_ts - last < ALERT_MIN_INTERVAL_SEC:
+        return False
+    return True
+
+
+async def _send_alert(bot: object, chat_id: int, text: str, semaphore: asyncio.Semaphore) -> None:
+    async with semaphore:
+        try:
+            await bot.send_message(chat_id, text)
+        except Exception:
+            logger.warning("Failed to send status alert to %s", chat_id, exc_info=True)
+
+
+async def broadcast_alert(bot: object, chat_ids: list[int], text: str) -> None:
+    """Fan out an alert to chats with bounded concurrency to avoid Telegram flood control."""
+    if not chat_ids:
+        return
+    semaphore = asyncio.Semaphore(BROADCAST_CONCURRENCY)
+    await asyncio.gather(*(_send_alert(bot, cid, text, semaphore) for cid in chat_ids))
+
+
 async def check_status_loop(bot: object) -> None:
     global _last_status
 
@@ -154,13 +193,15 @@ async def check_status_loop(bot: object) -> None:
                     if status is not None:
                         change = detect_change(_last_status, status)
                         if change is not None:
-                            text = build_alert(change, status)
-                            chat_ids = await get_active_chat_ids()
-                            for chat_id in chat_ids:
-                                try:
-                                    await bot.send_message(chat_id, text)
-                                except Exception:
-                                    logger.warning("Failed to send status alert to %s", chat_id)
+                            now_ts = time.time()
+                            if _should_emit_alert(change, now_ts):
+                                text = build_alert(change, status)
+                                chat_ids = await get_active_chat_ids()
+                                logger.info("status alert broadcast: change=%s chats=%d", change, len(chat_ids))
+                                await broadcast_alert(bot, chat_ids, text)
+                                _last_alert_sent[change] = now_ts
+                            else:
+                                logger.info("status alert suppressed (dedup): change=%s", change)
                         _last_status = status
                 else:
                     _last_status = None

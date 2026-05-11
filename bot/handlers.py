@@ -58,7 +58,19 @@ from bot.roast import (
 
 logger = logging.getLogger(__name__)
 
-FORT_REPLACE_COOLDOWN = 30  # seconds before a repeated /fort can replace an active session
+FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /fort attempts
+
+# Last successful /fort timestamp per (chat_id, user_id). In-memory only —
+# a bot restart resets the cooldown, which is acceptable for spam protection.
+_fort_attempt_times: dict[tuple[int, int], float] = {}
+
+
+def _prune_fort_attempts(now: float) -> None:
+    """Drop entries older than the cooldown window to keep the dict bounded."""
+    stale = [key for key, ts in _fort_attempt_times.items() if now - ts >= FORT_REPLACE_COOLDOWN]
+    for key in stale:
+        _fort_attempt_times.pop(key, None)
+
 
 router = Router()
 
@@ -75,21 +87,27 @@ async def cmd_fort(message: Message) -> None:
     if user is None:
         return
 
+    now = time.time()
+    _prune_fort_attempts(now)
+    cooldown_key = (message.chat.id, user.id)
+    last_attempt = _fort_attempt_times.get(cooldown_key)
+    if last_attempt is not None and now - last_attempt < FORT_REPLACE_COOLDOWN:
+        try:
+            await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
+        except TelegramBadRequest:
+            pass
+        try:
+            await message.delete()
+        except TelegramBadRequest:
+            pass
+        return
+    _fort_attempt_times[cooldown_key] = now
+
     active_session = next(
         (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
         None,
     )
     if active_session is not None:
-        if time.time() - active_session.created_at < FORT_REPLACE_COOLDOWN:
-            try:
-                await message.react([ReactionTypeEmoji(emoji="\U0001f44e")])
-            except TelegramBadRequest:
-                pass
-            try:
-                await message.delete()
-            except TelegramBadRequest:
-                pass
-            return
         active_session.is_complete = True
         active_session.is_expired = True
         await mark_expired(active_session.message_id)
