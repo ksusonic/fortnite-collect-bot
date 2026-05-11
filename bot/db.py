@@ -93,6 +93,14 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE chat_features ADD COLUMN value REAL")
         except Exception:
             pass
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS roast_state (
+                chat_id INTEGER PRIMARY KEY,
+                history_json TEXT,
+                roast_msgs_json TEXT,
+                last_roast REAL
+            )"""
+        )
         await db.commit()
 
 
@@ -400,6 +408,45 @@ async def get_feature_value(chat_id: int, feature: str) -> float | None:
         )
         row = await cursor.fetchone()
         return row[0] if row and row[0] is not None else None
+
+
+async def save_roast_state(
+    chat_id: int,
+    history_payload: list[dict] | None,
+    roast_msg_ids: list[int] | None,
+    last_roast: float | None,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO roast_state (chat_id, history_json, roast_msgs_json, last_roast)
+               VALUES (?, ?, ?, ?)""",
+            (
+                chat_id,
+                json.dumps(history_payload) if history_payload else None,
+                json.dumps(roast_msg_ids) if roast_msg_ids else None,
+                last_roast,
+            ),
+        )
+        await db.commit()
+
+
+async def load_all_roast_state() -> list[tuple[int, list[dict], list[int], float | None]]:
+    result: list[tuple[int, list[dict], list[int], float | None]] = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT chat_id, history_json, roast_msgs_json, last_roast FROM roast_state")
+        rows = await cursor.fetchall()
+    for row in rows:
+        try:
+            history = json.loads(row["history_json"]) if row["history_json"] else []
+        except ValueError, TypeError:
+            history = []
+        try:
+            msgs = json.loads(row["roast_msgs_json"]) if row["roast_msgs_json"] else []
+        except ValueError, TypeError:
+            msgs = []
+        result.append((row["chat_id"], history, msgs, row["last_roast"]))
+    return result
 
 
 async def load_active_sessions() -> list[Session]:
