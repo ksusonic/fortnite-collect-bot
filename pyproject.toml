@@ -8,7 +8,7 @@ dependencies = [
     "aiogram>=3.28.2,<4",
     "python-dotenv>=1.1",
     "aiosqlite>=0.21",
-    "xai-sdk>=1.1.0",
+    "xai-sdk>=1.12.2",
 ]
 
 [dependency-groups]
