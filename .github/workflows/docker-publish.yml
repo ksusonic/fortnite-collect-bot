@@ -9,6 +9,11 @@ on:
   push:
     branches: [ "main" ]
     tags: [ "v*" ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - '.github/dependabot.yml'
 
 env:
   # Use docker.io for Docker Hub if empty
