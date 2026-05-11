@@ -1,17 +1,31 @@
 import asyncio
 import logging
 import os
+import time
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 
-from bot.db import init_db, load_active_sessions, sessions
+from bot.db import init_db, load_active_sessions, load_all_roast_state, sessions
 from bot.handlers import expire_sessions, router
+from bot.roast import restore_roast_state
 from bot.status import check_status_loop
 
 logger = logging.getLogger(__name__)
+
+HEARTBEAT_INTERVAL_SEC = 30
+
+
+async def heartbeat_loop(path: str) -> None:
+    while True:
+        try:
+            with open(path, "w") as f:
+                f.write(str(int(time.time())))
+        except OSError:
+            logger.warning("heartbeat write failed: %s", path, exc_info=True)
+        await asyncio.sleep(HEARTBEAT_INTERVAL_SEC)
 
 
 async def main() -> None:
@@ -52,15 +66,20 @@ async def main() -> None:
     await init_db()
     for session in await load_active_sessions():
         sessions[session.message_id] = session
+    for chat_id, history, msg_ids, last_roast in await load_all_roast_state():
+        restore_roast_state(chat_id, history, msg_ids, last_roast)
 
     expire_task = asyncio.create_task(expire_sessions(bot))
     status_task = asyncio.create_task(check_status_loop(bot))
+    heartbeat_path = os.getenv("HEARTBEAT_FILE")
+    heartbeat_task = asyncio.create_task(heartbeat_loop(heartbeat_path)) if heartbeat_path else None
+    background_tasks = [t for t in (expire_task, status_task, heartbeat_task) if t is not None]
     try:
         await dp.start_polling(bot)
     finally:
-        for task in (expire_task, status_task):
+        for task in background_tasks:
             task.cancel()
-        await asyncio.gather(expire_task, status_task, return_exceptions=True)
+        await asyncio.gather(*background_tasks, return_exceptions=True)
         await bot.session.close()
 
 

@@ -42,6 +42,39 @@ UNHINGED_TEMPERATURE = 1.3
 BOT_HISTORY_NAME = "<bot>"
 TELEGRAM_MAX_MESSAGE_LEN = 4096
 ROAST_MAX_TOKENS = int(os.getenv("ROAST_MAX_TOKENS", "2000"))
+ROAST_MAX_ATTEMPTS = 2
+ROAST_RETRY_BASE_DELAY = float(os.getenv("ROAST_RETRY_BASE_DELAY", "1.0"))
+
+# gRPC status codes that indicate a transient server-side failure worth retrying.
+# Mirrors typical HTTP 429 / 5xx → gRPC mapping.
+_RETRYABLE_GRPC_CODES = frozenset(
+    {
+        "RESOURCE_EXHAUSTED",  # ~ HTTP 429
+        "UNAVAILABLE",  # ~ HTTP 503
+        "INTERNAL",  # ~ HTTP 500
+        "DEADLINE_EXCEEDED",  # ~ HTTP 504
+        "ABORTED",
+        "UNKNOWN",
+    }
+)
+
+
+def _is_retryable_error(exc: BaseException) -> bool:
+    code = getattr(exc, "code", None)
+    if callable(code):
+        try:
+            value = code()
+        except Exception:
+            value = None
+        name = getattr(value, "name", None)
+        if name and name in _RETRYABLE_GRPC_CODES:
+            return True
+    # Some HTTP-like errors expose a numeric status_code attribute.
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if isinstance(status, int) and (status == 429 or 500 <= status < 600):
+        return True
+    return False
+
 
 SYSTEM_PROMPT = (
     "Ты — Grok в режиме Unhinged в групповом чате друзей."
@@ -79,6 +112,38 @@ def _evict_if_stale(bucket: deque[HistoryEntry]) -> None:
         bucket.clear()
 
 
+def _schedule_persist(chat_id: int) -> None:
+    """Fire-and-forget DB write of current in-memory roast state for chat_id."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return  # no loop (e.g. unit tests calling remember_* synchronously) — skip persistence
+    history = list(_RECENT.get(chat_id, ()))
+    msgs = list(_ROAST_MESSAGE_IDS.get(chat_id, ()))
+    last = _LAST_ROAST.get(chat_id)
+    payload = [
+        {
+            "role": e.role,
+            "name": e.name,
+            "text": e.text,
+            "ts": e.ts,
+            "message_id": e.message_id,
+            "reply_to_id": e.reply_to_id,
+        }
+        for e in history
+    ]
+    from bot.db import save_roast_state
+
+    task = loop.create_task(save_roast_state(chat_id, payload, msgs, last))
+    task.add_done_callback(_log_persist_errors)
+
+
+def _log_persist_errors(task: asyncio.Task) -> None:
+    exc = task.exception()
+    if exc is not None:
+        logger.warning("roast state persist failed", exc_info=exc)
+
+
 def remember_message(
     chat_id: int,
     user_name: str,
@@ -98,6 +163,7 @@ def remember_message(
             reply_to_id=reply_to_id,
         )
     )
+    _schedule_persist(chat_id)
 
 
 def remember_bot_message(chat_id: int, text: str, message_id: int) -> None:
@@ -112,16 +178,51 @@ def remember_bot_message(chat_id: int, text: str, message_id: int) -> None:
             message_id=message_id,
         )
     )
+    _schedule_persist(chat_id)
 
 
 def remember_roast_message(chat_id: int, message_id: int) -> None:
     if chat_id not in _ROAST_MESSAGE_IDS:
         _ROAST_MESSAGE_IDS[chat_id] = deque(maxlen=ROAST_TRACK_SIZE)
     _ROAST_MESSAGE_IDS[chat_id].append(message_id)
+    _schedule_persist(chat_id)
 
 
 def is_roast_message(chat_id: int, message_id: int) -> bool:
     return message_id in _ROAST_MESSAGE_IDS.get(chat_id, ())
+
+
+def restore_roast_state(
+    chat_id: int,
+    history_payload: list[dict],
+    roast_msg_ids: list[int],
+    last_roast: float | None,
+) -> None:
+    bucket = deque(maxlen=HISTORY_SIZE)
+    for raw in history_payload:
+        try:
+            bucket.append(
+                HistoryEntry(
+                    role=raw["role"],
+                    name=raw["name"],
+                    text=raw["text"],
+                    ts=float(raw["ts"]),
+                    message_id=raw.get("message_id"),
+                    reply_to_id=raw.get("reply_to_id"),
+                )
+            )
+        except KeyError, TypeError, ValueError:
+            continue
+    if bucket:
+        _RECENT[chat_id] = bucket
+    if roast_msg_ids:
+        msgs = deque(maxlen=ROAST_TRACK_SIZE)
+        for mid in roast_msg_ids:
+            if isinstance(mid, int):
+                msgs.append(mid)
+        _ROAST_MESSAGE_IDS[chat_id] = msgs
+    if last_roast is not None:
+        _LAST_ROAST[chat_id] = last_roast
 
 
 def should_roast(chat_id: int, probability: float | None = None) -> bool:
@@ -213,30 +314,45 @@ async def generate_roast(
     turns = _build_turns(history)
     messages = [system(SYSTEM_PROMPT), *turns, user(final_target)]
 
-    try:
-        logger.info(
-            "roast call: chat=%s model=%s target=%s history=%d turns=%d",
-            chat_id,
-            MODEL,
-            target_name,
-            len(history),
-            len(turns),
-        )
-        async with _GLOBAL_SEMAPHORE:
-            chat = _client.chat.create(
-                model=MODEL,
-                temperature=UNHINGED_TEMPERATURE,
-                max_tokens=ROAST_MAX_TOKENS,
-                messages=messages,
+    logger.info(
+        "roast call: chat=%s model=%s target=%s history=%d turns=%d",
+        chat_id,
+        MODEL,
+        target_name,
+        len(history),
+        len(turns),
+    )
+
+    for attempt in range(1, ROAST_MAX_ATTEMPTS + 1):
+        try:
+            async with _GLOBAL_SEMAPHORE:
+                chat = _client.chat.create(
+                    model=MODEL,
+                    temperature=UNHINGED_TEMPERATURE,
+                    max_tokens=ROAST_MAX_TOKENS,
+                    messages=messages,
+                )
+                response = await chat.sample()
+            reply = response.content
+            if reply:
+                _LAST_ROAST[chat_id] = time.time()
+                _schedule_persist(chat_id)
+                logger.info("roast ok: chat=%s len=%d attempt=%d", chat_id, len(reply), attempt)
+                return reply.strip()
+            logger.warning("roast empty response: chat=%s attempt=%d", chat_id, attempt)
+            return None
+        except Exception as exc:
+            retryable = _is_retryable_error(exc)
+            logger.warning(
+                "roast request failed: chat=%s attempt=%d retryable=%s",
+                chat_id,
+                attempt,
+                retryable,
+                exc_info=True,
             )
-            response = await chat.sample()
-        reply = response.content
-        if reply:
-            _LAST_ROAST[chat_id] = time.time()
-            logger.info("roast ok: chat=%s len=%d", chat_id, len(reply))
-            return reply.strip()
-        logger.warning("roast empty response: chat=%s", chat_id)
-        return None
-    except Exception:
-        logger.warning("roast request failed", exc_info=True)
-        return None
+            if not retryable or attempt >= ROAST_MAX_ATTEMPTS:
+                return None
+            # Exponential backoff with jitter: base * 2^(attempt-1) * [0.5, 1.5)
+            delay = ROAST_RETRY_BASE_DELAY * (2 ** (attempt - 1)) * (0.5 + random.random())
+            await asyncio.sleep(delay)
+    return None

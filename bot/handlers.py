@@ -371,28 +371,35 @@ async def on_callback(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadline: bool | None = None) -> list[int]:
+    """Single sweep: expire stale sessions. Returns the message_ids that were expired."""
+    if now is None:
+        now = time.time()
+    if past_deadline is None:
+        past_deadline = datetime.now(MSK).hour >= PLAY_DEADLINE_HOUR
+    expired = [
+        s for s in sessions.values() if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
+    ]
+    expired_ids: list[int] = []
+    for session in expired:
+        session.is_complete = True
+        session.is_expired = True
+        await mark_expired(session.message_id)
+        try:
+            await bot.edit_message_text(
+                text=build_expired_text(session),
+                chat_id=session.chat_id,
+                message_id=session.message_id,
+            )
+        except TelegramBadRequest:
+            pass
+        sessions.pop(session.message_id, None)
+        expired_ids.append(session.message_id)
+    return expired_ids
+
+
 async def expire_sessions(bot: Bot) -> None:
     """Background task: expire sessions older than SESSION_TIMEOUT."""
     while True:
         await asyncio.sleep(60)
-        now = time.time()
-        now_msk = datetime.now(MSK)
-        past_deadline = now_msk.hour >= PLAY_DEADLINE_HOUR
-        expired = [
-            s
-            for s in sessions.values()
-            if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
-        ]
-        for session in expired:
-            session.is_complete = True
-            session.is_expired = True
-            await mark_expired(session.message_id)
-            try:
-                await bot.edit_message_text(
-                    text=build_expired_text(session),
-                    chat_id=session.chat_id,
-                    message_id=session.message_id,
-                )
-            except TelegramBadRequest:
-                pass
-            sessions.pop(session.message_id, None)
+        await sweep_expired_sessions(bot)
