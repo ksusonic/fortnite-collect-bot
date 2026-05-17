@@ -24,8 +24,11 @@ from bot.db import (
     get_chat_epic_links,
     get_chat_participants,
     get_chat_stats,
+    get_chats_with_epic_links,
     get_epic_link,
     get_feature_value,
+    get_last_weekly_drop,
+    get_snapshot_before,
     is_feature_enabled,
     load_session,
     mark_complete,
@@ -36,6 +39,7 @@ from bot.db import (
     save_session,
     sessions,
     set_feature,
+    set_last_weekly_drop,
 )
 from bot.fortnite import (
     EpicNameNotFound,
@@ -357,14 +361,58 @@ async def cmd_myfnstats_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(Command("teamstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_teamstats(message: Message) -> None:
+async def _compute_team_deltas(
+    successes: list[tuple],
+) -> tuple[dict[str, tuple[int, int, int, float]], dict[str, tuple[int, int, int, float]]]:
+    """For each player with squad stats, look up the closest snapshot older
+    than 24h / 7d and compute (d_matches, d_wins, d_kills, period_kd).
+
+    Players whose current matches < snapshot matches are dropped (season
+    reset). 2 SQLite reads per player; with N≤team-size and PK lookups it's
+    cheap — kept sequential intentionally."""
+    now = time.time()
+    cutoff_24h = now - 24 * 3600
+    cutoff_7d = now - 7 * 24 * 3600
+    deltas_24h: dict[str, tuple[int, int, int, float]] = {}
+    deltas_7d: dict[str, tuple[int, int, int, float]] = {}
+    for _, s in successes:
+        if s.squad is None or s.squad.matches == 0:
+            continue
+        aid = s.epic_account_id
+        curr_kd = s.squad.kd
+        curr_deaths = int(round(s.squad.kills / curr_kd)) if curr_kd > 0 else 0
+        for cutoff, target in ((cutoff_24h, deltas_24h), (cutoff_7d, deltas_7d)):
+            prev = await get_snapshot_before(aid, cutoff)
+            if prev is None:
+                continue
+            dm = s.squad.matches - prev.matches
+            dw = s.squad.wins - prev.wins
+            dk = s.squad.kills - prev.kills
+            if dm < 0:  # season reset — stats counter rolled back
+                continue
+            d_deaths = curr_deaths - prev.deaths_est
+            period_kd = dk / d_deaths if d_deaths > 0 else 0.0
+            target[aid] = (dm, dw, dk, period_kd)
+    return deltas_24h, deltas_7d
+
+
+async def _run_teamstats(bot: Bot, chat_id: int, *, silent_on_empty: bool = False) -> None:
+    """Core /teamstats logic, shared by the slash command and the weekly drop.
+
+    With silent_on_empty=True, returns without sending when there's nothing
+    interesting to say (no config, no links, or every player failed). The
+    weekly auto-drop uses this so Friday 21:00 doesn't spam a chat where
+    /teamstats can't produce real data."""
     if not fortnite.is_configured():
-        await message.answer("Fortnite-статистика не настроена.")
+        if silent_on_empty:
+            return
+        await bot.send_message(chat_id, "Fortnite-статистика не настроена.")
         return
-    links = await get_chat_epic_links(message.chat.id)
+    links = await get_chat_epic_links(chat_id)
     if not links:
-        await message.answer("Никто не залинкован. Админ может это сделать через /linkepicfor.")
+        if silent_on_empty:
+            return
+        await bot.send_message(chat_id, "Никто не залинкован. Админ может это сделать через /linkepicfor.")
         return
 
     sem = asyncio.Semaphore(TEAMSTATS_CONCURRENCY)
@@ -376,19 +424,34 @@ async def cmd_teamstats(message: Message) -> None:
             except FortniteError as exc:
                 return link, exc
 
-    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+    async with ChatActionSender.typing(bot=bot, chat_id=chat_id):
         results = await asyncio.gather(*(one(link) for link in links))
 
         successes = [(link, r) for link, r in results if not isinstance(r, FortniteError)]
         failures = [(link, r) for link, r in results if isinstance(r, FortniteError)]
-        html_text, facts = build_team_fn_stats_text(successes, failures)
+
+        if silent_on_empty and not successes:
+            return
+
+        deltas_24h, deltas_7d = await _compute_team_deltas(successes)
+        html_text, facts = build_team_fn_stats_text(
+            successes,
+            failures,
+            deltas_24h=deltas_24h,
+            deltas_7d=deltas_7d,
+        )
 
         if successes and facts and os.getenv("XAI_API_KEY"):
             roast = await generate_team_stats_roast(facts)
             if roast:
                 html_text = _append_team_analysis(html_text, roast)
 
-    await message.answer(html_text)
+    await bot.send_message(chat_id, html_text)
+
+
+@router.message(Command("teamstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_teamstats(message: Message) -> None:
+    await _run_teamstats(message.bot, message.chat.id)
 
 
 @router.message(Command("teamstats"))
@@ -624,3 +687,36 @@ async def expire_sessions(bot: Bot) -> None:
     while True:
         await asyncio.sleep(60)
         await sweep_expired_sessions(bot)
+
+
+# Weekly /teamstats auto-drop: Friday 21:00 MSK in every chat that has at least
+# one linked Epic account. Dedup via chat_features (feature='weekly_drop',
+# value=unix ts of last drop). 6-day cutoff guarantees one drop per Friday.
+WEEKLY_DROP_INTERVAL_SEC = 300  # 5 min — the 21:00–21:59 MSK window catches ≥11 ticks
+WEEKLY_DROP_DEDUP_WINDOW_SEC = 6 * 24 * 3600
+
+
+async def _maybe_drop_weekly_stats(bot: Bot) -> None:
+    now = datetime.now(MSK)
+    if now.weekday() != 4 or now.hour != 21:  # Friday=4
+        return
+    chat_ids = await get_chats_with_epic_links()
+    cutoff_ts = time.time() - WEEKLY_DROP_DEDUP_WINDOW_SEC
+    for chat_id in chat_ids:
+        last = await get_last_weekly_drop(chat_id)
+        if last is not None and last > cutoff_ts:
+            continue
+        try:
+            await _run_teamstats(bot, chat_id, silent_on_empty=True)
+            await set_last_weekly_drop(chat_id, time.time())
+        except Exception:
+            logger.warning("weekly drop to chat %s failed", chat_id, exc_info=True)
+
+
+async def weekly_stats_drop_loop(bot: Bot) -> None:
+    while True:
+        try:
+            await _maybe_drop_weekly_stats(bot)
+        except Exception:
+            logger.warning("weekly stats drop failed", exc_info=True)
+        await asyncio.sleep(WEEKLY_DROP_INTERVAL_SEC)

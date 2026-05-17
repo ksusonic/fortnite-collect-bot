@@ -113,6 +113,22 @@ async def init_db() -> None:
             )"""
         )
         await db.execute("CREATE INDEX IF NOT EXISTS idx_epic_links_chat ON epic_links (chat_id)")
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS squad_snapshots (
+                epic_account_id TEXT NOT NULL,
+                fetched_at REAL NOT NULL,
+                matches INTEGER NOT NULL,
+                wins INTEGER NOT NULL,
+                kills INTEGER NOT NULL,
+                deaths_est INTEGER NOT NULL,
+                kd REAL NOT NULL,
+                PRIMARY KEY (epic_account_id, fetched_at)
+            )"""
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_squad_snapshots_acc_ts "
+            "ON squad_snapshots (epic_account_id, fetched_at DESC)"
+        )
         await db.commit()
 
 
@@ -541,6 +557,86 @@ async def get_chat_epic_links(chat_id: int) -> list[EpicLink]:
         )
         for row in rows
     ]
+
+
+@dataclass(frozen=True)
+class SquadSnapshot:
+    epic_account_id: str
+    fetched_at: float
+    matches: int
+    wins: int
+    kills: int
+    deaths_est: int
+    kd: float
+
+
+async def save_squad_snapshot(
+    epic_account_id: str,
+    fetched_at: float,
+    matches: int,
+    wins: int,
+    kills: int,
+    deaths_est: int,
+    kd: float,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO squad_snapshots
+               (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd),
+        )
+        await db.commit()
+
+
+async def get_snapshot_before(epic_account_id: str, cutoff_ts: float) -> SquadSnapshot | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd
+               FROM squad_snapshots
+               WHERE epic_account_id = ? AND fetched_at <= ?
+               ORDER BY fetched_at DESC
+               LIMIT 1""",
+            (epic_account_id, cutoff_ts),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return SquadSnapshot(
+            epic_account_id=row["epic_account_id"],
+            fetched_at=row["fetched_at"],
+            matches=row["matches"],
+            wins=row["wins"],
+            kills=row["kills"],
+            deaths_est=row["deaths_est"],
+            kd=row["kd"],
+        )
+
+
+async def cleanup_old_snapshots(older_than_days: int = 30) -> int:
+    cutoff = time.time() - older_than_days * 86400
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM squad_snapshots WHERE fetched_at < ?",
+            (cutoff,),
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def get_chats_with_epic_links() -> list[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT DISTINCT chat_id FROM epic_links")
+        return [row[0] for row in await cursor.fetchall()]
+
+
+async def get_last_weekly_drop(chat_id: int) -> float | None:
+    return await get_feature_value(chat_id, "weekly_drop")
+
+
+async def set_last_weekly_drop(chat_id: int, ts: float) -> None:
+    await set_feature(chat_id, "weekly_drop", enabled=True, value=ts)
 
 
 async def resolve_user_by_username(chat_id: int, username_with_at: str) -> tuple[int, str] | None:
