@@ -151,6 +151,11 @@ def _user_link(user_id: int, name: str) -> str:
     return f'<a href="tg://user?id={user_id}">{html.escape(name)}</a>'
 
 
+def _user_code(name: str) -> str:
+    """Monospace username that does NOT trigger a Telegram mention/notification."""
+    return f"<code>{html.escape(name)}</code>"
+
+
 def build_tag_line(tagged_users: dict[int, str]) -> str:
     if not tagged_users:
         return ""
@@ -594,7 +599,7 @@ def _mode_leader_line(
     if leader_mode.wins == 0:
         # Everyone has matches in this mode but zero wins.
         return f"{emoji} {label} · {_MEDAL_BRONZE} 0 побед у всех"
-    leader_name = _user_link(leader_link.user_id, leader_link.user_name or leader_epic)
+    leader_name = _user_code(leader_link.user_name or leader_epic)
     return f"{emoji} {label} · {_MEDAL_GOLD} {leader_name} ({leader_mode.wins}W · {leader_mode.kd:.2f} K/D)"
 
 
@@ -673,9 +678,9 @@ def build_team_fn_stats_text(
         # MVP block
         if mvp is not None:
             link, s = mvp
-            user_link = _user_link(link.user_id, link.user_name or s.epic_name)
+            user_label = _user_code(link.user_name or s.epic_name)
             lines.append("")
-            lines.append(f"\U0001f947 <b>MVP сезона</b>: {user_link}")
+            lines.append(f"\U0001f947 <b>MVP сезона</b>: {user_label}")
             lines.append(
                 f"   \U0001f3af {s.overall.wins}W · "
                 f"\U0001f4a5 {s.overall.kills}K · "
@@ -726,16 +731,16 @@ def build_team_fn_stats_text(
 
         body: list[str] = []
         if private:
-            names = ", ".join(_user_link(link.user_id, link.user_name) for link in private)
+            names = ", ".join(_user_code(link.user_name) for link in private)
             body.append(f"   \U0001f512 Приватный профиль: {names}")
         if empty:
-            names = ", ".join(_user_link(link.user_id, link.user_name) for link in empty)
+            names = ", ".join(_user_code(link.user_name) for link in empty)
             body.append(f"   \U0001f4ad Без матчей в сезоне: {names}")
         if not_found:
-            names = ", ".join(_user_link(link.user_id, link.user_name) for link in not_found)
+            names = ", ".join(_user_code(link.user_name) for link in not_found)
             body.append(f"   \U0001f47b Не найден: {names}")
         if unavailable:
-            names = ", ".join(_user_link(link.user_id, link.user_name) for link in unavailable)
+            names = ", ".join(_user_code(link.user_name) for link in unavailable)
             body.append(f"   \U0001f6ab API недоступен: {names}")
         _section(lines, "⚠️ <b>Без данных</b>", body)
 
