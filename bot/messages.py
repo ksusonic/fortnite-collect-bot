@@ -443,36 +443,6 @@ def _short(name: str, n: int = 14) -> str:
     return name[: n - 1] + "…"
 
 
-def _table(headers: list[str], rows: list[list[str]], aligns: list[str]) -> str:
-    """Render a monospace table wrapped in <pre>...</pre>.
-
-    Plain text only — no inline HTML tags inside the <pre> block (Telegram
-    breaks rendering otherwise). Cell contents are escaped before being
-    wrapped, so callers may pass raw user text.
-    """
-    cols = len(headers)
-    widths = [len(h) for h in headers]
-    for row in rows:
-        for i in range(cols):
-            cell = row[i] if i < len(row) else ""
-            if len(cell) > widths[i]:
-                widths[i] = len(cell)
-
-    def fmt(cells: list[str]) -> str:
-        parts: list[str] = []
-        for i in range(cols):
-            cell = cells[i] if i < len(cells) else ""
-            if i < len(aligns) and aligns[i] == "r":
-                parts.append(cell.rjust(widths[i]))
-            else:
-                parts.append(cell.ljust(widths[i]))
-        return "  ".join(parts).rstrip()
-
-    sep = "  ".join("-" * w for w in widths)
-    body_lines = [fmt(headers), sep] + [fmt(row) for row in rows]
-    return "<pre>" + html.escape("\n".join(body_lines)) + "</pre>"
-
-
 def my_fn_caption(link: EpicLink, stats: PlayerStats) -> str:
     """Short HTML caption (<=1024 chars) for the /myfnstats stats image."""
     user_link = _user_link(link.user_id, link.user_name)
@@ -523,85 +493,219 @@ def _display_short(link: EpicLink, epic_name: str) -> str:
     return _short(name)
 
 
-def _leaders_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int = 5) -> str:
-    ranked = sorted(successes, key=lambda x: -x[1].overall.wins)[:limit]
+_TEAM_DIVIDER = "─" * 20
+
+_MEDAL_GOLD = "\U0001f947"  # 🥇
+_MEDAL_SILVER = "\U0001f948"  # 🥈
+_MEDAL_BRONZE = "\U0001f949"  # 🥉
+_TEAM_MEDALS = (_MEDAL_GOLD, _MEDAL_SILVER, _MEDAL_BRONZE)
+
+_MODE_LABELS: dict[str, tuple[str, str]] = {
+    # (emoji, label-padded-to-5-cells for visual alignment of one-line sections)
+    "squad": ("\U0001f3af", "Squad"),
+    "duo": ("\U0001f465", "Duo  "),
+    "solo": ("\U0001f9cd", "Solo "),
+}
+
+
+def _plural_players(n: int) -> str:
+    """Russian plural for 'игрок' based on the trailing digits."""
+    mod100 = n % 100
+    if 11 <= mod100 <= 14:
+        return "игроков"
+    mod10 = n % 10
+    if mod10 == 1:
+        return "игрок"
+    if 2 <= mod10 <= 4:
+        return "игрока"
+    return "игроков"
+
+
+def _leaders_pre_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int = 5) -> str:
+    """Render leaders table as <pre>, with medal column for top-3 inside the block.
+
+    Emojis inside <pre> render as ~2 cells wide visually but len()==1 in Python.
+    We compensate by using a fixed-width medal column where each cell is either:
+      - "<emoji> " (len=2, visual ~3) for medalled rows, or
+      - "   " (len=3, visual=3) for non-medalled rows and the header.
+    """
+    ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:limit]
     headers = ["Игрок", "M", "W", "K", "K/D"]
-    rows: list[list[str]] = []
-    for link, s in ranked:
-        rows.append(
-            [
-                _display_short(link, s.epic_name),
-                str(s.overall.matches),
-                str(s.overall.wins),
-                str(s.overall.kills),
-                f"{s.overall.kd:.2f}",
-            ]
-        )
-    return _table(headers, rows, aligns=["l", "r", "r", "r", "r"])
+    rows_payload: list[tuple[str, list[str]]] = []
+    for i, (link, s) in enumerate(ranked):
+        medal_cell = f"{_TEAM_MEDALS[i]} " if i < len(_TEAM_MEDALS) else "   "
+        cells = [
+            _display_short(link, s.epic_name),
+            str(s.overall.matches),
+            str(s.overall.wins),
+            str(s.overall.kills),
+            f"{s.overall.kd:.2f}",
+        ]
+        rows_payload.append((medal_cell, cells))
+
+    cols = len(headers)
+    widths = [len(h) for h in headers]
+    for _, cells in rows_payload:
+        for i in range(cols):
+            cell = cells[i] if i < len(cells) else ""
+            if len(cell) > widths[i]:
+                widths[i] = len(cell)
+
+    aligns = ["l", "r", "r", "r", "r"]
+    medal_width_plain = 3  # three spaces in the header / non-medal rows
+
+    def fmt(medal: str, cells: list[str]) -> str:
+        parts: list[str] = [medal]
+        for i in range(cols):
+            cell = cells[i] if i < len(cells) else ""
+            parts.append(cell.rjust(widths[i]) if aligns[i] == "r" else cell.ljust(widths[i]))
+        return "  ".join(parts).rstrip()
+
+    sep_parts = ["─" * medal_width_plain] + ["─" * w for w in widths]
+    sep = "  ".join(sep_parts)
+    body = [fmt(" " * medal_width_plain, headers), sep]
+    for medal_cell, cells in rows_payload:
+        body.append(fmt(medal_cell, cells))
+    return "<pre>" + html.escape("\n".join(body)) + "</pre>"
 
 
-def _mode_top_by_wins(
+def _mvp(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[EpicLink, PlayerStats] | None:
+    if not successes:
+        return None
+    return sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[0]
+
+
+def _mode_leader_line(
     successes: list[tuple[EpicLink, PlayerStats]],
     mode_attr: str,
-    limit: int = 3,
-) -> list[tuple[EpicLink, str, ModeStats]]:
-    rows: list[tuple[EpicLink, str, ModeStats]] = []
+) -> str | None:
+    """Render one-line mode leader summary; None if no one played this mode."""
+    emoji, label = _MODE_LABELS[mode_attr]
+    candidates: list[tuple[EpicLink, str, ModeStats]] = []
     for link, stats in successes:
         mode = getattr(stats, mode_attr)
         if mode is None:
             continue
-        rows.append((link, stats.epic_name, mode))
-    rows.sort(key=lambda x: -x[2].wins)
-    return rows[:limit]
+        candidates.append((link, stats.epic_name, mode))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: (-x[2].wins, -x[2].kd))
+    leader_link, leader_epic, leader_mode = candidates[0]
+    if leader_mode.wins == 0:
+        # Everyone has matches in this mode but zero wins.
+        return f"{emoji} {label} · {_MEDAL_BRONZE} 0 побед у всех"
+    leader_name = _user_link(leader_link.user_id, leader_link.user_name or leader_epic)
+    return f"{emoji} {label} · {_MEDAL_GOLD} {leader_name} ({leader_mode.wins}W · {leader_mode.kd:.2f} K/D)"
 
 
-def _mode_table(top: list[tuple[EpicLink, str, ModeStats]]) -> str:
-    headers = ["Игрок", "M", "W", "K", "K/D"]
-    rows = [
-        [
-            _display_short(link, epic_name),
-            str(mode.matches),
-            str(mode.wins),
-            str(mode.kills),
-            f"{mode.kd:.2f}",
-        ]
-        for link, epic_name, mode in top
-    ]
-    return _table(headers, rows, aligns=["l", "r", "r", "r", "r"])
+def _build_team_facts(
+    successes: list[tuple[EpicLink, PlayerStats]],
+    aggregates: tuple[int, int, int, float, float],
+    mvp: tuple[EpicLink, PlayerStats] | None,
+    leaders: list[tuple[EpicLink, PlayerStats]],
+) -> str:
+    """Plain-text fact dump for LLM consumption (no HTML, no emojis)."""
+    total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
+    lines: list[str] = [f"Игроков: {len(successes)}"]
+    lines.append(
+        f"Всего: {total_matches} матчей, {total_wins} побед "
+        f"({team_win_rate * 100:.1f}%), {total_kills} киллов, K/D {team_kd:.2f}"
+    )
+    if mvp is not None:
+        link, s = mvp
+        name = link.user_name or s.epic_name
+        lines.append(
+            f"MVP: {name} — {s.overall.matches}M, {s.overall.wins}W, {s.overall.kills}K, K/D {s.overall.kd:.2f}"
+        )
+    if leaders:
+        lines.append("Топ wins:")
+        for i, (link, s) in enumerate(leaders, 1):
+            name = link.user_name or s.epic_name
+            lines.append(
+                f"{i}. {name} {s.overall.matches}M {s.overall.wins}W {s.overall.kills}K K/D {s.overall.kd:.2f}"
+            )
+    for mode_attr, mode_label in (("squad", "Squad"), ("duo", "Duo"), ("solo", "Solo")):
+        candidates: list[tuple[EpicLink, str, ModeStats]] = []
+        for link, stats in successes:
+            mode = getattr(stats, mode_attr)
+            if mode is None:
+                continue
+            candidates.append((link, stats.epic_name, mode))
+        if not candidates:
+            continue
+        candidates.sort(key=lambda x: (-x[2].wins, -x[2].kd))
+        link, epic, mode = candidates[0]
+        name = link.user_name or epic
+        if mode.wins == 0:
+            lines.append(f"{mode_label}: 0 побед у всех")
+        else:
+            lines.append(f"{mode_label} лидер: {name} {mode.wins}W K/D {mode.kd:.2f}")
+    return "\n".join(lines)
 
 
 def build_team_fn_stats_text(
     successes: list[tuple[EpicLink, PlayerStats]],
     failures: list[tuple[EpicLink, FortniteError]],
-) -> str:
+) -> tuple[str, str]:
+    """Return (html_text, plain_facts) for /teamstats.
+
+    The HTML text is the formatted Telegram message; `plain_facts` is a compact
+    plain-text fact sheet for feeding into an LLM (no HTML, no emojis).
+    `plain_facts` is empty when there are no successful entries.
+    """
     from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsEmpty, StatsPrivate
 
-    lines: list[str] = ["\U0001f3c6 <b>Командная Fortnite-статистика</b> · сезон"]
+    facts = ""
+    n = len(successes)
+    lines: list[str] = [
+        f"\U0001f3c6 <b>Fortnite сезон</b> — {n} {_plural_players(n)}",
+    ]
 
     if not successes:
-        lines.append(_DIVIDER)
+        lines.append("")
         lines.append("Не удалось получить ни одну статистику.")
     else:
-        total_matches, total_wins, total_kills, team_kd, team_win_rate = _team_aggregate(successes)
-        summary_body = [
-            f"   Игроков: <b>{len(successes)}</b>",
-            f"   Матчи: <b>{total_matches}</b>  ·  Победы: <b>{total_wins}</b>  ·  Киллы: <b>{total_kills}</b>",
-            f"   Командный K/D: <b>{team_kd:.2f}</b>  ·  Win rate: <b>{team_win_rate * 100:.1f}%</b>",
-        ]
-        _section(lines, "\U0001f4ca <b>Сводка</b>", summary_body)
+        aggregates = _team_aggregate(successes)
+        total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
+        mvp = _mvp(successes)
+        leaders_ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:5]
 
-        # Single leaders table (top-5 by wins) replaces the three separate top lists.
-        _section(lines, "\U0001f3c5 <b>Лидеры</b> <i>(по победам)</i>", [_leaders_table(successes, limit=5)])
+        # MVP block
+        if mvp is not None:
+            link, s = mvp
+            user_link = _user_link(link.user_id, link.user_name or s.epic_name)
+            lines.append("")
+            lines.append(f"\U0001f947 <b>MVP сезона</b>: {user_link}")
+            lines.append(
+                f"   \U0001f3af {s.overall.wins}W · "
+                f"\U0001f4a5 {s.overall.kills}K · "
+                f"⚔️ {s.overall.kd:.2f} K/D · "
+                f"\U0001f3ae {s.overall.matches}M"
+            )
 
-        for header, mode_attr in (
-            ("\U0001f9cd <b>Solo</b>", "solo"),
-            ("\U0001f465 <b>Duo</b>", "duo"),
-            ("\U0001f3af <b>Squad</b>", "squad"),
-        ):
-            top = _mode_top_by_wins(successes, mode_attr)
-            if not top:
-                continue
-            _section(lines, header, [_mode_table(top)])
+        # Summary
+        lines.append("")
+        lines.append(_TEAM_DIVIDER)
+        lines.append("\U0001f4ca <b>Сводка</b>")
+        lines.append(f"• \U0001f3ae {total_matches} матчей  ·  \U0001f3c6 {total_wins}W ({team_win_rate * 100:.1f}%)")
+        lines.append(f"• \U0001f4a5 {total_kills} киллов  ·  ⚔️ K/D {team_kd:.2f}")
+
+        # Leaders table
+        lines.append(_TEAM_DIVIDER)
+        lines.append("\U0001f3c5 <b>Лидеры по победам</b>")
+        lines.append(_leaders_pre_table(successes, limit=5))
+
+        # Mode one-liners
+        mode_lines: list[str] = []
+        for mode_attr in ("squad", "duo", "solo"):
+            line = _mode_leader_line(successes, mode_attr)
+            if line is not None:
+                mode_lines.append(line)
+        if mode_lines:
+            lines.append(_TEAM_DIVIDER)
+            lines.extend(mode_lines)
+
+        facts = _build_team_facts(successes, aggregates, mvp, leaders_ranked)
 
     if failures:
         not_found: list[EpicLink] = []
@@ -635,7 +739,7 @@ def build_team_fn_stats_text(
             body.append(f"   \U0001f6ab API недоступен: {names}")
         _section(lines, "⚠️ <b>Без данных</b>", body)
 
-    return "\n".join(lines)
+    return "\n".join(lines), facts
 
 
 def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> InlineKeyboardMarkup:

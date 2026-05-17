@@ -64,6 +64,7 @@ from bot.roast import (
     ROAST_PROBABILITY,
     TELEGRAM_MAX_MESSAGE_LEN,
     generate_roast,
+    generate_team_stats_roast,
     get_roast_lock,
     is_roast_message,
     remember_bot_message,
@@ -79,6 +80,31 @@ FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /for
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
 
 TEAMSTATS_CONCURRENCY = 5
+
+_TEAM_ANALYSIS_HEADER = "\n────────────────────\n\U0001f916 <b>Анализ Grok</b>\n"
+_TEAM_ANALYSIS_OPEN = "<i>"
+_TEAM_ANALYSIS_CLOSE = "</i>"
+
+
+def _append_team_analysis(html_text: str, roast: str) -> str:
+    """Append the LLM analysis block to /teamstats output, truncating to fit
+    Telegram's 4096-char message limit."""
+    wrapper_len = len(_TEAM_ANALYSIS_HEADER) + len(_TEAM_ANALYSIS_OPEN) + len(_TEAM_ANALYSIS_CLOSE)
+    budget = TELEGRAM_MAX_MESSAGE_LEN - len(html_text) - wrapper_len
+    if budget <= 1:
+        # Not enough room even for a minimal analysis block — skip.
+        return html_text
+    escaped = html.escape(roast)
+    if len(escaped) > budget:
+        # Trim the *original* roast text and re-escape so we never cut mid-entity.
+        # Reserve 1 char for the ellipsis we add.
+        cut = max(0, len(roast) - (len(escaped) - budget + 1))
+        roast_trimmed = roast[:cut].rstrip() + "…"
+        escaped = html.escape(roast_trimmed)
+        if len(escaped) > budget:
+            # Pathological case (many '<'/'&' in the trimmed text) — bail out.
+            return html_text
+    return f"{html_text}{_TEAM_ANALYSIS_HEADER}{_TEAM_ANALYSIS_OPEN}{escaped}{_TEAM_ANALYSIS_CLOSE}"
 
 
 def _is_bot_admin(user_id: int) -> bool:
@@ -354,9 +380,16 @@ async def cmd_teamstats(message: Message) -> None:
     async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
         results = await asyncio.gather(*(one(link) for link in links))
 
-    successes = [(link, r) for link, r in results if not isinstance(r, FortniteError)]
-    failures = [(link, r) for link, r in results if isinstance(r, FortniteError)]
-    await message.answer(build_team_fn_stats_text(successes, failures))
+        successes = [(link, r) for link, r in results if not isinstance(r, FortniteError)]
+        failures = [(link, r) for link, r in results if isinstance(r, FortniteError)]
+        html_text, facts = build_team_fn_stats_text(successes, failures)
+
+        if successes and facts and os.getenv("XAI_API_KEY"):
+            roast = await generate_team_stats_roast(facts)
+            if roast:
+                html_text = _append_team_analysis(html_text, roast)
+
+    await message.answer(html_text)
 
 
 @router.message(Command("teamstats"))

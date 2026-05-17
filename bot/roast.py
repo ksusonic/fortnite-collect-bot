@@ -95,6 +95,16 @@ SYSTEM_PROMPT = (
 )
 
 
+TEAM_STATS_SYSTEM_PROMPT = (
+    "Ты — токсичный аналитик командной игры в Fortnite. Тебе скармливают цифры за сезон.\n"
+    "Разнеси команду по фактам: кто шарит, кто соснул, у кого K/D смешной, кто карри.\n"
+    "Стиль: гопник-стример, мат разрешён и приветствуется, чёрный юмор тоже.\n"
+    "Анализируй конкретные цифры и сравнивай игроков между собой. Никаких пустых\n"
+    "«молодцы, играете хорошо» — без воды. До 5-6 предложений, плотно.\n"
+    "Не используй markdown, HTML и эмодзи — только текст."
+)
+
+
 def get_roast_lock(chat_id: int) -> asyncio.Lock:
     return _ROAST_LOCKS.setdefault(chat_id, asyncio.Lock())
 
@@ -356,3 +366,46 @@ async def generate_roast(
             delay = ROAST_RETRY_BASE_DELAY * (2 ** (attempt - 1)) * (0.5 + random.random())
             await asyncio.sleep(delay)
     return None
+
+
+async def generate_team_stats_roast(facts: str) -> str | None:
+    """Stateless toxic analysis of /teamstats facts.
+
+    Uses its own system prompt (no chat history, no per-chat dialog memory),
+    bypasses the per-chat roast feature toggle, and is gated solely by the
+    XAI_API_KEY env var. Returns None on any failure (network, timeout, empty
+    response, missing API key) so the caller can degrade gracefully.
+    """
+    global _client
+    api_key = os.getenv("XAI_API_KEY")
+    if not api_key:
+        return None
+    if not facts.strip():
+        return None
+
+    if _client is None:
+        from xai_sdk import AsyncClient
+
+        _client = AsyncClient(api_key=api_key, timeout=REQUEST_TIMEOUT)
+
+    from xai_sdk.chat import system, user
+
+    messages = [system(TEAM_STATS_SYSTEM_PROMPT), user(facts)]
+    logger.info("team-stats roast call: model=%s facts_len=%d", MODEL, len(facts))
+    try:
+        async with _GLOBAL_SEMAPHORE:
+            chat = _client.chat.create(
+                model=MODEL,
+                temperature=UNHINGED_TEMPERATURE,
+                max_tokens=ROAST_MAX_TOKENS,
+                messages=messages,
+            )
+            response = await chat.sample()
+        reply = response.content
+        if not reply:
+            logger.warning("team-stats roast empty response")
+            return None
+        return reply.strip()
+    except Exception:
+        logger.warning("team-stats roast request failed", exc_info=True)
+        return None
