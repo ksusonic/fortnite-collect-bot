@@ -117,7 +117,7 @@ def _epic_error_text(exc: FortniteError) -> str:
     if isinstance(exc, StatsPrivate):
         return "Статистика этого аккаунта закрыта. Включи Public Game Stats в настройках Fortnite."
     if isinstance(exc, StatsEmpty):
-        return "В этом сезоне у тебя 0 матчей. Сыграй пару каток и приходи."
+        return "У тебя 0 матчей. Сыграй пару каток и приходи."
     if isinstance(exc, FortniteUnavailable):
         return "Fortnite API сейчас недоступен. Попробуй позже."
     return "Не получилось получить статистику Fortnite."
@@ -299,8 +299,7 @@ async def cmd_linkepicfor(message: Message, command: CommandObject) -> None:
         )
         target_link = f'<a href="tg://user?id={target_user_id}">{html.escape(target_user_name)}</a>'
         await message.answer(
-            f"✅ {target_link} → Epic <b>{html.escape(exc.epic_name)}</b> "
-            "(залинковал админ, в этом сезоне ещё 0 матчей)"
+            f"✅ {target_link} → Epic <b>{html.escape(exc.epic_name)}</b> (залинковал админ, у игрока ещё 0 матчей)"
         )
         return
     except FortniteError as exc:

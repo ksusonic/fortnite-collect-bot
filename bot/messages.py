@@ -454,7 +454,7 @@ def my_fn_caption(link: EpicLink, stats: PlayerStats) -> str:
     fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
     return (
         f"\U0001f3af {user_link} · Epic <b>{html.escape(stats.epic_name)}</b>\n"
-        f"\U0001f5d3 сезон · обновлено {fetched_dt.strftime('%d.%m %H:%M')} MSK"
+        f"\U0001f5d3 обновлено {fetched_dt.strftime('%d.%m %H:%M')} MSK"
     )
 
 
@@ -462,7 +462,7 @@ def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
     user_link = _user_link(link.user_id, link.user_name)
     fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
     lines: list[str] = [
-        f"\U0001f3ae <b>Fortnite stats</b> · сезон — {user_link}",
+        f"\U0001f3ae <b>Fortnite stats</b> — {user_link}",
         f"\U0001f3ad Epic: <b>{html.escape(stats.epic_name)}</b>",
     ]
     _section(lines, "\U0001f4ca <b>Overall</b>", _format_mode_block("Все режимы", stats.overall)[1:])
@@ -478,7 +478,7 @@ def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
         lines.append(_DIVIDER)
         lines.extend(body)
     lines.append(_DIVIDER)
-    lines.append(f"\U0001f553 Обновлено: {fetched_dt.strftime('%d.%m %H:%M')} MSK · сезон")
+    lines.append(f"\U0001f553 Обновлено: {fetched_dt.strftime('%d.%m %H:%M')} MSK")
     return "\n".join(lines)
 
 
@@ -658,7 +658,7 @@ def build_team_fn_stats_text(
             mvp_m, mvp_w, mvp_k, mvp_kd = _squad_totals(s)
             user_label = _user_code(link.user_name or s.epic_name)
             lines.append("")
-            lines.append(f"\U0001f947 <b>MVP сезона</b>: {user_label}")
+            lines.append(f"\U0001f947 <b>MVP</b>: {user_label}")
             lines.append(f"   \U0001f3af {mvp_w}W · \U0001f4a5 {mvp_k}K · ⚔️ {mvp_kd:.2f} K/D · \U0001f3ae {mvp_m}M")
 
         # Summary
@@ -701,7 +701,7 @@ def build_team_fn_stats_text(
             body.append(f"   \U0001f512 Приватный профиль: {names}")
         if empty:
             names = ", ".join(_user_code(link.user_name) for link in empty)
-            body.append(f"   \U0001f4ad Без матчей в сезоне: {names}")
+            body.append(f"   \U0001f4ad Без матчей: {names}")
         if not_found:
             names = ", ".join(_user_code(link.user_name) for link in not_found)
             body.append(f"   \U0001f47b Не найден: {names}")

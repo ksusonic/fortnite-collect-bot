@@ -38,7 +38,7 @@ class StatsEmpty(FortniteError):
     """Epic account exists but has 0 matches in the requested time window."""
 
     def __init__(self, *, epic_account_id: str, epic_name: str) -> None:
-        super().__init__(f"no stats for {epic_name} in current season")
+        super().__init__(f"no stats for {epic_name}")
         self.epic_account_id = epic_account_id
         self.epic_name = epic_name
 
