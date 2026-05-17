@@ -237,7 +237,7 @@ async def cmd_linkepic(message: Message, command: CommandObject) -> None:
         return
     raw = (command.args or "").strip()
     if not raw or len(raw) > 32:
-        await message.answer("Использование: /linkepic <EpicName>")
+        await message.answer("Использование: /linkepic EpicName")
         return
     try:
         async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
@@ -340,7 +340,7 @@ async def cmd_myfnstats(message: Message) -> None:
         return
     link = await get_epic_link(message.chat.id, user.id)
     if link is None:
-        await message.answer("Сначала /linkepic <EpicName>")
+        await message.answer("Сначала /linkepic EpicName")
         return
     try:
         async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
@@ -363,7 +363,7 @@ async def cmd_teamstats(message: Message) -> None:
         return
     links = await get_chat_epic_links(message.chat.id)
     if not links:
-        await message.answer("Никто не залинкован. Используй /linkepic <EpicName>.")
+        await message.answer("Никто не залинкован. Используй /linkepic EpicName.")
         return
 
     sem = asyncio.Semaphore(TEAMSTATS_CONCURRENCY)
