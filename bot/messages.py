@@ -482,11 +482,31 @@ def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
     return "\n".join(lines)
 
 
+def _team_play_totals(stats: PlayerStats) -> tuple[int, int, int, float]:
+    """Player totals across duo + squad only (the 'team play' modes)."""
+    matches = wins = kills = deaths_est = 0
+    for mode in (stats.duo, stats.squad):
+        if mode is None:
+            continue
+        matches += mode.matches
+        wins += mode.wins
+        kills += mode.kills
+        if mode.kd > 0:
+            deaths_est += int(round(mode.kills / mode.kd))
+    kd = kills / deaths_est if deaths_est > 0 else 0.0
+    return matches, wins, kills, kd
+
+
 def _team_aggregate(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[int, int, int, float, float]:
-    total_matches = sum(s.overall.matches for _, s in successes)
-    total_wins = sum(s.overall.wins for _, s in successes)
-    total_kills = sum(s.overall.kills for _, s in successes)
-    total_deaths_est = sum(int(round(s.overall.kills / s.overall.kd)) if s.overall.kd > 0 else 0 for _, s in successes)
+    """Team-wide totals over duo + squad. Solo is excluded — this is a squad bot."""
+    total_matches = total_wins = total_kills = total_deaths_est = 0
+    for _, s in successes:
+        m, w, k, kd = _team_play_totals(s)
+        total_matches += m
+        total_wins += w
+        total_kills += k
+        if kd > 0:
+            total_deaths_est += int(round(k / kd))
     team_kd = total_kills / total_deaths_est if total_deaths_est > 0 else 0.0
     team_win_rate = total_wins / total_matches if total_matches > 0 else 0.0
     return total_matches, total_wins, total_kills, team_kd, team_win_rate
@@ -534,17 +554,23 @@ def _leaders_pre_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int
       - "<emoji> " (len=2, visual ~3) for medalled rows, or
       - "   " (len=3, visual=3) for non-medalled rows and the header.
     """
-    ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:limit]
+
+    def team_play_key(item: tuple[EpicLink, PlayerStats]) -> tuple[int, int]:
+        m, w, k, _ = _team_play_totals(item[1])
+        return (-w, -k)
+
+    ranked = sorted(successes, key=team_play_key)[:limit]
     headers = ["Игрок", "M", "W", "K", "K/D"]
     rows_payload: list[tuple[str, list[str]]] = []
     for i, (link, s) in enumerate(ranked):
+        m, w, k, kd = _team_play_totals(s)
         medal_cell = f"{_TEAM_MEDALS[i]} " if i < len(_TEAM_MEDALS) else "   "
         cells = [
             _display_short(link, s.epic_name),
-            str(s.overall.matches),
-            str(s.overall.wins),
-            str(s.overall.kills),
-            f"{s.overall.kd:.2f}",
+            str(m),
+            str(w),
+            str(k),
+            f"{kd:.2f}",
         ]
         rows_payload.append((medal_cell, cells))
 
@@ -575,9 +601,15 @@ def _leaders_pre_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int
 
 
 def _mvp(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[EpicLink, PlayerStats] | None:
+    """MVP by team-play (duo+squad) wins, tie-broken by team-play kills."""
     if not successes:
         return None
-    return sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[0]
+
+    def key(item: tuple[EpicLink, PlayerStats]) -> tuple[int, int]:
+        _, w, k, _ = _team_play_totals(item[1])
+        return (-w, -k)
+
+    return sorted(successes, key=key)[0]
 
 
 def _mode_leader_line(
@@ -613,23 +645,21 @@ def _build_team_facts(
     total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
     lines: list[str] = [f"Игроков: {len(successes)}"]
     lines.append(
-        f"Всего: {total_matches} матчей, {total_wins} побед "
+        f"Командная игра (duo+squad): {total_matches} матчей, {total_wins} побед "
         f"({team_win_rate * 100:.1f}%), {total_kills} киллов, K/D {team_kd:.2f}"
     )
     if mvp is not None:
         link, s = mvp
         name = link.user_name or s.epic_name
-        lines.append(
-            f"MVP: {name} — {s.overall.matches}M, {s.overall.wins}W, {s.overall.kills}K, K/D {s.overall.kd:.2f}"
-        )
+        m, w, k, kd = _team_play_totals(s)
+        lines.append(f"MVP (по duo+squad): {name} — {m}M, {w}W, {k}K, K/D {kd:.2f}")
     if leaders:
-        lines.append("Топ wins:")
+        lines.append("Топ по командной игре (duo+squad):")
         for i, (link, s) in enumerate(leaders, 1):
             name = link.user_name or s.epic_name
-            lines.append(
-                f"{i}. {name} {s.overall.matches}M {s.overall.wins}W {s.overall.kills}K K/D {s.overall.kd:.2f}"
-            )
-    for mode_attr, mode_label in (("squad", "Squad"), ("duo", "Duo"), ("solo", "Solo")):
+            m, w, k, kd = _team_play_totals(s)
+            lines.append(f"{i}. {name} {m}M {w}W {k}K K/D {kd:.2f}")
+    for mode_attr, mode_label in (("squad", "Squad"), ("duo", "Duo")):
         candidates: list[tuple[EpicLink, str, ModeStats]] = []
         for link, stats in successes:
             mode = getattr(stats, mode_attr)
@@ -663,7 +693,7 @@ def build_team_fn_stats_text(
     facts = ""
     n = len(successes)
     lines: list[str] = [
-        f"\U0001f3c6 <b>Fortnite сезон</b> — {n} {_plural_players(n)}",
+        f"\U0001f3c6 <b>Fortnite сезон · командная игра</b> — {n} {_plural_players(n)}",
     ]
 
     if not successes:
@@ -675,18 +705,14 @@ def build_team_fn_stats_text(
         mvp = _mvp(successes)
         leaders_ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:5]
 
-        # MVP block
+        # MVP block — judged by duo+squad performance only.
         if mvp is not None:
             link, s = mvp
+            mvp_m, mvp_w, mvp_k, mvp_kd = _team_play_totals(s)
             user_label = _user_code(link.user_name or s.epic_name)
             lines.append("")
             lines.append(f"\U0001f947 <b>MVP сезона</b>: {user_label}")
-            lines.append(
-                f"   \U0001f3af {s.overall.wins}W · "
-                f"\U0001f4a5 {s.overall.kills}K · "
-                f"⚔️ {s.overall.kd:.2f} K/D · "
-                f"\U0001f3ae {s.overall.matches}M"
-            )
+            lines.append(f"   \U0001f3af {mvp_w}W · \U0001f4a5 {mvp_k}K · ⚔️ {mvp_kd:.2f} K/D · \U0001f3ae {mvp_m}M")
 
         # Summary
         lines.append("")
@@ -700,9 +726,9 @@ def build_team_fn_stats_text(
         lines.append("\U0001f3c5 <b>Лидеры по победам</b>")
         lines.append(_leaders_pre_table(successes, limit=5))
 
-        # Mode one-liners
+        # Mode one-liners — squad + duo only (this is a team-play bot, solo skipped).
         mode_lines: list[str] = []
-        for mode_attr in ("squad", "duo", "solo"):
+        for mode_attr in ("squad", "duo"):
             line = _mode_leader_line(successes, mode_attr)
             if line is not None:
                 mode_lines.append(line)
