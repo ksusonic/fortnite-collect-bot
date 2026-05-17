@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import aiohttp
 import fortnite_api
-from fortnite_api import StatsImageType, TimeWindow
+from fortnite_api import GameLanguage, StatsImageType, TimeWindow
 from fortnite_api.errors import Forbidden, FortniteAPIException, NotFound, RateLimited
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,11 @@ async def _get_client() -> fortnite_api.Client:
         return _client
     async with _client_lock:
         if _client is None:
-            _client = fortnite_api.Client(api_key=API_KEY, session=aiohttp.ClientSession())
+            _client = fortnite_api.Client(
+                api_key=API_KEY,
+                session=aiohttp.ClientSession(),
+                default_language=GameLanguage.RUSSIAN,
+            )
         return _client
 
 
