@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import os
 import time
 from datetime import datetime
 
@@ -17,19 +18,31 @@ from aiogram.types import (
 )
 from aiogram.utils.chat_action import ChatActionSender
 
+from bot import fortnite
 from bot.db import (
     Session,
+    get_chat_epic_links,
     get_chat_participants,
     get_chat_stats,
+    get_epic_link,
     get_feature_value,
     is_feature_enabled,
     load_session,
     mark_complete,
     mark_expired,
+    resolve_user_by_username,
+    save_epic_link,
     save_response,
     save_session,
     sessions,
     set_feature,
+)
+from bot.fortnite import (
+    EpicNameNotFound,
+    FortniteError,
+    FortniteUnavailable,
+    StatsEmpty,
+    StatsPrivate,
 )
 from bot.messages import (
     MSK,
@@ -40,14 +53,18 @@ from bot.messages import (
     build_expired_text,
     build_gather_text,
     build_keyboard,
+    build_my_fn_stats_text,
     build_stats_text,
+    build_team_fn_stats_text,
     generate_time_slots,
+    my_fn_caption,
     random_style,
 )
 from bot.roast import (
     ROAST_PROBABILITY,
     TELEGRAM_MAX_MESSAGE_LEN,
     generate_roast,
+    generate_team_stats_roast,
     get_roast_lock,
     is_roast_message,
     remember_bot_message,
@@ -59,6 +76,52 @@ from bot.roast import (
 logger = logging.getLogger(__name__)
 
 FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /fort attempts
+
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
+
+TEAMSTATS_CONCURRENCY = 5
+
+_TEAM_ANALYSIS_HEADER = "\n────────────────────\n\U0001f916 <b>Анализ Grok</b>\n"
+_TEAM_ANALYSIS_OPEN = "<i>"
+_TEAM_ANALYSIS_CLOSE = "</i>"
+
+
+def _append_team_analysis(html_text: str, roast: str) -> str:
+    """Append the LLM analysis block to /teamstats output, truncating to fit
+    Telegram's 4096-char message limit."""
+    wrapper_len = len(_TEAM_ANALYSIS_HEADER) + len(_TEAM_ANALYSIS_OPEN) + len(_TEAM_ANALYSIS_CLOSE)
+    budget = TELEGRAM_MAX_MESSAGE_LEN - len(html_text) - wrapper_len
+    if budget <= 1:
+        # Not enough room even for a minimal analysis block — skip.
+        return html_text
+    escaped = html.escape(roast)
+    if len(escaped) > budget:
+        # Trim the *original* roast text and re-escape so we never cut mid-entity.
+        # Reserve 1 char for the ellipsis we add.
+        cut = max(0, len(roast) - (len(escaped) - budget + 1))
+        roast_trimmed = roast[:cut].rstrip() + "…"
+        escaped = html.escape(roast_trimmed)
+        if len(escaped) > budget:
+            # Pathological case (many '<'/'&' in the trimmed text) — bail out.
+            return html_text
+    return f"{html_text}{_TEAM_ANALYSIS_HEADER}{_TEAM_ANALYSIS_OPEN}{escaped}{_TEAM_ANALYSIS_CLOSE}"
+
+
+def _is_bot_admin(user_id: int) -> bool:
+    return ADMIN_USER_ID is not None and user_id == ADMIN_USER_ID
+
+
+def _epic_error_text(exc: FortniteError) -> str:
+    if isinstance(exc, EpicNameNotFound):
+        return "Не нашёл такой Epic-аккаунт. Проверь ник."
+    if isinstance(exc, StatsPrivate):
+        return "Статистика этого аккаунта закрыта. Включи Public Game Stats в настройках Fortnite."
+    if isinstance(exc, StatsEmpty):
+        return "У тебя 0 матчей. Сыграй пару каток и приходи."
+    if isinstance(exc, FortniteUnavailable):
+        return "Fortnite API сейчас недоступен. Попробуй позже."
+    return "Не получилось получить статистику Fortnite."
+
 
 # Last successful /fort timestamp per (chat_id, user_id). In-memory only —
 # a bot restart resets the cooldown, which is acceptable for spam protection.
@@ -191,6 +254,146 @@ async def cmd_roast(message: Message, command: CommandObject) -> None:
         await message.answer(f"Режим язвительных ответов включён. Вероятность: {shown}")
         return
     await message.answer("Использование: /roast on [вероятность 0-1] или /roast off")
+
+
+@router.message(Command("linkepicfor"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_linkepicfor(message: Message, command: CommandObject) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    if ADMIN_USER_ID is None:
+        await message.answer("Админ-линковка не настроена.")
+        return
+    if not _is_bot_admin(user.id):
+        await message.answer("Команда только для админа бота.")
+        return
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    parts = (command.args or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Формат: /linkepicfor @username EpicName")
+        return
+    handle, epic_name = parts[0], parts[1].strip()
+    if not handle.startswith("@") or len(handle) < 2 or not epic_name or len(epic_name) > 32:
+        await message.answer("Формат: /linkepicfor @username EpicName")
+        return
+    resolved = await resolve_user_by_username(message.chat.id, handle)
+    if resolved is None:
+        await message.answer(
+            f"Не нашёл {html.escape(handle)} среди тех, кто отвечал на /fort в этом чате. "
+            "Попроси его сначала ткнуть кнопку в /fort."
+        )
+        return
+    target_user_id, target_user_name = resolved
+    try:
+        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+            stats = await fortnite.fetch_stats(name=epic_name)
+    except StatsEmpty as exc:
+        await save_epic_link(
+            message.chat.id,
+            target_user_id,
+            target_user_name,
+            exc.epic_name,
+            exc.epic_account_id,
+        )
+        target_link = f'<a href="tg://user?id={target_user_id}">{html.escape(target_user_name)}</a>'
+        await message.answer(
+            f"✅ {target_link} → Epic <b>{html.escape(exc.epic_name)}</b> (залинковал админ, у игрока ещё 0 матчей)"
+        )
+        return
+    except FortniteError as exc:
+        await message.answer(_epic_error_text(exc))
+        return
+    await save_epic_link(
+        message.chat.id,
+        target_user_id,
+        target_user_name,
+        stats.epic_name,
+        stats.epic_account_id,
+    )
+    target_link = f'<a href="tg://user?id={target_user_id}">{html.escape(target_user_name)}</a>'
+    await message.answer(f"✅ {target_link} → Epic <b>{html.escape(stats.epic_name)}</b> (залинковал админ)")
+
+
+@router.message(Command("linkepicfor"))
+async def cmd_linkepicfor_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("myfnstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_myfnstats(message: Message) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    link = await get_epic_link(message.chat.id, user.id)
+    if link is None:
+        await message.answer("Тебя ещё не залинковали. Попроси админа: /linkepicfor @твой_ник EpicName")
+        return
+    try:
+        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+            stats = await fortnite.fetch_stats(account_id=link.epic_account_id, with_image=True)
+    except FortniteError as exc:
+        await message.answer(_epic_error_text(exc))
+        return
+    if stats.image_url:
+        try:
+            await message.answer_photo(photo=stats.image_url, caption=my_fn_caption(link, stats))
+            return
+        except TelegramBadRequest:
+            logger.warning(
+                "myfnstats: answer_photo failed for url=%s, falling back to text",
+                stats.image_url,
+                exc_info=True,
+            )
+    await message.answer(build_my_fn_stats_text(link, stats))
+
+
+@router.message(Command("myfnstats"))
+async def cmd_myfnstats_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("teamstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_teamstats(message: Message) -> None:
+    if not fortnite.is_configured():
+        await message.answer("Fortnite-статистика не настроена.")
+        return
+    links = await get_chat_epic_links(message.chat.id)
+    if not links:
+        await message.answer("Никто не залинкован. Админ может это сделать через /linkepicfor.")
+        return
+
+    sem = asyncio.Semaphore(TEAMSTATS_CONCURRENCY)
+
+    async def one(link):
+        async with sem:
+            try:
+                return link, await fortnite.fetch_stats(account_id=link.epic_account_id, with_image=False)
+            except FortniteError as exc:
+                return link, exc
+
+    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        results = await asyncio.gather(*(one(link) for link in links))
+
+        successes = [(link, r) for link, r in results if not isinstance(r, FortniteError)]
+        failures = [(link, r) for link, r in results if isinstance(r, FortniteError)]
+        html_text, facts = build_team_fn_stats_text(successes, failures)
+
+        if successes and facts and os.getenv("XAI_API_KEY"):
+            roast = await generate_team_stats_roast(facts)
+            if roast:
+                html_text = _append_team_analysis(html_text, roast)
+
+    await message.answer(html_text)
+
+
+@router.message(Command("teamstats"))
+async def cmd_teamstats_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
 
 
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))

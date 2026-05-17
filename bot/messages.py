@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 if TYPE_CHECKING:
-    from bot.db import ChatStats, Session
+    from bot.db import ChatStats, EpicLink, Session
+    from bot.fortnite import FortniteError, ModeStats, PlayerStats
 
 MSK = timezone(timedelta(hours=3))
 
@@ -148,6 +149,11 @@ _DIVIDER = "─────────────────────"
 
 def _user_link(user_id: int, name: str) -> str:
     return f'<a href="tg://user?id={user_id}">{html.escape(name)}</a>'
+
+
+def _user_code(name: str) -> str:
+    """Monospace username that does NOT trigger a Telegram mention/notification."""
+    return f"<code>{html.escape(name)}</code>"
 
 
 def build_tag_line(tagged_users: dict[int, str]) -> str:
@@ -420,6 +426,291 @@ def build_stats_text(stats: ChatStats) -> str:
         _section(lines, style.best_hours_header, body)
 
     return "\n".join(lines)
+
+
+def _format_hours(minutes: int) -> str:
+    return f"{minutes // 60}ч {minutes % 60}м"
+
+
+def _format_mode_block(title: str, mode: ModeStats) -> list[str]:
+    return [
+        title,
+        f"   Матчи: <b>{mode.matches}</b>  ·  Победы: <b>{mode.wins}</b>  ·  K/D: <b>{mode.kd:.2f}</b>",
+        f"   Win rate: <b>{mode.win_rate * 100:.1f}%</b>  ·  Киллы: <b>{mode.kills}</b>",
+        f"   В игре: <b>{_format_hours(mode.minutes_played)}</b>",
+    ]
+
+
+def _short(name: str, n: int = 14) -> str:
+    """Truncate a display name with an ellipsis if it exceeds n chars."""
+    if len(name) <= n:
+        return name
+    return name[: n - 1] + "…"
+
+
+def my_fn_caption(link: EpicLink, stats: PlayerStats) -> str:
+    """Short HTML caption (<=1024 chars) for the /myfnstats stats image."""
+    user_link = _user_link(link.user_id, link.user_name)
+    fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
+    return (
+        f"\U0001f3af {user_link} · Epic <b>{html.escape(stats.epic_name)}</b>\n"
+        f"\U0001f5d3 обновлено {fetched_dt.strftime('%d.%m %H:%M')} MSK"
+    )
+
+
+def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
+    user_link = _user_link(link.user_id, link.user_name)
+    fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
+    lines: list[str] = [
+        f"\U0001f3ae <b>Fortnite stats</b> — {user_link}",
+        f"\U0001f3ad Epic: <b>{html.escape(stats.epic_name)}</b>",
+    ]
+    _section(lines, "\U0001f4ca <b>Overall</b>", _format_mode_block("Все режимы", stats.overall)[1:])
+    mode_blocks = (
+        ("\U0001f9cd <b>Solo</b>", stats.solo),
+        ("\U0001f465 <b>Duo</b>", stats.duo),
+        ("\U0001f46a <b>Squad</b>", stats.squad),
+    )
+    for title, mode in mode_blocks:
+        if mode is None:
+            continue
+        body = _format_mode_block(title, mode)
+        lines.append(_DIVIDER)
+        lines.extend(body)
+    lines.append(_DIVIDER)
+    lines.append(f"\U0001f553 Обновлено: {fetched_dt.strftime('%d.%m %H:%M')} MSK")
+    return "\n".join(lines)
+
+
+def _squad_totals(stats: PlayerStats) -> tuple[int, int, int, float]:
+    """Player totals in squad mode only. This bot is for 4-player squads."""
+    mode = stats.squad
+    if mode is None:
+        return 0, 0, 0, 0.0
+    return mode.matches, mode.wins, mode.kills, mode.kd
+
+
+def _team_aggregate(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[int, int, int, float, float]:
+    """Team-wide totals in squad mode. Solo and duo are excluded."""
+    total_matches = total_wins = total_kills = total_deaths_est = 0
+    for _, s in successes:
+        m, w, k, kd = _squad_totals(s)
+        total_matches += m
+        total_wins += w
+        total_kills += k
+        if kd > 0:
+            total_deaths_est += int(round(k / kd))
+    team_kd = total_kills / total_deaths_est if total_deaths_est > 0 else 0.0
+    team_win_rate = total_wins / total_matches if total_matches > 0 else 0.0
+    return total_matches, total_wins, total_kills, team_kd, team_win_rate
+
+
+def _display_short(link: EpicLink, epic_name: str) -> str:
+    """Choose what to show in the Player column: prefer telegram name, then Epic."""
+    name = link.user_name or epic_name
+    return _short(name)
+
+
+_TEAM_DIVIDER = "─" * 20
+
+_MEDAL_GOLD = "\U0001f947"  # 🥇
+_MEDAL_SILVER = "\U0001f948"  # 🥈
+_MEDAL_BRONZE = "\U0001f949"  # 🥉
+_TEAM_MEDALS = (_MEDAL_GOLD, _MEDAL_SILVER, _MEDAL_BRONZE)
+
+
+def _plural_players(n: int) -> str:
+    """Russian plural for 'игрок' based on the trailing digits."""
+    mod100 = n % 100
+    if 11 <= mod100 <= 14:
+        return "игроков"
+    mod10 = n % 10
+    if mod10 == 1:
+        return "игрок"
+    if 2 <= mod10 <= 4:
+        return "игрока"
+    return "игроков"
+
+
+def _leaders_pre_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int = 5) -> str:
+    """Render leaders table as <pre>, with medal column for top-3 inside the block.
+
+    Emojis inside <pre> render as ~2 cells wide visually but len()==1 in Python.
+    We compensate by using a fixed-width medal column where each cell is either:
+      - "<emoji> " (len=2, visual ~3) for medalled rows, or
+      - "   " (len=3, visual=3) for non-medalled rows and the header.
+    """
+
+    def team_play_key(item: tuple[EpicLink, PlayerStats]) -> tuple[int, int]:
+        m, w, k, _ = _squad_totals(item[1])
+        return (-w, -k)
+
+    ranked = sorted(successes, key=team_play_key)[:limit]
+    headers = ["Игрок", "M", "W", "K", "K/D"]
+    rows_payload: list[tuple[str, list[str]]] = []
+    for i, (link, s) in enumerate(ranked):
+        m, w, k, kd = _squad_totals(s)
+        medal_cell = f"{_TEAM_MEDALS[i]} " if i < len(_TEAM_MEDALS) else "   "
+        cells = [
+            _display_short(link, s.epic_name),
+            str(m),
+            str(w),
+            str(k),
+            f"{kd:.2f}",
+        ]
+        rows_payload.append((medal_cell, cells))
+
+    cols = len(headers)
+    widths = [len(h) for h in headers]
+    for _, cells in rows_payload:
+        for i in range(cols):
+            cell = cells[i] if i < len(cells) else ""
+            if len(cell) > widths[i]:
+                widths[i] = len(cell)
+
+    aligns = ["l", "r", "r", "r", "r"]
+    medal_width_plain = 3  # three spaces in the header / non-medal rows
+
+    def fmt(medal: str, cells: list[str]) -> str:
+        parts: list[str] = [medal]
+        for i in range(cols):
+            cell = cells[i] if i < len(cells) else ""
+            parts.append(cell.rjust(widths[i]) if aligns[i] == "r" else cell.ljust(widths[i]))
+        return "  ".join(parts).rstrip()
+
+    sep_parts = ["─" * medal_width_plain] + ["─" * w for w in widths]
+    sep = "  ".join(sep_parts)
+    body = [fmt(" " * medal_width_plain, headers), sep]
+    for medal_cell, cells in rows_payload:
+        body.append(fmt(medal_cell, cells))
+    return "<pre>" + html.escape("\n".join(body)) + "</pre>"
+
+
+def _mvp(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[EpicLink, PlayerStats] | None:
+    """MVP by team-play (duo+squad) wins, tie-broken by team-play kills."""
+    if not successes:
+        return None
+
+    def key(item: tuple[EpicLink, PlayerStats]) -> tuple[int, int]:
+        _, w, k, _ = _squad_totals(item[1])
+        return (-w, -k)
+
+    return sorted(successes, key=key)[0]
+
+
+def _build_team_facts(
+    successes: list[tuple[EpicLink, PlayerStats]],
+    aggregates: tuple[int, int, int, float, float],
+    mvp: tuple[EpicLink, PlayerStats] | None,
+    leaders: list[tuple[EpicLink, PlayerStats]],
+) -> str:
+    """Plain-text fact dump for LLM consumption (no HTML, no emojis)."""
+    total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
+    lines: list[str] = [f"Игроков: {len(successes)}"]
+    lines.append(
+        f"Squad: {total_matches} матчей, {total_wins} побед "
+        f"({team_win_rate * 100:.1f}%), {total_kills} киллов, K/D {team_kd:.2f}"
+    )
+    if mvp is not None:
+        link, s = mvp
+        name = link.user_name or s.epic_name
+        m, w, k, kd = _squad_totals(s)
+        lines.append(f"MVP по squad: {name} — {m}M, {w}W, {k}K, K/D {kd:.2f}")
+    if leaders:
+        lines.append("Топ по squad:")
+        for i, (link, s) in enumerate(leaders, 1):
+            name = link.user_name or s.epic_name
+            m, w, k, kd = _squad_totals(s)
+            lines.append(f"{i}. {name} {m}M {w}W {k}K K/D {kd:.2f}")
+    return "\n".join(lines)
+
+
+def build_team_fn_stats_text(
+    successes: list[tuple[EpicLink, PlayerStats]],
+    failures: list[tuple[EpicLink, FortniteError]],
+) -> tuple[str, str]:
+    """Return (html_text, plain_facts) for /teamstats.
+
+    The HTML text is the formatted Telegram message; `plain_facts` is a compact
+    plain-text fact sheet for feeding into an LLM (no HTML, no emojis).
+    `plain_facts` is empty when there are no successful entries.
+    """
+    from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsEmpty, StatsPrivate
+
+    facts = ""
+    n = len(successes)
+    lines: list[str] = [
+        f"\U0001f3c6 <b>Fortnite Squad</b> — {n} {_plural_players(n)}",
+    ]
+
+    if not successes:
+        lines.append("")
+        lines.append("Не удалось получить ни одну статистику.")
+    else:
+        aggregates = _team_aggregate(successes)
+        total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
+        mvp = _mvp(successes)
+        leaders_ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:5]
+
+        # MVP block — judged by duo+squad performance only.
+        if mvp is not None:
+            link, s = mvp
+            mvp_m, mvp_w, mvp_k, mvp_kd = _squad_totals(s)
+            user_label = _user_code(link.user_name or s.epic_name)
+            lines.append("")
+            lines.append(f"\U0001f947 <b>MVP</b>: {user_label}")
+            lines.append(f"   \U0001f3af {mvp_w}W · \U0001f4a5 {mvp_k}K · ⚔️ {mvp_kd:.2f} K/D · \U0001f3ae {mvp_m}M")
+
+        # Summary
+        lines.append("")
+        lines.append(_TEAM_DIVIDER)
+        lines.append("\U0001f4ca <b>Сводка</b>")
+        lines.append(f"• \U0001f3ae {total_matches} матчей  ·  \U0001f3c6 {total_wins}W ({team_win_rate * 100:.1f}%)")
+        lines.append(f"• \U0001f4a5 {total_kills} киллов  ·  ⚔️ K/D {team_kd:.2f}")
+
+        # Leaders table
+        lines.append(_TEAM_DIVIDER)
+        lines.append("\U0001f3c5 <b>Лидеры по победам</b>")
+        lines.append(_leaders_pre_table(successes, limit=5))
+
+        # Per-mode lines are intentionally dropped: this bot focuses on squad
+        # only, and the MVP + leaders table already convey the squad picture.
+
+        facts = _build_team_facts(successes, aggregates, mvp, leaders_ranked)
+
+    if failures:
+        not_found: list[EpicLink] = []
+        private: list[EpicLink] = []
+        empty: list[EpicLink] = []
+        unavailable: list[EpicLink] = []
+        for link, err in failures:
+            if isinstance(err, EpicNameNotFound):
+                not_found.append(link)
+            elif isinstance(err, StatsPrivate):
+                private.append(link)
+            elif isinstance(err, StatsEmpty):
+                empty.append(link)
+            elif isinstance(err, FortniteUnavailable):
+                unavailable.append(link)
+            else:
+                unavailable.append(link)
+
+        body: list[str] = []
+        if private:
+            names = ", ".join(_user_code(link.user_name) for link in private)
+            body.append(f"   \U0001f512 Приватный профиль: {names}")
+        if empty:
+            names = ", ".join(_user_code(link.user_name) for link in empty)
+            body.append(f"   \U0001f4ad Без матчей: {names}")
+        if not_found:
+            names = ", ".join(_user_code(link.user_name) for link in not_found)
+            body.append(f"   \U0001f47b Не найден: {names}")
+        if unavailable:
+            names = ", ".join(_user_code(link.user_name) for link in unavailable)
+            body.append(f"   \U0001f6ab API недоступен: {names}")
+        _section(lines, "⚠️ <b>Без данных</b>", body)
+
+    return "\n".join(lines), facts
 
 
 def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> InlineKeyboardMarkup:
