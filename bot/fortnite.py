@@ -206,4 +206,20 @@ async def fetch_stats(
 
         stats = _to_player_stats(raw, with_image=with_image)
         _stats_cache[(stats.epic_account_id, with_image)] = (time.time(), stats)
+        if stats.squad is not None and stats.squad.matches > 0:
+            try:
+                from bot.db import save_squad_snapshot  # local import: avoid bot.db ↔ bot.fortnite cycle
+
+                deaths_est = int(round(stats.squad.kills / stats.squad.kd)) if stats.squad.kd > 0 else 0
+                await save_squad_snapshot(
+                    epic_account_id=stats.epic_account_id,
+                    fetched_at=stats.fetched_at,
+                    matches=stats.squad.matches,
+                    wins=stats.squad.wins,
+                    kills=stats.squad.kills,
+                    deaths_est=deaths_est,
+                    kd=stats.squad.kd,
+                )
+            except Exception:
+                logger.warning("failed to save squad snapshot", exc_info=True)
         return stats

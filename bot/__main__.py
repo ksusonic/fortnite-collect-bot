@@ -10,13 +10,29 @@ from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandSc
 from dotenv import load_dotenv
 
 from bot.db import init_db, load_active_sessions, load_all_roast_state, sessions
-from bot.handlers import expire_sessions, router
+from bot.handlers import expire_sessions, router, weekly_stats_drop_loop
 from bot.roast import restore_roast_state
 from bot.status import check_status_loop
 
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SEC = 30
+SNAPSHOT_CLEANUP_INTERVAL_SEC = 24 * 3600
+SNAPSHOT_RETENTION_DAYS = 30
+
+
+async def cleanup_snapshots_loop() -> None:
+    while True:
+        try:
+            from bot.db import cleanup_old_snapshots
+
+            removed = await cleanup_old_snapshots(SNAPSHOT_RETENTION_DAYS)
+            if removed:
+                logger.info("squad_snapshots cleanup removed %s rows", removed)
+        except Exception:
+            logger.warning("snapshot cleanup failed", exc_info=True)
+        await asyncio.sleep(SNAPSHOT_CLEANUP_INTERVAL_SEC)
+
 
 GROUP_COMMANDS = [
     BotCommand(command="fort", description="собрать сквад на катку"),
@@ -98,9 +114,13 @@ async def main() -> None:
 
     expire_task = asyncio.create_task(expire_sessions(bot))
     status_task = asyncio.create_task(check_status_loop(bot))
+    cleanup_task = asyncio.create_task(cleanup_snapshots_loop())
+    weekly_task = asyncio.create_task(weekly_stats_drop_loop(bot))
     heartbeat_path = os.getenv("HEARTBEAT_FILE")
     heartbeat_task = asyncio.create_task(heartbeat_loop(heartbeat_path)) if heartbeat_path else None
-    background_tasks = [t for t in (expire_task, status_task, heartbeat_task) if t is not None]
+    background_tasks = [
+        t for t in (expire_task, status_task, cleanup_task, weekly_task, heartbeat_task) if t is not None
+    ]
     try:
         await dp.start_polling(bot)
     finally:

@@ -598,13 +598,43 @@ def _mvp(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[EpicLink, Playe
     return sorted(successes, key=key)[0]
 
 
+def _format_delta_block(
+    title: str,
+    successes: list[tuple[EpicLink, PlayerStats]],
+    deltas: dict[str, tuple[int, int, int, float]],
+) -> list[str]:
+    """One Grok-facts block for a given window. Players without a baseline
+    snapshot are skipped (already filtered out by caller); zero-new-matches
+    rows are kept so Grok can call out the no-show."""
+    rows: list[str] = []
+    for link, s in successes:
+        delta = deltas.get(s.epic_account_id)
+        if delta is None:
+            continue
+        dm, dw, dk, period_kd = delta
+        name = link.user_name or s.epic_name
+        if dm == 0:
+            rows.append(f"- {name}: 0 новых матчей")
+        else:
+            rows.append(f"- {name}: +{dm}M, +{dw}W, +{dk}K, K/D за период {period_kd:.2f}")
+    if not rows:
+        return []
+    return [title, *rows]
+
+
 def _build_team_facts(
     successes: list[tuple[EpicLink, PlayerStats]],
     aggregates: tuple[int, int, int, float, float],
     mvp: tuple[EpicLink, PlayerStats] | None,
     leaders: list[tuple[EpicLink, PlayerStats]],
+    deltas_24h: dict[str, tuple[int, int, int, float]] | None = None,
+    deltas_7d: dict[str, tuple[int, int, int, float]] | None = None,
 ) -> str:
-    """Plain-text fact dump for LLM consumption (no HTML, no emojis)."""
+    """Plain-text fact dump for LLM consumption (no HTML, no emojis).
+
+    `deltas_*` is keyed by epic_account_id; value is (d_matches, d_wins,
+    d_kills, period_kd). Missing keys → player skipped in that block.
+    """
     total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
     lines: list[str] = [f"Игроков: {len(successes)}"]
     lines.append(
@@ -622,18 +652,27 @@ def _build_team_facts(
             name = link.user_name or s.epic_name
             m, w, k, kd = _squad_totals(s)
             lines.append(f"{i}. {name} {m}M {w}W {k}K K/D {kd:.2f}")
+    if deltas_24h:
+        lines.extend(_format_delta_block("Динамика за 24ч (squad):", successes, deltas_24h))
+    if deltas_7d:
+        lines.extend(_format_delta_block("Динамика за 7д (squad):", successes, deltas_7d))
     return "\n".join(lines)
 
 
 def build_team_fn_stats_text(
     successes: list[tuple[EpicLink, PlayerStats]],
     failures: list[tuple[EpicLink, FortniteError]],
+    deltas_24h: dict[str, tuple[int, int, int, float]] | None = None,
+    deltas_7d: dict[str, tuple[int, int, int, float]] | None = None,
 ) -> tuple[str, str]:
     """Return (html_text, plain_facts) for /teamstats.
 
     The HTML text is the formatted Telegram message; `plain_facts` is a compact
     plain-text fact sheet for feeding into an LLM (no HTML, no emojis).
     `plain_facts` is empty when there are no successful entries.
+
+    `deltas_24h` / `deltas_7d` are optional dicts keyed by epic_account_id;
+    they are passed through to `_build_team_facts` and never affect HTML.
     """
     from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsEmpty, StatsPrivate
 
@@ -676,7 +715,14 @@ def build_team_fn_stats_text(
         # Per-mode lines are intentionally dropped: this bot focuses on squad
         # only, and the MVP + leaders table already convey the squad picture.
 
-        facts = _build_team_facts(successes, aggregates, mvp, leaders_ranked)
+        facts = _build_team_facts(
+            successes,
+            aggregates,
+            mvp,
+            leaders_ranked,
+            deltas_24h=deltas_24h,
+            deltas_7d=deltas_7d,
+        )
 
     if failures:
         not_found: list[EpicLink] = []
