@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import aiohttp
 import fortnite_api
+from fortnite_api import StatsImageType, TimeWindow
 from fortnite_api.errors import Forbidden, FortniteAPIException, NotFound, RateLimited
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,15 @@ class FortniteUnavailable(FortniteError):
     pass
 
 
+class StatsEmpty(FortniteError):
+    """Epic account exists but has 0 matches in the requested time window."""
+
+    def __init__(self, *, epic_account_id: str, epic_name: str) -> None:
+        super().__init__(f"no stats for {epic_name} in current season")
+        self.epic_account_id = epic_account_id
+        self.epic_name = epic_name
+
+
 @dataclass(frozen=True)
 class ModeStats:
     matches: int
@@ -52,12 +62,16 @@ class PlayerStats:
     duo: ModeStats | None
     squad: ModeStats | None
     fetched_at: float
+    image_url: str | None = None
 
 
 _client: fortnite_api.Client | None = None
 _client_lock = asyncio.Lock()
-_stats_cache: dict[str, tuple[float, PlayerStats]] = {}
-_stats_locks: dict[str, asyncio.Lock] = {}
+_stats_cache: dict[tuple[str, bool], tuple[float, PlayerStats]] = {}
+# Cache locks are keyed either by (account_id, with_image) tuple
+# (for account_id lookups) or by the string "name:<lower>" (for name lookups,
+# which are not cached but still coalesced).
+_stats_locks: dict[tuple[str, bool] | str, asyncio.Lock] = {}
 
 
 def is_configured() -> bool:
@@ -98,10 +112,10 @@ def _to_mode(stats: fortnite_api.BrGameModeStats | None) -> ModeStats | None:
     )
 
 
-def _to_player_stats(raw: fortnite_api.BrPlayerStats) -> PlayerStats:
+def _to_player_stats(raw: fortnite_api.BrPlayerStats, *, with_image: bool) -> PlayerStats:
     inputs_all = raw.inputs and raw.inputs.all
     if inputs_all is None or inputs_all.overall is None or inputs_all.overall.matches == 0:
-        raise FortniteUnavailable("no stats available for this account")
+        raise StatsEmpty(epic_account_id=raw.user.id, epic_name=raw.user.name)
     overall = ModeStats(
         matches=inputs_all.overall.matches,
         wins=inputs_all.overall.wins,
@@ -110,6 +124,7 @@ def _to_player_stats(raw: fortnite_api.BrPlayerStats) -> PlayerStats:
         win_rate=inputs_all.overall.win_rate,
         minutes_played=inputs_all.overall.minutes_played,
     )
+    image_url = raw.image.url if (with_image and raw.image is not None) else None
     return PlayerStats(
         epic_account_id=raw.user.id,
         epic_name=raw.user.name,
@@ -118,13 +133,24 @@ def _to_player_stats(raw: fortnite_api.BrPlayerStats) -> PlayerStats:
         duo=_to_mode(inputs_all.duo),
         squad=_to_mode(inputs_all.squad),
         fetched_at=time.time(),
+        image_url=image_url,
     )
 
 
-async def _call_sdk(*, name: str | None, account_id: str | None) -> fortnite_api.BrPlayerStats:
+async def _call_sdk(
+    *,
+    name: str | None,
+    account_id: str | None,
+    with_image: bool,
+) -> fortnite_api.BrPlayerStats:
     client = await _get_client()
     return await asyncio.wait_for(
-        client.fetch_br_stats(name=name, account_id=account_id),
+        client.fetch_br_stats(
+            name=name,
+            account_id=account_id,
+            time_window=TimeWindow.SEASON,
+            image=StatsImageType.ALL if with_image else StatsImageType.NONE,
+        ),
         timeout=REQUEST_TIMEOUT,
     )
 
@@ -133,24 +159,27 @@ async def fetch_stats(
     *,
     name: str | None = None,
     account_id: str | None = None,
+    with_image: bool = False,
 ) -> PlayerStats:
     if (name is None) == (account_id is None):
         raise ValueError("fetch_stats requires exactly one of name or account_id")
 
+    cache_key: tuple[str, bool] | None = None
     if account_id is not None:
-        cached = _stats_cache.get(account_id)
+        cache_key = (account_id, with_image)
+        cached = _stats_cache.get(cache_key)
         if cached and time.time() - cached[0] < STATS_TTL_SEC:
             return cached[1]
 
-    lock_key = account_id if account_id is not None else f"name:{name.lower()}"
+    lock_key: tuple[str, bool] | str = cache_key if cache_key is not None else f"name:{name.lower()}"
     lock = _stats_locks.setdefault(lock_key, asyncio.Lock())
     async with lock:
-        if account_id is not None:
-            cached = _stats_cache.get(account_id)
+        if cache_key is not None:
+            cached = _stats_cache.get(cache_key)
             if cached and time.time() - cached[0] < STATS_TTL_SEC:
                 return cached[1]
         try:
-            raw = await _call_sdk(name=name, account_id=account_id)
+            raw = await _call_sdk(name=name, account_id=account_id, with_image=with_image)
         except NotFound as exc:
             raise EpicNameNotFound(str(exc) or "epic account not found") from exc
         except Forbidden as exc:
@@ -171,6 +200,6 @@ async def fetch_stats(
             logger.warning("fortnite api unexpected error", exc_info=True)
             raise FortniteUnavailable("unexpected error") from exc
 
-        stats = _to_player_stats(raw)
-        _stats_cache[stats.epic_account_id] = (time.time(), stats)
+        stats = _to_player_stats(raw, with_image=with_image)
+        _stats_cache[(stats.epic_account_id, with_image)] = (time.time(), stats)
         return stats

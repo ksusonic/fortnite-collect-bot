@@ -23,8 +23,8 @@ GROUP_COMMANDS = [
     BotCommand(command="rm", description="отменить активный сбор"),
     BotCommand(command="stats", description="статистика чата"),
     BotCommand(command="roast", description="вкл/выкл язвительные ответы: on [0..1] | off"),
-    BotCommand(command="myfnstats", description="моя статистика Fortnite"),
-    BotCommand(command="teamstats", description="командная статистика Fortnite"),
+    BotCommand(command="myfnstats", description="моя статистика Fortnite (текущий сезон)"),
+    BotCommand(command="teamstats", description="командная статистика Fortnite (сезон)"),
 ]
 
 

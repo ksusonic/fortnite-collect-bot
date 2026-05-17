@@ -436,11 +436,58 @@ def _format_mode_block(title: str, mode: ModeStats) -> list[str]:
     ]
 
 
+def _short(name: str, n: int = 14) -> str:
+    """Truncate a display name with an ellipsis if it exceeds n chars."""
+    if len(name) <= n:
+        return name
+    return name[: n - 1] + "…"
+
+
+def _table(headers: list[str], rows: list[list[str]], aligns: list[str]) -> str:
+    """Render a monospace table wrapped in <pre>...</pre>.
+
+    Plain text only — no inline HTML tags inside the <pre> block (Telegram
+    breaks rendering otherwise). Cell contents are escaped before being
+    wrapped, so callers may pass raw user text.
+    """
+    cols = len(headers)
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i in range(cols):
+            cell = row[i] if i < len(row) else ""
+            if len(cell) > widths[i]:
+                widths[i] = len(cell)
+
+    def fmt(cells: list[str]) -> str:
+        parts: list[str] = []
+        for i in range(cols):
+            cell = cells[i] if i < len(cells) else ""
+            if i < len(aligns) and aligns[i] == "r":
+                parts.append(cell.rjust(widths[i]))
+            else:
+                parts.append(cell.ljust(widths[i]))
+        return "  ".join(parts).rstrip()
+
+    sep = "  ".join("-" * w for w in widths)
+    body_lines = [fmt(headers), sep] + [fmt(row) for row in rows]
+    return "<pre>" + html.escape("\n".join(body_lines)) + "</pre>"
+
+
+def my_fn_caption(link: EpicLink, stats: PlayerStats) -> str:
+    """Short HTML caption (<=1024 chars) for the /myfnstats stats image."""
+    user_link = _user_link(link.user_id, link.user_name)
+    fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
+    return (
+        f"\U0001f3af {user_link} · Epic <b>{html.escape(stats.epic_name)}</b>\n"
+        f"\U0001f5d3 сезон · обновлено {fetched_dt.strftime('%d.%m %H:%M')} MSK"
+    )
+
+
 def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
     user_link = _user_link(link.user_id, link.user_name)
     fetched_dt = datetime.fromtimestamp(stats.fetched_at, MSK)
     lines: list[str] = [
-        f"\U0001f3ae <b>Fortnite stats</b> — {user_link}",
+        f"\U0001f3ae <b>Fortnite stats</b> · сезон — {user_link}",
         f"\U0001f3ad Epic: <b>{html.escape(stats.epic_name)}</b>",
     ]
     _section(lines, "\U0001f4ca <b>Overall</b>", _format_mode_block("Все режимы", stats.overall)[1:])
@@ -456,7 +503,7 @@ def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
         lines.append(_DIVIDER)
         lines.extend(body)
     lines.append(_DIVIDER)
-    lines.append(f"\U0001f553 Обновлено: {fetched_dt.strftime('%d.%m %H:%M')} MSK")
+    lines.append(f"\U0001f553 Обновлено: {fetched_dt.strftime('%d.%m %H:%M')} MSK · сезон")
     return "\n".join(lines)
 
 
@@ -470,16 +517,27 @@ def _team_aggregate(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[int,
     return total_matches, total_wins, total_kills, team_kd, team_win_rate
 
 
-def _top_by(
-    successes: list[tuple[EpicLink, PlayerStats]],
-    key,
-    *,
-    limit: int = 3,
-    min_matches: int = 0,
-) -> list[tuple[EpicLink, PlayerStats, float]]:
-    filtered = [(link, s, key(s)) for link, s in successes if s.overall.matches >= min_matches]
-    filtered.sort(key=lambda x: -x[2])
-    return filtered[:limit]
+def _display_short(link: EpicLink, epic_name: str) -> str:
+    """Choose what to show in the Player column: prefer telegram name, then Epic."""
+    name = link.user_name or epic_name
+    return _short(name)
+
+
+def _leaders_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int = 5) -> str:
+    ranked = sorted(successes, key=lambda x: -x[1].overall.wins)[:limit]
+    headers = ["Игрок", "M", "W", "K", "K/D"]
+    rows: list[list[str]] = []
+    for link, s in ranked:
+        rows.append(
+            [
+                _display_short(link, s.epic_name),
+                str(s.overall.matches),
+                str(s.overall.wins),
+                str(s.overall.kills),
+                f"{s.overall.kd:.2f}",
+            ]
+        )
+    return _table(headers, rows, aligns=["l", "r", "r", "r", "r"])
 
 
 def _mode_top_by_wins(
@@ -497,13 +555,28 @@ def _mode_top_by_wins(
     return rows[:limit]
 
 
+def _mode_table(top: list[tuple[EpicLink, str, ModeStats]]) -> str:
+    headers = ["Игрок", "M", "W", "K", "K/D"]
+    rows = [
+        [
+            _display_short(link, epic_name),
+            str(mode.matches),
+            str(mode.wins),
+            str(mode.kills),
+            f"{mode.kd:.2f}",
+        ]
+        for link, epic_name, mode in top
+    ]
+    return _table(headers, rows, aligns=["l", "r", "r", "r", "r"])
+
+
 def build_team_fn_stats_text(
     successes: list[tuple[EpicLink, PlayerStats]],
     failures: list[tuple[EpicLink, FortniteError]],
 ) -> str:
-    from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsPrivate
+    from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsEmpty, StatsPrivate
 
-    lines: list[str] = ["\U0001f3c6 <b>Командная Fortnite-статистика</b>"]
+    lines: list[str] = ["\U0001f3c6 <b>Командная Fortnite-статистика</b> · сезон"]
 
     if not successes:
         lines.append(_DIVIDER)
@@ -517,54 +590,31 @@ def build_team_fn_stats_text(
         ]
         _section(lines, "\U0001f4ca <b>Сводка</b>", summary_body)
 
-        wins_top = _top_by(successes, lambda s: s.overall.wins)
-        kills_top = _top_by(successes, lambda s: s.overall.kills)
-        kd_top = _top_by(successes, lambda s: s.overall.kd, min_matches=50)
-        medals = ["\U0001f947", "\U0001f948", "\U0001f949"]
-
-        if wins_top:
-            body = [
-                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(s.epic_name)})  <b>{int(v)}</b>"
-                for i, (link, s, v) in enumerate(wins_top)
-            ]
-            _section(lines, "\U0001f3c5 <b>Топ по победам</b>", body)
-        if kills_top:
-            body = [
-                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(s.epic_name)})  <b>{int(v)}</b>"
-                for i, (link, s, v) in enumerate(kills_top)
-            ]
-            _section(lines, "\U0001f5e1 <b>Топ по киллам</b>", body)
-        if kd_top:
-            body = [
-                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(s.epic_name)})  <b>{v:.2f}</b>"
-                for i, (link, s, v) in enumerate(kd_top)
-            ]
-            _section(lines, "\U0001f4c8 <b>Топ по K/D</b> <i>(от 50 матчей)</i>", body)
+        # Single leaders table (top-5 by wins) replaces the three separate top lists.
+        _section(lines, "\U0001f3c5 <b>Лидеры</b> <i>(по победам)</i>", [_leaders_table(successes, limit=5)])
 
         for header, mode_attr in (
-            ("\U0001f9cd <b>Solo — топ побед</b>", "solo"),
-            ("\U0001f465 <b>Duo — топ побед</b>", "duo"),
-            ("\U0001f46a <b>Squad — топ побед</b>", "squad"),
+            ("\U0001f9cd <b>Solo</b>", "solo"),
+            ("\U0001f465 <b>Duo</b>", "duo"),
+            ("\U0001f3af <b>Squad</b>", "squad"),
         ):
             top = _mode_top_by_wins(successes, mode_attr)
             if not top:
                 continue
-            body = [
-                f"{medals[i]} {_user_link(link.user_id, link.user_name)} ({html.escape(epic_name)})  "
-                f"<b>{mode.wins}</b> побед  ·  K/D <b>{mode.kd:.2f}</b>"
-                for i, (link, epic_name, mode) in enumerate(top)
-            ]
-            _section(lines, header, body)
+            _section(lines, header, [_mode_table(top)])
 
     if failures:
         not_found: list[EpicLink] = []
         private: list[EpicLink] = []
+        empty: list[EpicLink] = []
         unavailable: list[EpicLink] = []
         for link, err in failures:
             if isinstance(err, EpicNameNotFound):
                 not_found.append(link)
             elif isinstance(err, StatsPrivate):
                 private.append(link)
+            elif isinstance(err, StatsEmpty):
+                empty.append(link)
             elif isinstance(err, FortniteUnavailable):
                 unavailable.append(link)
             else:
@@ -574,6 +624,9 @@ def build_team_fn_stats_text(
         if private:
             names = ", ".join(_user_link(link.user_id, link.user_name) for link in private)
             body.append(f"   \U0001f512 Приватный профиль: {names}")
+        if empty:
+            names = ", ".join(_user_link(link.user_id, link.user_name) for link in empty)
+            body.append(f"   \U0001f4ad Без матчей в сезоне: {names}")
         if not_found:
             names = ", ".join(_user_link(link.user_id, link.user_name) for link in not_found)
             body.append(f"   \U0001f47b Не найден: {names}")

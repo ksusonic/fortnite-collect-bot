@@ -41,6 +41,7 @@ from bot.fortnite import (
     EpicNameNotFound,
     FortniteError,
     FortniteUnavailable,
+    StatsEmpty,
     StatsPrivate,
 )
 from bot.messages import (
@@ -56,6 +57,7 @@ from bot.messages import (
     build_stats_text,
     build_team_fn_stats_text,
     generate_time_slots,
+    my_fn_caption,
     random_style,
 )
 from bot.roast import (
@@ -88,6 +90,8 @@ def _epic_error_text(exc: FortniteError) -> str:
         return "Не нашёл такой Epic-аккаунт. Проверь ник."
     if isinstance(exc, StatsPrivate):
         return "Статистика этого аккаунта закрыта. Включи Public Game Stats в настройках Fortnite."
+    if isinstance(exc, StatsEmpty):
+        return "В этом сезоне у тебя 0 матчей. Сыграй пару каток и приходи."
     if isinstance(exc, FortniteUnavailable):
         return "Fortnite API сейчас недоступен. Попробуй позже."
     return "Не получилось получить статистику Fortnite."
@@ -259,6 +263,20 @@ async def cmd_linkepicfor(message: Message, command: CommandObject) -> None:
     try:
         async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
             stats = await fortnite.fetch_stats(name=epic_name)
+    except StatsEmpty as exc:
+        await save_epic_link(
+            message.chat.id,
+            target_user_id,
+            target_user_name,
+            exc.epic_name,
+            exc.epic_account_id,
+        )
+        target_link = f'<a href="tg://user?id={target_user_id}">{html.escape(target_user_name)}</a>'
+        await message.answer(
+            f"✅ {target_link} → Epic <b>{html.escape(exc.epic_name)}</b> "
+            "(залинковал админ, в этом сезоне ещё 0 матчей)"
+        )
+        return
     except FortniteError as exc:
         await message.answer(_epic_error_text(exc))
         return
@@ -292,10 +310,20 @@ async def cmd_myfnstats(message: Message) -> None:
         return
     try:
         async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
-            stats = await fortnite.fetch_stats(account_id=link.epic_account_id)
+            stats = await fortnite.fetch_stats(account_id=link.epic_account_id, with_image=True)
     except FortniteError as exc:
         await message.answer(_epic_error_text(exc))
         return
+    if stats.image_url:
+        try:
+            await message.answer_photo(photo=stats.image_url, caption=my_fn_caption(link, stats))
+            return
+        except TelegramBadRequest:
+            logger.warning(
+                "myfnstats: answer_photo failed for url=%s, falling back to text",
+                stats.image_url,
+                exc_info=True,
+            )
     await message.answer(build_my_fn_stats_text(link, stats))
 
 
@@ -319,7 +347,7 @@ async def cmd_teamstats(message: Message) -> None:
     async def one(link):
         async with sem:
             try:
-                return link, await fortnite.fetch_stats(account_id=link.epic_account_id)
+                return link, await fortnite.fetch_stats(account_id=link.epic_account_id, with_image=False)
             except FortniteError as exc:
                 return link, exc
 
