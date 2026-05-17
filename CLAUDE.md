@@ -40,9 +40,7 @@ uv run pre-commit run --all-files
 - `/rm` — cancel and delete current active session
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
 - `/roast on [0..1] | off` — toggle xAI Grok "Unhinged" replies; optional probability override (default `ROAST_PROBABILITY`)
-- `/linkepic <EpicName>` — link caller's telegram id to a public Epic Games account (requires `FORTNITE_API_KEY`). The Epic account must have Public Game Stats enabled.
-- `/linkepicfor @user <EpicName>` — admin-only (`ADMIN_USER_ID`); link `@user` to an Epic account. `@user` must have responded at least once to `/fort` in this chat (resolved via `responses` table).
-- `/unlinkepic` — remove caller's Epic link in current chat
+- `/linkepicfor @user <EpicName>` — admin-only (`ADMIN_USER_ID`); link `@user` to a public Epic Games account (requires `FORTNITE_API_KEY`). `@user` must have responded at least once to `/fort` in this chat (resolved via `responses` table). The Epic account must have Public Game Stats enabled.
 - `/myfnstats` — caller's Fortnite lifetime stats (overall + solo/duo/squad)
 - `/teamstats` — aggregated lifetime stats for everyone in this chat who has linked an Epic account; per-mode top-3 by wins, team K/D, internal leaderboards
 
@@ -93,7 +91,7 @@ All bot code lives in `bot/`:
 | `ROAST_HISTORY_TTL_SEC` | no | `43200` | Idle seconds after which roast history is dropped on next message (default 12 h) |
 | `ROAST_MODEL` | no | `grok-3-mini` | xAI model id |
 | `ROAST_REQUEST_TIMEOUT` | no | `45` | xAI client RPC timeout in seconds |
-| `FORTNITE_API_KEY` | no | — | Required for `/linkepic`, `/myfnstats`, `/teamstats`; without it those commands answer "not configured" |
+| `FORTNITE_API_KEY` | no | — | Required for `/linkepicfor`, `/myfnstats`, `/teamstats`; without it those commands answer "not configured" |
 | `FORTNITE_STATS_TTL_SEC` | no | `600` | In-memory TTL for cached Fortnite stats (per account_id) |
 | `FORTNITE_REQUEST_TIMEOUT` | no | `15` | Per-request timeout for the Fortnite API client (seconds) |
 | `ADMIN_USER_ID` | no | — | Telegram user_id of the single bot admin; required for `/linkepicfor`. Without it that command answers "not configured" |

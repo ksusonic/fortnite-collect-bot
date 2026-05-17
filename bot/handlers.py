@@ -21,7 +21,6 @@ from aiogram.utils.chat_action import ChatActionSender
 from bot import fortnite
 from bot.db import (
     Session,
-    delete_epic_link,
     get_chat_epic_links,
     get_chat_participants,
     get_chat_stats,
@@ -227,40 +226,6 @@ async def cmd_roast(message: Message, command: CommandObject) -> None:
     await message.answer("Использование: /roast on [вероятность 0-1] или /roast off")
 
 
-@router.message(Command("linkepic"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_linkepic(message: Message, command: CommandObject) -> None:
-    user = message.from_user
-    if user is None:
-        return
-    if not fortnite.is_configured():
-        await message.answer("Fortnite-статистика не настроена.")
-        return
-    raw = (command.args or "").strip()
-    if not raw or len(raw) > 32:
-        await message.answer("Использование: /linkepic EpicName")
-        return
-    try:
-        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
-            stats = await fortnite.fetch_stats(name=raw)
-    except FortniteError as exc:
-        await message.answer(_epic_error_text(exc))
-        return
-    await save_epic_link(
-        message.chat.id,
-        user.id,
-        _display_name(user),
-        stats.epic_name,
-        stats.epic_account_id,
-    )
-    user_link = f'<a href="tg://user?id={user.id}">{html.escape(_display_name(user))}</a>'
-    await message.answer(f"✅ {user_link} → Epic <b>{html.escape(stats.epic_name)}</b>")
-
-
-@router.message(Command("linkepic"))
-async def cmd_linkepic_private(message: Message) -> None:
-    await message.answer("Эта команда работает только в группах.")
-
-
 @router.message(Command("linkepicfor"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_linkepicfor(message: Message, command: CommandObject) -> None:
     user = message.from_user
@@ -313,23 +278,6 @@ async def cmd_linkepicfor_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
-@router.message(Command("unlinkepic"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_unlinkepic(message: Message) -> None:
-    user = message.from_user
-    if user is None:
-        return
-    removed = await delete_epic_link(message.chat.id, user.id)
-    if removed:
-        await message.answer("Линк снят.")
-    else:
-        await message.answer("У тебя не было линка.")
-
-
-@router.message(Command("unlinkepic"))
-async def cmd_unlinkepic_private(message: Message) -> None:
-    await message.answer("Эта команда работает только в группах.")
-
-
 @router.message(Command("myfnstats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_myfnstats(message: Message) -> None:
     user = message.from_user
@@ -340,7 +288,7 @@ async def cmd_myfnstats(message: Message) -> None:
         return
     link = await get_epic_link(message.chat.id, user.id)
     if link is None:
-        await message.answer("Сначала /linkepic EpicName")
+        await message.answer("Тебя ещё не залинковали. Попроси админа: /linkepicfor @твой_ник EpicName")
         return
     try:
         async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
@@ -363,7 +311,7 @@ async def cmd_teamstats(message: Message) -> None:
         return
     links = await get_chat_epic_links(message.chat.id)
     if not links:
-        await message.answer("Никто не залинкован. Используй /linkepic EpicName.")
+        await message.answer("Никто не залинкован. Админ может это сделать через /linkepicfor.")
         return
 
     sem = asyncio.Semaphore(TEAMSTATS_CONCURRENCY)

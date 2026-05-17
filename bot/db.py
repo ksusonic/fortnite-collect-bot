@@ -522,16 +522,6 @@ async def get_epic_link(chat_id: int, user_id: int) -> EpicLink | None:
         )
 
 
-async def delete_epic_link(chat_id: int, user_id: int) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "DELETE FROM epic_links WHERE chat_id = ? AND user_id = ?",
-            (chat_id, user_id),
-        )
-        await db.commit()
-        return cursor.rowcount > 0
-
-
 async def get_chat_epic_links(chat_id: int) -> list[EpicLink]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
