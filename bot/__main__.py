@@ -6,6 +6,7 @@ import time
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 from dotenv import load_dotenv
 
 from bot.db import init_db, load_active_sessions, load_all_roast_state, sessions
@@ -16,6 +17,25 @@ from bot.status import check_status_loop
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SEC = 30
+
+GROUP_COMMANDS = [
+    BotCommand(command="fort", description="собрать сквад на катку"),
+    BotCommand(command="rm", description="отменить активный сбор"),
+    BotCommand(command="stats", description="статистика чата"),
+    BotCommand(command="roast", description="вкл/выкл язвительные ответы: on [0..1] | off"),
+    BotCommand(command="linkepic", description="привязать Epic-аккаунт: /linkepic EpicName"),
+    BotCommand(command="unlinkepic", description="снять привязку Epic"),
+    BotCommand(command="myfnstats", description="моя статистика Fortnite"),
+    BotCommand(command="teamstats", description="командная статистика Fortnite"),
+]
+
+
+async def setup_bot_commands(bot: Bot) -> None:
+    try:
+        await bot.set_my_commands(GROUP_COMMANDS, scope=BotCommandScopeAllGroupChats())
+        await bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
+    except Exception:
+        logger.warning("set_my_commands failed", exc_info=True)
 
 
 async def heartbeat_loop(path: str) -> None:
@@ -72,6 +92,7 @@ async def main() -> None:
     dp.include_router(router)
 
     await init_db()
+    await setup_bot_commands(bot)
     for session in await load_active_sessions():
         sessions[session.message_id] = session
     for chat_id, history, msg_ids, last_roast in await load_all_roast_state():
