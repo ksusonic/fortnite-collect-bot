@@ -108,6 +108,15 @@ TEAM_STATS_SYSTEM_PROMPT = (
 )
 
 
+FORT_SYSTEM_PROMPT = (
+    "Ты придумываешь одну короткую дерзкую строку-зазывалку для сбора отряда в Fortnite "
+    "в групповом чате друзей. Верни ровно одну строку, без пояснений. "
+    "В строке обязан быть плейсхолдер {name} — туда подставится имя зовущего. "
+    "Можно лёгкий мат и подколы, без морали и дисклеймеров. "
+    "Если дан контекст чата — обыграй его. Без markdown и HTML, один эмодзи в начале максимум."
+)
+
+
 def get_roast_lock(chat_id: int) -> asyncio.Lock:
     return _ROAST_LOCKS.setdefault(chat_id, asyncio.Lock())
 
@@ -411,4 +420,60 @@ async def generate_team_stats_roast(facts: str) -> str | None:
         return reply.strip()
     except Exception:
         logger.warning("team-stats roast request failed", exc_info=True)
+        return None
+
+
+async def generate_fort_header(chat_id: int) -> str | None:
+    """Stateless Grok-generated gather header for /fort.
+
+    Feeds the last group messages (from the per-chat roast history) as context so
+    the call-to-action riffs on the current chat vibe. Hard 10s timeout via
+    asyncio.wait_for. Gated solely by XAI_API_KEY. Returns None on any failure
+    (no key, timeout, network, empty response) so the caller keeps the hardcoded
+    style header. The returned string contains a {name} placeholder for the
+    initiator link.
+    """
+    global _client
+    api_key = os.getenv("XAI_API_KEY")
+    if not api_key:
+        return None
+
+    if _client is None:
+        from xai_sdk import AsyncClient
+
+        _client = AsyncClient(api_key=api_key, timeout=REQUEST_TIMEOUT)
+
+    from xai_sdk.chat import system, user
+
+    history = _fresh_history(chat_id)
+    ctx_lines = [f"{e.name}: {e.text}" for e in history[-15:]]
+    prompt = (
+        "Последние сообщения чата:\n" + "\n".join(ctx_lines)
+        if ctx_lines
+        else "Контекста нет, придумай универсальную зазывалку."
+    )
+    messages = [system(FORT_SYSTEM_PROMPT), user(prompt)]
+    logger.info("fort-header call: chat=%s ctx_lines=%d", chat_id, len(ctx_lines))
+    try:
+        async with _GLOBAL_SEMAPHORE:
+            chat = _client.chat.create(
+                model=MODEL,
+                temperature=UNHINGED_TEMPERATURE,
+                max_tokens=ROAST_MAX_TOKENS,
+                messages=messages,
+            )
+            response = await asyncio.wait_for(chat.sample(), timeout=10.0)
+        reply = (response.content or "").strip()
+        if not reply:
+            logger.warning("fort-header empty response")
+            return None
+        reply = reply.splitlines()[0].strip()
+        if "{name}" not in reply:
+            reply = "{name} " + reply
+        return reply
+    except TimeoutError:
+        logger.warning("fort-header timeout: chat=%s", chat_id)
+        return None
+    except Exception:
+        logger.warning("fort-header request failed", exc_info=True)
         return None
