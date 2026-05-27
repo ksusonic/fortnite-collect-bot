@@ -148,6 +148,76 @@ def test_restore_roast_state_repopulates_in_memory():
     assert roast._LAST_ROAST[10] == 100.0
 
 
+# ---------- generate_fort_header ----------
+
+
+def _fort_client(content: str) -> SimpleNamespace:
+    async def fake_sample():
+        return SimpleNamespace(content=content)
+
+    fake_chat = SimpleNamespace(sample=fake_sample)
+    return SimpleNamespace(chat=SimpleNamespace(create=MagicMock(return_value=fake_chat)))
+
+
+async def test_generate_fort_header_returns_line_with_placeholder(monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "test")
+    monkeypatch.setattr(roast, "_client", _fort_client("🔥 {name} зовёт в катку, го"))
+
+    reply = await roast.generate_fort_header(chat_id=1)
+
+    assert reply == "🔥 {name} зовёт в катку, го"
+
+
+async def test_generate_fort_header_injects_placeholder_when_missing(monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "test")
+    monkeypatch.setattr(roast, "_client", _fort_client("го в катку, лудоманы"))
+
+    reply = await roast.generate_fort_header(chat_id=1)
+
+    assert reply == "{name} го в катку, лудоманы"
+
+
+async def test_generate_fort_header_takes_first_line_only(monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "test")
+    monkeypatch.setattr(roast, "_client", _fort_client("{name} погнали\nвторая строка мусор"))
+
+    reply = await roast.generate_fort_header(chat_id=1)
+
+    assert reply == "{name} погнали"
+
+
+async def test_generate_fort_header_no_api_key_returns_none(monkeypatch):
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+
+    reply = await roast.generate_fort_header(chat_id=1)
+
+    assert reply is None
+
+
+async def test_generate_fort_header_timeout_returns_none(monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "test")
+
+    async def slow_sample():
+        raise TimeoutError
+
+    fake_chat = SimpleNamespace(sample=slow_sample)
+    fake_client = SimpleNamespace(chat=SimpleNamespace(create=MagicMock(return_value=fake_chat)))
+    monkeypatch.setattr(roast, "_client", fake_client)
+
+    reply = await roast.generate_fort_header(chat_id=1)
+
+    assert reply is None
+
+
+async def test_generate_fort_header_empty_response_returns_none(monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "test")
+    monkeypatch.setattr(roast, "_client", _fort_client(""))
+
+    reply = await roast.generate_fort_header(chat_id=1)
+
+    assert reply is None
+
+
 def test_restore_roast_state_skips_malformed_entries():
     roast.restore_roast_state(
         chat_id=11,

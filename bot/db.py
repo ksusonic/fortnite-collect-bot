@@ -28,6 +28,7 @@ class Session:
     time_slots: list[str] = field(default_factory=list)
     player_slots: dict[int, str] = field(default_factory=dict)  # user_id -> slot
     tagged_users: dict[int, str] = field(default_factory=dict)  # user_id -> name
+    llm_header: str | None = None  # Grok-generated gather header; falls back to style.header
 
 
 async def init_db() -> None:
@@ -60,6 +61,10 @@ async def init_db() -> None:
             pass
         try:
             await db.execute("ALTER TABLE sessions ADD COLUMN tag_line TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN llm_header TEXT")
         except Exception:
             pass
         await db.execute(
@@ -137,8 +142,8 @@ async def save_session(session: Session) -> None:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
                (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired,
-                style, created_at, completed_at, time_slots, tag_line)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                style, created_at, completed_at, time_slots, tag_line, llm_header)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
@@ -151,6 +156,7 @@ async def save_session(session: Session) -> None:
                 session.completed_at,
                 json.dumps(session.time_slots) if session.time_slots else None,
                 json.dumps({str(k): v for k, v in session.tagged_users.items()}) if session.tagged_users else None,
+                session.llm_header,
             ),
         )
         await db.commit()
@@ -198,6 +204,8 @@ async def load_session(message_id: int) -> Session | None:
         except ValueError, AttributeError:
             tagged_users = {}
 
+        llm_header = row["llm_header"] if "llm_header" in row.keys() else None
+
         session = Session(
             chat_id=row["chat_id"],
             message_id=row["message_id"],
@@ -210,6 +218,7 @@ async def load_session(message_id: int) -> Session | None:
             completed_at=row["completed_at"],
             time_slots=time_slots,
             tagged_users=tagged_users,
+            llm_header=llm_header,
         )
 
         cursor = await db.execute(
