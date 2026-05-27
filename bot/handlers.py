@@ -67,6 +67,7 @@ from bot.messages import (
 from bot.roast import (
     ROAST_PROBABILITY,
     TELEGRAM_MAX_MESSAGE_LEN,
+    generate_fort_header,
     generate_roast,
     generate_team_stats_roast,
     get_roast_lock,
@@ -80,6 +81,9 @@ from bot.roast import (
 logger = logging.getLogger(__name__)
 
 FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /fort attempts
+
+# Strong refs to fire-and-forget background tasks so they aren't garbage-collected mid-flight.
+_bg_tasks: set[asyncio.Task] = set()
 
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
 
@@ -148,6 +152,34 @@ def _display_name(user) -> str:
     return user.first_name or str(user.id)
 
 
+async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
+    """Generate a Grok gather header (≤10s) and edit the /fort message in place.
+
+    Fire-and-forget from cmd_fort: the message is already shown with a hardcoded
+    style, so any failure here is a silent no-op (graceful degradation). The
+    session is the live in-memory object, so build_gather_text reflects any
+    button presses that landed while we waited.
+    """
+    header = await generate_fort_header(session.chat_id)
+    if not header:
+        return
+    if session.is_complete or session.is_expired:
+        # Squad filled or session was replaced/cancelled while we waited — don't
+        # overwrite the closed screen with a gather header.
+        return
+    session.llm_header = header
+    await save_session(session)
+    try:
+        await bot.edit_message_text(
+            text=build_gather_text(session),
+            chat_id=session.chat_id,
+            message_id=session.message_id,
+            reply_markup=build_keyboard(len(session.go_players), time_slots=session.time_slots or None),
+        )
+    except TelegramBadRequest:
+        pass
+
+
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_fort(message: Message) -> None:
     user = message.from_user
@@ -211,6 +243,10 @@ async def cmd_fort(message: Message) -> None:
     sessions[sent.message_id] = session
 
     await save_session(session)
+
+    task = asyncio.create_task(_apply_fort_llm_header(message.bot, session))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
     try:
         await message.delete()

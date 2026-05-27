@@ -215,7 +215,8 @@ def build_gather_text(session: Session) -> str:
         ]
         return "\n".join(lines)
 
-    header = style.header.format(name=initiator)
+    template = session.llm_header or style.header
+    header = template.replace("{name}", initiator)
     responded = set(session.go_players) | set(session.pass_players)
     pending_tags = {uid: name for uid, name in session.tagged_users.items() if uid not in responded}
 
@@ -291,7 +292,8 @@ def _build_closed_text(session: Session, footer: str) -> str:
     style = _STYLES[session.style % len(_STYLES)]
     go_count = len(session.go_players)
     initiator = _user_link(session.initiator_id, session.initiator_name)
-    header = style.header.format(name=initiator)
+    template = session.llm_header or style.header
+    header = template.replace("{name}", initiator)
     has_slots = bool(session.time_slots)
     player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
 
