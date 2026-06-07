@@ -131,13 +131,19 @@ def random_style() -> int:
 NOW_SLOT = "now"
 
 
-def generate_time_slots(count: int = 3) -> list[str]:
+def generate_time_slots(count: int = 3, start_hour: int | None = None) -> list[str]:
     now = datetime.now(MSK)
-    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     deadline = now.replace(hour=PLAY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
-    slots = [NOW_SLOT]
+    if start_hour is None:
+        # Default: "now" + the next `count` whole hours up to the deadline.
+        start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        slots = [NOW_SLOT]
+    else:
+        # Explicit target hour (e.g. `/fort 18`): no "now" slot, start at that hour.
+        start = now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        slots = []
     for i in range(count):
-        slot_time = next_hour + timedelta(hours=i)
+        slot_time = start + timedelta(hours=i)
         if slot_time > deadline:
             break
         slots.append(slot_time.strftime("%H:%M"))
