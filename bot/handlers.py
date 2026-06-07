@@ -197,13 +197,13 @@ async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
 
 
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_fort(message: Message, command: CommandObject) -> None:
+async def cmd_fort(message: Message, command: CommandObject | None = None) -> None:
     user = message.from_user
     if user is None:
         return
 
     target_hour: int | None = None
-    if command.args:
+    if command is not None and command.args:
         target_hour = _parse_target_hour(command.args)
         if target_hour is None:
             await message.reply(
