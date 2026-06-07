@@ -20,6 +20,13 @@ dev = [
     "pytest-asyncio>=1.4.0",
 ]
 
+# aiogram <=3.28.2 caps aiohttp at <3.14, which keeps us on a version with two
+# medium CVEs (CVE-2026-34993 CookieJar.load RCE, CVE-2026-47265 cross-origin
+# cookie leak). Neither code path is used by this bot, but force the patched
+# aiohttp 3.14.x anyway; drop this override once aiogram relaxes its pin.
+[tool.uv]
+override-dependencies = ["aiohttp>=3.14.0,<4"]
+
 [tool.ruff]
 line-length = 120
 

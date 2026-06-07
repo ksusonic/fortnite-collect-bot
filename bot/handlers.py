@@ -5,7 +5,8 @@ import html
 import logging
 import os
 import time
-from datetime import datetime
+from dataclasses import replace
+from datetime import datetime, timedelta
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
@@ -45,13 +46,16 @@ from bot.fortnite import (
     EpicNameNotFound,
     FortniteError,
     FortniteUnavailable,
+    ModeStats,
     StatsEmpty,
     StatsPrivate,
 )
 from bot.messages import (
     MSK,
+    NOW_SLOT,
     PLAY_DEADLINE_HOUR,
     SESSION_TIMEOUT,
+    SESSION_TIMEOUT_TRACTION,
     SQUAD_SIZE,
     build_cancelled_text,
     build_expired_text,
@@ -461,6 +465,40 @@ async def _compute_team_deltas(
     return deltas_24h, deltas_7d
 
 
+def _build_weekly_view(
+    successes: list[tuple],
+    deltas_7d: dict[str, tuple[int, int, int, float]],
+) -> tuple[list[tuple], list[tuple]]:
+    """Replace each player's season squad stats with their last-7-days statline,
+    derived from the 7d snapshot delta (d_matches, d_wins, d_kills, period_kd).
+
+    Returns (weekly_successes, missing). Players without a ~7-day-old baseline
+    snapshot, or with 0 new matches this week, go into `missing` with a reason
+    and are NOT judged. The synthetic PlayerStats keeps the same
+    epic_account_id so the 24h delta block still resolves."""
+    weekly: list[tuple] = []
+    missing: list[tuple] = []
+    for link, s in successes:
+        delta = deltas_7d.get(s.epic_account_id)
+        if delta is None:
+            missing.append((link, "нет данных за неделю"))
+            continue
+        dm, dw, dk, kd = delta
+        if dm == 0:
+            missing.append((link, "не играл за неделю"))
+            continue
+        week_mode = ModeStats(
+            matches=dm,
+            wins=dw,
+            kills=dk,
+            kd=kd,
+            win_rate=dw / dm,
+            minutes_played=0,
+        )
+        weekly.append((link, replace(s, overall=week_mode, solo=None, duo=None, squad=week_mode)))
+    return weekly, missing
+
+
 async def _run_teamstats(bot: Bot, chat_id: int, *, silent_on_empty: bool = False) -> None:
     """Core /teamstats logic, shared by the slash command and the weekly drop.
 
@@ -499,14 +537,22 @@ async def _run_teamstats(bot: Bot, chat_id: int, *, silent_on_empty: bool = Fals
             return
 
         deltas_24h, deltas_7d = await _compute_team_deltas(successes)
+        weekly_successes, weekly_missing = _build_weekly_view(successes, deltas_7d)
+
+        if not weekly_successes:
+            if silent_on_empty:
+                return
+            await bot.send_message(chat_id, "Пока нет недельных данных — копим снапшоты, загляни позже.")
+            return
+
         html_text, facts = build_team_fn_stats_text(
-            successes,
+            weekly_successes,
             failures,
+            weekly_missing=weekly_missing,
             deltas_24h=deltas_24h,
-            deltas_7d=deltas_7d,
         )
 
-        if successes and facts and os.getenv("XAI_API_KEY"):
+        if facts and os.getenv("XAI_API_KEY"):
             roast = await generate_team_stats_roast(facts)
             if roast:
                 html_text = _append_team_analysis(html_text, roast)
@@ -662,22 +708,25 @@ async def on_callback(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     name = _display_name(callback.from_user)
     raw = callback.data
-    time_slot: str | None = None
+    stored_slot: str | None = None
 
     if raw.startswith("slot:"):
         action = "go"
-        time_slot = raw[5:]  # "slot:18:00" -> "18:00"
-        if time_slot not in session.time_slots:
+        offer = raw[5:]  # relative offer token: "now" / "30" / "60" / "120" (or legacy "HH:MM")
+        if offer not in session.time_slots:
             await callback.answer("Слот недоступен.")
             return
-        current_slot = session.player_slots.get(user_id)
-        if current_slot == time_slot:
-            await callback.answer("Ты уже записан на это время!")
-            return
+        # Resolve the relative offer into the player's absolute readiness target
+        # at press time, so the ETA stays stable as the message is re-rendered.
+        if offer == NOW_SLOT or not offer.isdigit():
+            stored_slot = offer
+        else:
+            target = datetime.now(MSK) + timedelta(minutes=int(offer))
+            stored_slot = target.strftime("%H:%M")
     else:
         action = raw
 
-    if action == "go" and not time_slot and user_id in session.go_players:
+    if action == "go" and stored_slot is None and user_id in session.go_players:
         await callback.answer("Ты уже в деле!")
         return
     if action == "pass" and user_id in session.pass_players:
@@ -691,8 +740,8 @@ async def on_callback(callback: CallbackQuery) -> None:
 
     if action == "go":
         session.go_players[user_id] = name
-        if time_slot:
-            session.player_slots[user_id] = time_slot
+        if stored_slot:
+            session.player_slots[user_id] = stored_slot
     else:
         session.pass_players[user_id] = name
 
@@ -701,7 +750,7 @@ async def on_callback(callback: CallbackQuery) -> None:
         user_id,
         name,
         action,
-        time_slot=time_slot,
+        time_slot=stored_slot,
         is_bot=callback.from_user.is_bot,
     )
 
@@ -726,9 +775,14 @@ async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadli
         now = time.time()
     if past_deadline is None:
         past_deadline = datetime.now(MSK).hour >= PLAY_DEADLINE_HOUR
-    expired = [
-        s for s in sessions.values() if not s.is_complete and (now - s.created_at > SESSION_TIMEOUT or past_deadline)
-    ]
+
+    # A set that gathered traction (2+ "go") lives longer — it usually fills in
+    # the game rather than failing, so don't kill it at the 1h mark.
+    def _timed_out(s: Session) -> bool:
+        timeout = SESSION_TIMEOUT_TRACTION if len(s.go_players) >= 2 else SESSION_TIMEOUT
+        return now - s.created_at > timeout
+
+    expired = [s for s in sessions.values() if not s.is_complete and (_timed_out(s) or past_deadline)]
     expired_ids: list[int] = []
     for session in expired:
         session.is_complete = True
