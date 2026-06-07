@@ -130,23 +130,27 @@ def random_style() -> int:
 
 NOW_SLOT = "now"
 
+# Relative readiness offers in minutes; capped at +2h (product decision —
+# people coordinate as "через полчаса", not by the clock).
+SLOT_OFFERS_MIN = [30, 60, 120]
 
-def generate_time_slots(count: int = 3, start_hour: int | None = None) -> list[str]:
+
+def generate_time_slots(start_hour: int | None = None) -> list[str]:
+    """Return readiness tokens for a /fort keyboard.
+
+    Plain `/fort` → ["now", "30", "60", "120"]: "now" plus minute-offset tokens
+    whose absolute target still lands before `PLAY_DEADLINE_HOUR`. Each token is
+    a *relative* offer; the absolute target is computed when a player presses it.
+    `/fort <hour>` pins a single absolute "HH:00" slot (no "now").
+    """
     now = datetime.now(MSK)
+    if start_hour is not None:
+        return [f"{start_hour:02d}:00"]
     deadline = now.replace(hour=PLAY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
-    if start_hour is None:
-        # Default: "now" + the next `count` whole hours up to the deadline.
-        start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        slots = [NOW_SLOT]
-    else:
-        # Explicit target hour (e.g. `/fort 18`): no "now" slot, start at that hour.
-        start = now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
-        slots = []
-    for i in range(count):
-        slot_time = start + timedelta(hours=i)
-        if slot_time > deadline:
-            break
-        slots.append(slot_time.strftime("%H:%M"))
+    slots = [NOW_SLOT]
+    for minutes in SLOT_OFFERS_MIN:
+        if now + timedelta(minutes=minutes) <= deadline:
+            slots.append(str(minutes))
     return slots
 
 
@@ -175,28 +179,37 @@ def _player_list(players: dict[int, str]) -> str:
     return "\n".join(f"   {i}. {_user_link(uid, name)}" for i, (uid, name) in enumerate(players.items(), 1))
 
 
-def _player_list_by_slots(session: Session) -> str:
+def _eta_label(slot: str) -> str:
+    """Human ETA for a stored player slot ("now" or an absolute "HH:MM" target)."""
+    if slot == NOW_SLOT:
+        return "сейчас"
+    label = f"≈ {slot}"
+    try:
+        hh, mm = slot.split(":")
+        now = datetime.now(MSK)
+        target = now.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+        delta_min = round((target - now).total_seconds() / 60)
+        if delta_min > 0:
+            label += f" (через ~{delta_min}м)"
+    except ValueError, AttributeError:
+        pass
+    return label
+
+
+def _player_eta_list(session: Session) -> str:
+    """Flat numbered list of go-players, each annotated with their ETA."""
     if not session.go_players:
         return "   (пока пусто)"
-    slots_grouped: dict[str, list[tuple[int, str]]] = {s: [] for s in session.time_slots}
-    for uid, name in session.go_players.items():
-        slot = session.player_slots.get(uid)
-        if slot and slot in slots_grouped:
-            slots_grouped[slot].append((uid, name))
+
+    def sort_key(item: tuple[int, str]) -> tuple[int, str]:
+        slot = session.player_slots.get(item[0]) or NOW_SLOT
+        return (0, "") if slot == NOW_SLOT else (1, slot)
+
     lines: list[str] = []
-    idx = 1
-    empty_labels: list[str] = []
-    for slot, players in slots_grouped.items():
-        label = "Сейчас" if slot == NOW_SLOT else slot
-        if not players:
-            empty_labels.append(label)
-            continue
-        lines.append(f"\U0001f554 {label}:")
-        for uid, name in players:
-            lines.append(f"   {idx}. {_user_link(uid, name)}")
-            idx += 1
-    if empty_labels:
-        lines.append(f"\U0001f554 Свободно: {' · '.join(empty_labels)}")
+    for idx, (uid, name) in enumerate(sorted(session.go_players.items(), key=sort_key), 1):
+        slot = session.player_slots.get(uid)
+        eta = f" — {_eta_label(slot)}" if slot else ""
+        lines.append(f"   {idx}. {_user_link(uid, name)}{eta}")
     return "\n".join(lines)
 
 
@@ -205,7 +218,7 @@ def build_gather_text(session: Session) -> str:
     go_count = len(session.go_players)
     initiator = _user_link(session.initiator_id, session.initiator_name)
     has_slots = bool(session.time_slots)
-    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
+    player_text = _player_eta_list(session) if has_slots else _player_list(session.go_players)
 
     if session.is_complete:
         lines = [
@@ -241,7 +254,8 @@ def build_gather_text(session: Session) -> str:
     return "\n".join(lines)
 
 
-SESSION_TIMEOUT = 60 * 60  # 1 hour
+SESSION_TIMEOUT = 60 * 60  # 1 hour — drop a set nobody (or just one) joined
+SESSION_TIMEOUT_TRACTION = 3 * 60 * 60  # 3 hours — a set with 2+ "go" survives longer
 
 
 @dataclass(frozen=True)
@@ -301,7 +315,7 @@ def _build_closed_text(session: Session, footer: str) -> str:
     template = session.llm_header or style.header
     header = template.replace("{name}", initiator)
     has_slots = bool(session.time_slots)
-    player_text = _player_list_by_slots(session) if has_slots else _player_list(session.go_players)
+    player_text = _player_eta_list(session) if has_slots else _player_list(session.go_players)
 
     lines = [
         header,
@@ -318,7 +332,11 @@ def _build_closed_text(session: Session, footer: str) -> str:
 
 
 def build_expired_text(session: Session) -> str:
-    return _build_closed_text(session, "⏰ Время вышло — сбор отменён.")
+    if len(session.go_players) >= 2:
+        footer = f"⏰ Окно закрылось. В деле было {len(session.go_players)} — добивайте в игре \U0001f3ae"
+    else:
+        footer = "⏰ Время вышло — сбор отменён."
+    return _build_closed_text(session, footer)
 
 
 def build_cancelled_text(session: Session) -> str:
@@ -635,59 +653,69 @@ def _build_team_facts(
     aggregates: tuple[int, int, int, float, float],
     mvp: tuple[EpicLink, PlayerStats] | None,
     leaders: list[tuple[EpicLink, PlayerStats]],
+    weekly_missing: list[tuple[EpicLink, str]] | None = None,
     deltas_24h: dict[str, tuple[int, int, int, float]] | None = None,
-    deltas_7d: dict[str, tuple[int, int, int, float]] | None = None,
 ) -> str:
     """Plain-text fact dump for LLM consumption (no HTML, no emojis).
 
-    `deltas_*` is keyed by epic_account_id; value is (d_matches, d_wins,
-    d_kills, period_kd). Missing keys → player skipped in that block.
+    All numbers are for the LAST 7 DAYS only (the squad fields already carry the
+    weekly statline). `deltas_24h` is keyed by epic_account_id; value is
+    (d_matches, d_wins, d_kills, period_kd) — recent dynamics inside the week.
+    `weekly_missing` lists players without a weekly baseline so the LLM is told
+    not to judge them.
     """
     total_matches, total_wins, total_kills, team_kd, team_win_rate = aggregates
-    lines: list[str] = [f"Игроков: {len(successes)}"]
+    lines: list[str] = ["Статистика ТОЛЬКО за последние 7 дней (свежая форма, не за сезон).", ""]
+    lines.append(f"Игроков: {len(successes)}")
     lines.append(
-        f"Squad: {total_matches} матчей, {total_wins} побед "
+        f"За неделю (squad): {total_matches} матчей, {total_wins} побед "
         f"({team_win_rate * 100:.1f}%), {total_kills} киллов, K/D {team_kd:.2f}"
     )
     if mvp is not None:
         link, s = mvp
         name = link.user_name or s.epic_name
         m, w, k, kd = _squad_totals(s)
-        lines.append(f"MVP по squad: {name} — {m}M, {w}W, {k}K, K/D {kd:.2f}")
+        lines.append(f"MVP недели: {name} — {m}M, {w}W, {k}K, K/D {kd:.2f}")
     if leaders:
-        lines.append("Топ по squad:")
+        lines.append("Топ недели:")
         for i, (link, s) in enumerate(leaders, 1):
             name = link.user_name or s.epic_name
             m, w, k, kd = _squad_totals(s)
             lines.append(f"{i}. {name} {m}M {w}W {k}K K/D {kd:.2f}")
     if deltas_24h:
         lines.extend(_format_delta_block("Динамика за 24ч (squad):", successes, deltas_24h))
-    if deltas_7d:
-        lines.extend(_format_delta_block("Динамика за 7д (squad):", successes, deltas_7d))
+    if weekly_missing:
+        names = ", ".join(link.user_name or "?" for link, _ in weekly_missing)
+        lines.append(f"Без недельных данных (НЕ оценивай и не упоминай как слабых): {names}")
     return "\n".join(lines)
 
 
 def build_team_fn_stats_text(
     successes: list[tuple[EpicLink, PlayerStats]],
     failures: list[tuple[EpicLink, FortniteError]],
+    *,
+    weekly_missing: list[tuple[EpicLink, str]] | None = None,
     deltas_24h: dict[str, tuple[int, int, int, float]] | None = None,
-    deltas_7d: dict[str, tuple[int, int, int, float]] | None = None,
 ) -> tuple[str, str]:
     """Return (html_text, plain_facts) for /teamstats.
 
-    The HTML text is the formatted Telegram message; `plain_facts` is a compact
-    plain-text fact sheet for feeding into an LLM (no HTML, no emojis).
-    `plain_facts` is empty when there are no successful entries.
+    All numbers are for the LAST 7 DAYS only: the caller passes successes whose
+    `squad` field already holds each player's weekly statline (see
+    `_build_weekly_view`). The HTML text is the formatted Telegram message;
+    `plain_facts` is a compact plain-text fact sheet for feeding into an LLM
+    (no HTML, no emojis). `plain_facts` is empty when there are no entries.
 
-    `deltas_24h` / `deltas_7d` are optional dicts keyed by epic_account_id;
-    they are passed through to `_build_team_facts` and never affect HTML.
+    `weekly_missing` lists (link, reason) for players without a weekly baseline
+    snapshot; they are shown in a separate section and excluded from the ranking.
+    `deltas_24h` is an optional dict keyed by epic_account_id, passed through to
+    `_build_team_facts` for the intra-week recency block; it never affects HTML.
     """
     from bot.fortnite import EpicNameNotFound, FortniteUnavailable, StatsEmpty, StatsPrivate
 
     facts = ""
     n = len(successes)
     lines: list[str] = [
-        f"\U0001f3c6 <b>Fortnite Squad</b> — {n} {_plural_players(n)}",
+        f"\U0001f3c6 <b>Fortnite Squad</b> — {n} {_plural_players(n)} · за неделю",
     ]
 
     if not successes:
@@ -699,26 +727,32 @@ def build_team_fn_stats_text(
         mvp = _mvp(successes)
         leaders_ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:5]
 
-        # MVP block — judged by duo+squad performance only.
+        # MVP block — judged by squad performance over the last 7 days.
         if mvp is not None:
             link, s = mvp
             mvp_m, mvp_w, mvp_k, mvp_kd = _squad_totals(s)
             user_label = _user_code(link.user_name or s.epic_name)
             lines.append("")
-            lines.append(f"\U0001f947 <b>MVP</b>: {user_label}")
+            lines.append(f"\U0001f947 <b>MVP недели</b>: {user_label}")
             lines.append(f"   \U0001f3af {mvp_w}W · \U0001f4a5 {mvp_k}K · ⚔️ {mvp_kd:.2f} K/D · \U0001f3ae {mvp_m}M")
 
         # Summary
         lines.append("")
         lines.append(_TEAM_DIVIDER)
-        lines.append("\U0001f4ca <b>Сводка</b>")
+        lines.append("\U0001f4ca <b>Сводка за неделю</b>")
         lines.append(f"• \U0001f3ae {total_matches} матчей  ·  \U0001f3c6 {total_wins}W ({team_win_rate * 100:.1f}%)")
         lines.append(f"• \U0001f4a5 {total_kills} киллов  ·  ⚔️ K/D {team_kd:.2f}")
 
         # Leaders table
         lines.append(_TEAM_DIVIDER)
-        lines.append("\U0001f3c5 <b>Лидеры по победам</b>")
+        lines.append("\U0001f3c5 <b>Лидеры недели</b>")
         lines.append(_leaders_pre_table(successes, limit=5))
+
+        # Players without a weekly baseline (new accounts / no week-old snapshot)
+        # or who didn't play this week — shown with a marker, not judged.
+        if weekly_missing:
+            body = [f"   {_user_code(link.user_name or '?')} — {reason}" for link, reason in weekly_missing]
+            _section(lines, "\U0001f4a4 <b>Вне недельного зачёта</b>", body)
 
         # Per-mode lines are intentionally dropped: this bot focuses on squad
         # only, and the MVP + leaders table already convey the squad picture.
@@ -728,8 +762,8 @@ def build_team_fn_stats_text(
             aggregates,
             mvp,
             leaders_ranked,
+            weekly_missing=weekly_missing,
             deltas_24h=deltas_24h,
-            deltas_7d=deltas_7d,
         )
 
     if failures:
@@ -767,11 +801,21 @@ def build_team_fn_stats_text(
     return "\n".join(lines), facts
 
 
+def _slot_button_label(token: str) -> str:
+    if token == NOW_SLOT:
+        return "⚡ Сейчас"
+    if token.isdigit():
+        minutes = int(token)
+        return f"\U0001f550 +{minutes // 60}ч" if minutes % 60 == 0 else f"\U0001f550 +{minutes}м"
+    # Legacy absolute "HH:MM" token (/fort <hour> pin, or a pre-deploy session).
+    return f"\U0001f550 {token}"
+
+
 def build_keyboard(go_count: int, time_slots: list[str] | None = None) -> InlineKeyboardMarkup:
     if time_slots:
         slot_buttons = [
             InlineKeyboardButton(
-                text="⚡ Сейчас" if slot == NOW_SLOT else f"\U0001f554 {slot}",
+                text=_slot_button_label(slot),
                 callback_data=f"slot:{slot}",
             )
             for slot in time_slots
