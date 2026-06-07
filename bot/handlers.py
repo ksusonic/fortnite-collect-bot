@@ -143,6 +143,22 @@ def _prune_fort_attempts(now: float) -> None:
         _fort_attempt_times.pop(key, None)
 
 
+def _parse_target_hour(raw: str) -> int | None:
+    """Parse a `/fort` time argument (e.g. "18", "18:00", "18ч") into an hour 0..PLAY_DEADLINE_HOUR.
+
+    Returns None if the argument is malformed or out of the playable range.
+    """
+    token = raw.strip().split()[0] if raw.strip() else ""
+    hour_part = token.split(":")[0]
+    digits = "".join(c for c in hour_part if c.isdigit())
+    if not digits:
+        return None
+    hour = int(digits)
+    if hour < 0 or hour > PLAY_DEADLINE_HOUR:
+        return None
+    return hour
+
+
 router = Router()
 
 
@@ -181,10 +197,23 @@ async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
 
 
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
-async def cmd_fort(message: Message) -> None:
+async def cmd_fort(message: Message, command: CommandObject | None = None) -> None:
     user = message.from_user
     if user is None:
         return
+
+    target_hour: int | None = None
+    if command is not None and command.args:
+        target_hour = _parse_target_hour(command.args)
+        if target_hour is None:
+            await message.reply(
+                "Не понял время. Укажи час сбора числом: <code>/fort 18</code> "
+                f"(допустимо до {PLAY_DEADLINE_HOUR}:00 МСК)."
+            )
+            return
+        if target_hour <= datetime.now(MSK).hour:
+            await message.reply("Это время уже прошло. Для сбора прямо сейчас напиши <code>/fort</code> без числа.")
+            return
 
     now = time.time()
     _prune_fort_attempts(now)
@@ -221,7 +250,7 @@ async def cmd_fort(message: Message) -> None:
         sessions.pop(active_session.message_id, None)
 
     name = _display_name(user)
-    slots = generate_time_slots()
+    slots = generate_time_slots(start_hour=target_hour)
     participants = await get_chat_participants(message.chat.id)
     # Exclude the initiator from the tag list
     tagged_users = {uid: n for uid, n in participants if uid != user.id}

@@ -36,7 +36,7 @@ uv run pre-commit run --all-files
 
 ## Bot commands (group chats only)
 
-- `/fort` — start a gathering session with time-slot buttons (Now + next hours up to 23:00 MSK). If an active session exists, repeated `/fort` within `FORT_REPLACE_COOLDOWN` (30 s) gets a 👎 reaction; after the cooldown it cancels the old session and creates a new one.
+- `/fort` — start a gathering session with time-slot buttons (Now + next hours up to 23:00 MSK). Optional time argument `/fort <hour>` (e.g. `/fort 18`, also accepts `18:00`) starts the slots at that target hour (no "Now" slot) up to 23:00 MSK; rejected if the hour is malformed, past, or after `PLAY_DEADLINE_HOUR`. If an active session exists, repeated `/fort` within `FORT_REPLACE_COOLDOWN` (30 s) gets a 👎 reaction; after the cooldown it cancels the old session and creates a new one.
 - `/rm` — cancel and delete current active session
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
 - `/roast on [0..1] | off` — toggle xAI Grok "Unhinged" replies; optional probability override (default `ROAST_PROBABILITY`)
