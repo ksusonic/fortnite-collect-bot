@@ -134,6 +134,20 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_squad_snapshots_acc_ts "
             "ON squad_snapshots (epic_account_id, fetched_at DESC)"
         )
+        # Migration: weekly view moved from squad-only to overall (all modes).
+        # New nullable columns — old rows stay NULL and are treated as "no
+        # weekly baseline" until a fresh overall snapshot ages in.
+        for col, coltype in (
+            ("overall_matches", "INTEGER"),
+            ("overall_wins", "INTEGER"),
+            ("overall_kills", "INTEGER"),
+            ("overall_deaths_est", "INTEGER"),
+            ("overall_kd", "REAL"),
+        ):
+            try:
+                await db.execute(f"ALTER TABLE squad_snapshots ADD COLUMN {col} {coltype}")
+            except Exception:
+                pass
         await db.commit()
 
 
@@ -577,6 +591,13 @@ class SquadSnapshot:
     kills: int
     deaths_est: int
     kd: float
+    # Overall (all modes) — added when the weekly view moved off squad-only.
+    # NULL for rows written before that migration.
+    overall_matches: int | None = None
+    overall_wins: int | None = None
+    overall_kills: int | None = None
+    overall_deaths_est: int | None = None
+    overall_kd: float | None = None
 
 
 async def save_squad_snapshot(
@@ -587,28 +608,55 @@ async def save_squad_snapshot(
     kills: int,
     deaths_est: int,
     kd: float,
+    overall_matches: int | None = None,
+    overall_wins: int | None = None,
+    overall_kills: int | None = None,
+    overall_deaths_est: int | None = None,
+    overall_kd: float | None = None,
 ) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO squad_snapshots
-               (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd),
+               (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd,
+                overall_matches, overall_wins, overall_kills, overall_deaths_est, overall_kd)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                epic_account_id,
+                fetched_at,
+                matches,
+                wins,
+                kills,
+                deaths_est,
+                kd,
+                overall_matches,
+                overall_wins,
+                overall_kills,
+                overall_deaths_est,
+                overall_kd,
+            ),
         )
         await db.commit()
 
 
-async def get_snapshot_before(epic_account_id: str, cutoff_ts: float) -> SquadSnapshot | None:
+async def get_snapshot_before(
+    epic_account_id: str, cutoff_ts: float, floor_ts: float | None = None
+) -> SquadSnapshot | None:
+    """Closest snapshot at or before cutoff_ts. If floor_ts is given, the
+    snapshot must also be no older than floor_ts — so a sparse history can't
+    silently stretch the "last 7 days" window into several weeks."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            """SELECT epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd
-               FROM squad_snapshots
-               WHERE epic_account_id = ? AND fetched_at <= ?
-               ORDER BY fetched_at DESC
-               LIMIT 1""",
-            (epic_account_id, cutoff_ts),
+        sql = (
+            "SELECT epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd, "
+            "overall_matches, overall_wins, overall_kills, overall_deaths_est, overall_kd "
+            "FROM squad_snapshots WHERE epic_account_id = ? AND fetched_at <= ?"
         )
+        params: list = [epic_account_id, cutoff_ts]
+        if floor_ts is not None:
+            sql += " AND fetched_at >= ?"
+            params.append(floor_ts)
+        sql += " ORDER BY fetched_at DESC LIMIT 1"
+        cursor = await db.execute(sql, params)
         row = await cursor.fetchone()
         if row is None:
             return None
@@ -620,6 +668,11 @@ async def get_snapshot_before(epic_account_id: str, cutoff_ts: float) -> SquadSn
             kills=row["kills"],
             deaths_est=row["deaths_est"],
             kd=row["kd"],
+            overall_matches=row["overall_matches"],
+            overall_wins=row["overall_wins"],
+            overall_kills=row["overall_kills"],
+            overall_deaths_est=row["overall_deaths_est"],
+            overall_kd=row["overall_kd"],
         )
 
 

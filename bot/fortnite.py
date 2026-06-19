@@ -206,19 +206,30 @@ async def fetch_stats(
 
         stats = _to_player_stats(raw, with_image=with_image)
         _stats_cache[(stats.epic_account_id, with_image)] = (time.time(), stats)
-        if stats.squad is not None and stats.squad.matches > 0:
+        # overall is always present on success (_to_player_stats raises StatsEmpty
+        # otherwise), so the snapshot is written even for solo-only players whose
+        # squad bucket is empty. The weekly view reads the overall_* columns.
+        if stats.overall.matches > 0:
             try:
                 from bot.db import save_squad_snapshot  # local import: avoid bot.db ↔ bot.fortnite cycle
 
-                deaths_est = int(round(stats.squad.kills / stats.squad.kd)) if stats.squad.kd > 0 else 0
+                def _deaths_est(mode) -> int:
+                    return int(round(mode.kills / mode.kd)) if mode.kd > 0 else 0
+
+                sq = stats.squad
                 await save_squad_snapshot(
                     epic_account_id=stats.epic_account_id,
                     fetched_at=stats.fetched_at,
-                    matches=stats.squad.matches,
-                    wins=stats.squad.wins,
-                    kills=stats.squad.kills,
-                    deaths_est=deaths_est,
-                    kd=stats.squad.kd,
+                    matches=sq.matches if sq is not None else 0,
+                    wins=sq.wins if sq is not None else 0,
+                    kills=sq.kills if sq is not None else 0,
+                    deaths_est=_deaths_est(sq) if sq is not None else 0,
+                    kd=sq.kd if sq is not None else 0.0,
+                    overall_matches=stats.overall.matches,
+                    overall_wins=stats.overall.wins,
+                    overall_kills=stats.overall.kills,
+                    overall_deaths_est=_deaths_est(stats.overall),
+                    overall_kd=stats.overall.kd,
                 )
             except Exception:
                 logger.warning("failed to save squad snapshot", exc_info=True)
