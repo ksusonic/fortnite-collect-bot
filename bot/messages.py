@@ -509,7 +509,8 @@ def build_my_fn_stats_text(link: EpicLink, stats: PlayerStats) -> str:
 
 
 def _squad_totals(stats: PlayerStats) -> tuple[int, int, int, float]:
-    """Player totals in squad mode only. This bot is for 4-player squads."""
+    """Player totals, read from the `squad` field. In the weekly view that field
+    carries the player's last-7-days all-modes statline (see `_build_weekly_view`)."""
     mode = stats.squad
     if mode is None:
         return 0, 0, 0, 0.0
@@ -517,7 +518,7 @@ def _squad_totals(stats: PlayerStats) -> tuple[int, int, int, float]:
 
 
 def _team_aggregate(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[int, int, int, float, float]:
-    """Team-wide totals in squad mode. Solo and duo are excluded."""
+    """Team-wide weekly totals (all modes), summed over the per-player statlines."""
     total_matches = total_wins = total_kills = total_deaths_est = 0
     for _, s in successes:
         m, w, k, kd = _squad_totals(s)
@@ -613,7 +614,7 @@ def _leaders_pre_table(successes: list[tuple[EpicLink, PlayerStats]], limit: int
 
 
 def _mvp(successes: list[tuple[EpicLink, PlayerStats]]) -> tuple[EpicLink, PlayerStats] | None:
-    """MVP by team-play (duo+squad) wins, tie-broken by team-play kills."""
+    """MVP by weekly wins (all modes), tie-broken by weekly kills."""
     if not successes:
         return None
 
@@ -668,7 +669,7 @@ def _build_team_facts(
     lines: list[str] = ["Статистика ТОЛЬКО за последние 7 дней (свежая форма, не за сезон).", ""]
     lines.append(f"Игроков: {len(successes)}")
     lines.append(
-        f"За неделю (squad): {total_matches} матчей, {total_wins} побед "
+        f"За неделю (все режимы): {total_matches} матчей, {total_wins} побед "
         f"({team_win_rate * 100:.1f}%), {total_kills} киллов, K/D {team_kd:.2f}"
     )
     if mvp is not None:
@@ -683,7 +684,7 @@ def _build_team_facts(
             m, w, k, kd = _squad_totals(s)
             lines.append(f"{i}. {name} {m}M {w}W {k}K K/D {kd:.2f}")
     if deltas_24h:
-        lines.extend(_format_delta_block("Динамика за 24ч (squad):", successes, deltas_24h))
+        lines.extend(_format_delta_block("Динамика за 24ч:", successes, deltas_24h))
     if weekly_missing:
         names = ", ".join(link.user_name or "?" for link, _ in weekly_missing)
         lines.append(f"Без недельных данных (НЕ оценивай и не упоминай как слабых): {names}")
@@ -727,7 +728,7 @@ def build_team_fn_stats_text(
         mvp = _mvp(successes)
         leaders_ranked = sorted(successes, key=lambda x: (-x[1].overall.wins, -x[1].overall.kills))[:5]
 
-        # MVP block — judged by squad performance over the last 7 days.
+        # MVP block — judged by weekly all-modes performance over the last 7 days.
         if mvp is not None:
             link, s = mvp
             mvp_m, mvp_w, mvp_k, mvp_kd = _squad_totals(s)
@@ -754,8 +755,8 @@ def build_team_fn_stats_text(
             body = [f"   {_user_code(link.user_name or '?')} — {reason}" for link, reason in weekly_missing]
             _section(lines, "\U0001f4a4 <b>Вне недельного зачёта</b>", body)
 
-        # Per-mode lines are intentionally dropped: this bot focuses on squad
-        # only, and the MVP + leaders table already convey the squad picture.
+        # Per-mode lines are intentionally dropped: the weekly view aggregates
+        # all modes, and the MVP + leaders table already convey the picture.
 
         facts = _build_team_facts(
             successes,

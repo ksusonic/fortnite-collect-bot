@@ -93,6 +93,12 @@ ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
 
 TEAMSTATS_CONCURRENCY = 5
 
+# Upper bound on how old a baseline snapshot may be for each delta window.
+# Without it, a sparse snapshot history lets the "last 7 days" silently stretch
+# into several weeks and inflate the numbers.
+WEEKLY_BASELINE_MAX_AGE = 10 * 24 * 3600
+DAILY_BASELINE_MAX_AGE = 36 * 3600
+
 _TEAM_ANALYSIS_HEADER = "\n────────────────────\n\U0001f916 <b>Анализ Grok</b>\n"
 _TEAM_ANALYSIS_OPEN = "<i>"
 _TEAM_ANALYSIS_CLOSE = "</i>"
@@ -433,33 +439,48 @@ async def cmd_myfnstats_private(message: Message) -> None:
 async def _compute_team_deltas(
     successes: list[tuple],
 ) -> tuple[dict[str, tuple[int, int, int, float]], dict[str, tuple[int, int, int, float]]]:
-    """For each player with squad stats, look up the closest snapshot older
+    """For each player, look up the closest overall (all-modes) snapshot older
     than 24h / 7d and compute (d_matches, d_wins, d_kills, period_kd).
 
+    Uses `overall` rather than squad-only so any playlist (solo/duo/Reload/
+    Ranked/Zero Build/…) counts as activity. Snapshots written before the
+    overall migration have NULL overall_* and are treated as "no baseline".
     Players whose current matches < snapshot matches are dropped (season
-    reset). 2 SQLite reads per player; with N≤team-size and PK lookups it's
-    cheap — kept sequential intentionally."""
+    reset). A baseline older than *_BASELINE_MAX_AGE is rejected so a sparse
+    history can't stretch the window. 2 SQLite reads per player; with
+    N≤team-size and PK lookups it's cheap — kept sequential intentionally."""
     now = time.time()
     cutoff_24h = now - 24 * 3600
     cutoff_7d = now - 7 * 24 * 3600
     deltas_24h: dict[str, tuple[int, int, int, float]] = {}
     deltas_7d: dict[str, tuple[int, int, int, float]] = {}
     for _, s in successes:
-        if s.squad is None or s.squad.matches == 0:
+        if s.overall is None or s.overall.matches == 0:
             continue
         aid = s.epic_account_id
-        curr_kd = s.squad.kd
-        curr_deaths = int(round(s.squad.kills / curr_kd)) if curr_kd > 0 else 0
-        for cutoff, target in ((cutoff_24h, deltas_24h), (cutoff_7d, deltas_7d)):
-            prev = await get_snapshot_before(aid, cutoff)
+        curr_kd = s.overall.kd
+        curr_deaths = int(round(s.overall.kills / curr_kd)) if curr_kd > 0 else 0
+        for cutoff, floor, target in (
+            (cutoff_24h, now - DAILY_BASELINE_MAX_AGE, deltas_24h),
+            (cutoff_7d, now - WEEKLY_BASELINE_MAX_AGE, deltas_7d),
+        ):
+            prev = await get_snapshot_before(aid, cutoff, floor_ts=floor)
             if prev is None:
                 continue
-            dm = s.squad.matches - prev.matches
-            dw = s.squad.wins - prev.wins
-            dk = s.squad.kills - prev.kills
+            p_matches, p_wins, p_kills, p_deaths = (
+                prev.overall_matches,
+                prev.overall_wins,
+                prev.overall_kills,
+                prev.overall_deaths_est,
+            )
+            if p_matches is None or p_wins is None or p_kills is None or p_deaths is None:
+                continue  # snapshot predates the overall migration — no baseline
+            dm = s.overall.matches - p_matches
+            dw = s.overall.wins - p_wins
+            dk = s.overall.kills - p_kills
             if dm < 0:  # season reset — stats counter rolled back
                 continue
-            d_deaths = curr_deaths - prev.deaths_est
+            d_deaths = curr_deaths - p_deaths
             period_kd = dk / d_deaths if d_deaths > 0 else 0.0
             target[aid] = (dm, dw, dk, period_kd)
     return deltas_24h, deltas_7d
