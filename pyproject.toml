@@ -5,7 +5,7 @@ description = "Telegram-бот для сбора скуада в Fortnite"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "aiogram>=3.29.1,<4",
+    "aiogram>=3.30.0,<4",
     "python-dotenv>=1.1",
     "aiosqlite>=0.21",
     "fortnite-api>=3.3.0,<4",
@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.21",
+    "ruff>=0.15.22",
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
