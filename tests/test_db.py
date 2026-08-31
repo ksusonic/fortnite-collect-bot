@@ -9,12 +9,16 @@ import pytest
 from bot import db as db_module
 from bot.db import (
     Session,
+    clear_afk,
+    get_afk_until,
+    get_chat_participants,
     load_active_sessions,
     load_session,
     mark_complete,
     mark_expired,
     save_response,
     save_session,
+    set_afk,
 )
 
 
@@ -115,6 +119,30 @@ async def test_load_active_sessions_restores_responses(tmp_db, make_session):
     assert loaded.go_players == {10: "@p1"}
     assert loaded.player_slots == {10: "19:00"}
     assert loaded.pass_players == {11: "@p2"}
+
+
+async def test_afk_hides_user_from_fort_mentions_until_expiry(tmp_db, make_session):
+    session = make_session(chat_id=-100)
+    await save_session(session)
+    await save_response(session.message_id, 10, "@p1", "go")
+    await save_response(session.message_id, 11, "@p2", "go")
+
+    await set_afk(-100, 10, time.time() + 86400)
+    assert await get_afk_until(-100, 10) is not None
+    assert await get_chat_participants(-100) == [(11, "@p2")]
+
+    await clear_afk(-100, 10)
+    assert await get_afk_until(-100, 10) is None
+    assert {user_id for user_id, _ in await get_chat_participants(-100)} == {10, 11}
+
+
+async def test_expired_afk_does_not_hide_user(tmp_db, make_session):
+    session = make_session(chat_id=-100)
+    await save_session(session)
+    await save_response(session.message_id, 10, "@p1", "go")
+    await set_afk(-100, 10, time.time() - 1)
+
+    assert await get_chat_participants(-100) == [(10, "@p1")]
 
 
 async def test_squad_snapshot_roundtrip(tmp_db):

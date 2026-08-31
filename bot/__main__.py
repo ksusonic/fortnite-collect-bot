@@ -36,6 +36,7 @@ async def cleanup_snapshots_loop() -> None:
 
 GROUP_COMMANDS = [
     BotCommand(command="fort", description="собрать сквад на катку"),
+    BotCommand(command="afk", description="временно не звать в /fort: 1d, 2w или off"),
     BotCommand(command="rm", description="отменить активный сбор"),
     BotCommand(command="stats", description="статистика чата"),
     BotCommand(command="roast", description="вкл/выкл язвительные ответы: on [0..1] | off"),

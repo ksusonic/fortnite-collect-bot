@@ -94,6 +94,14 @@ async def init_db() -> None:
                 PRIMARY KEY (chat_id, feature)
             )"""
         )
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS afk_mutes (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                muted_until REAL NOT NULL,
+                PRIMARY KEY (chat_id, user_id)
+            )"""
+        )
         try:
             await db.execute("ALTER TABLE chat_features ADD COLUMN value REAL")
         except Exception:
@@ -409,7 +417,7 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
 
 
 async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
-    """Return distinct users who previously responded 'go' in this chat, most recent first."""
+    """Return mentionable previous 'go' responders in this chat, most recent first."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -417,12 +425,43 @@ async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
                FROM responses r
                JOIN sessions s ON r.message_id = s.message_id
                WHERE s.chat_id = ? AND r.response = 'go' AND r.is_bot = 0
+                 AND NOT EXISTS (
+                     SELECT 1 FROM afk_mutes a
+                     WHERE a.chat_id = s.chat_id
+                       AND a.user_id = r.user_id
+                       AND a.muted_until > ?
+                 )
                GROUP BY r.user_id
                ORDER BY MAX(r.responded_at) DESC
                LIMIT 20""",
-            (chat_id,),
+            (chat_id, time.time()),
         )
         return [(row["user_id"], row["user_name"]) for row in await cursor.fetchall()]
+
+
+async def set_afk(chat_id: int, user_id: int, muted_until: float) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO afk_mutes (chat_id, user_id, muted_until) VALUES (?, ?, ?)",
+            (chat_id, user_id, muted_until),
+        )
+        await db.commit()
+
+
+async def clear_afk(chat_id: int, user_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM afk_mutes WHERE chat_id = ? AND user_id = ?", (chat_id, user_id))
+        await db.commit()
+
+
+async def get_afk_until(chat_id: int, user_id: int) -> float | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT muted_until FROM afk_mutes WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
 
 
 async def get_active_chat_ids(days: int = 14) -> list[int]:

@@ -4,6 +4,7 @@ import asyncio
 import html
 import logging
 import os
+import re
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -22,6 +23,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from bot import fortnite
 from bot.db import (
     Session,
+    clear_afk,
     get_chat_epic_links,
     get_chat_participants,
     get_chat_stats,
@@ -39,6 +41,7 @@ from bot.db import (
     save_response,
     save_session,
     sessions,
+    set_afk,
     set_feature,
     set_last_weekly_drop,
 )
@@ -85,6 +88,7 @@ from bot.roast import (
 logger = logging.getLogger(__name__)
 
 FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /fort attempts
+_AFK_DURATION_RE = re.compile(r"([1-9]\d{0,3})([dw])")
 
 # Strong refs to fire-and-forget background tasks so they aren't garbage-collected mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
@@ -304,8 +308,38 @@ async def cmd_stats(message: Message) -> None:
     await message.answer(build_stats_text(stats))
 
 
+@router.message(Command("afk"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_afk(message: Message, command: CommandObject) -> None:
+    user = message.from_user
+    if user is None:
+        return
+
+    arg = (command.args or "").strip().lower()
+    if arg == "off":
+        await clear_afk(message.chat.id, user.id)
+        await message.answer("Снова буду звать тебя в новых /fort сборах.")
+        return
+
+    match = _AFK_DURATION_RE.fullmatch(arg)
+    if match is None:
+        await message.answer("Использование: /afk 1d, /afk 2w или /afk off")
+        return
+
+    amount = int(match.group(1))
+    unit = match.group(2)
+    duration = timedelta(days=amount * (7 if unit == "w" else 1))
+    muted_until = datetime.now(MSK) + duration
+    await set_afk(message.chat.id, user.id, muted_until.timestamp())
+    await message.answer(f"Не буду звать тебя в новых /fort сборах до {muted_until.strftime('%d.%m.%Y %H:%M')} МСК.")
+
+
 @router.message(Command("stats"))
 async def cmd_stats_private(message: Message) -> None:
+    await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("afk"))
+async def cmd_afk_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
 
 
