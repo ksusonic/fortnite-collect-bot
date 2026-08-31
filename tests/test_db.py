@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import time
 
-import aiosqlite
 import pytest
+from psycopg.errors import InvalidTextRepresentation
 
 from bot import db as db_module
 from bot.db import (
@@ -60,13 +59,12 @@ async def test_load_session_handles_malformed_tag_line(tmp_db, make_session):
     """Regression for #32: load_session must tolerate corrupted tag_line JSON."""
     s = make_session(tagged_users={})
     await save_session(s)
-    # Inject malformed JSON into tag_line directly.
-    async with aiosqlite.connect(tmp_db) as db:
-        await db.execute(
-            "UPDATE sessions SET tag_line = ? WHERE message_id = ?",
-            ("not a json", s.message_id),
-        )
-        await db.commit()
+    async with db_module._connection() as connection:
+        with pytest.raises(InvalidTextRepresentation):
+            await connection.execute(
+                "UPDATE sessions SET tag_line = %s WHERE message_id = %s",
+                ("not a json", s.message_id),
+            )
 
     loaded = await load_session(s.message_id)
     assert loaded is not None
@@ -76,49 +74,15 @@ async def test_load_session_handles_malformed_tag_line(tmp_db, make_session):
 async def test_load_session_handles_non_dict_tag_line(tmp_db, make_session):
     s = make_session(tagged_users={})
     await save_session(s)
-    async with aiosqlite.connect(tmp_db) as db:
-        # JSON that parses but doesn't have .items() → AttributeError path.
-        await db.execute(
-            "UPDATE sessions SET tag_line = ? WHERE message_id = ?",
-            (json.dumps([1, 2, 3]), s.message_id),
+    async with db_module._connection() as connection:
+        await connection.execute(
+            "UPDATE sessions SET tag_line = %s::jsonb WHERE message_id = %s",
+            ("[1,2,3]", s.message_id),
         )
-        await db.commit()
 
     loaded = await load_session(s.message_id)
     assert loaded is not None
     assert loaded.tagged_users == {}
-
-
-async def test_legacy_migration_closes_terminal_sessions_and_backfills_fifo(tmp_path, monkeypatch):
-    db_file = tmp_path / "legacy.db"
-    monkeypatch.setattr(db_module, "DB_PATH", str(db_file))
-    async with aiosqlite.connect(db_file) as db:
-        await db.execute(
-            """CREATE TABLE sessions (
-                message_id INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, initiator_id INTEGER NOT NULL,
-                initiator_name TEXT NOT NULL, is_complete INTEGER NOT NULL DEFAULT 0,
-                is_expired INTEGER NOT NULL DEFAULT 0, style INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL, completed_at REAL, time_slots TEXT, tag_line TEXT, llm_header TEXT
-            )"""
-        )
-        await db.execute(
-            """CREATE TABLE responses (
-                message_id INTEGER NOT NULL, user_id INTEGER NOT NULL, user_name TEXT NOT NULL,
-                response TEXT NOT NULL, responded_at REAL NOT NULL, time_slot TEXT, is_bot INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (message_id, user_id)
-            )"""
-        )
-        await db.execute("INSERT INTO sessions VALUES (1, -100, 1, '@host', 1, 0, 0, 100, 120, NULL, NULL, NULL)")
-        await db.execute("INSERT INTO responses VALUES (1, 10, '@p1', 'go', 110, 'now', 0)")
-        await db.commit()
-
-    await db_module.init_db()
-
-    async with aiosqlite.connect(db_file) as db:
-        session_row = await (await db.execute("SELECT is_closed FROM sessions WHERE message_id = 1")).fetchone()
-        response_row = await (await db.execute("SELECT joined_at FROM responses WHERE user_id = 10")).fetchone()
-    assert session_row == (1,)
-    assert response_row == (110.0,)
 
 
 async def test_load_active_sessions_keeps_filled_live_but_skips_closed_and_expired(tmp_db, make_session):

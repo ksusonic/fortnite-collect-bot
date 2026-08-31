@@ -38,7 +38,7 @@ docker compose up -d
 
 Логи: `docker compose logs -f`. Остановить: `docker compose down`.
 
-База хранится в bind-mount `./data` и переживает пересоздание контейнера.
+Данные бота хранятся в PostgreSQL. Bind-mount `./data` остаётся для heartbeat и архивной копии SQLite после cutover.
 
 ## Запуск без Docker
 
@@ -76,14 +76,17 @@ uv run python -m bot
 
 Используется публичный API `fortnite-api.com`. Игрок должен включить **Public Game Stats** в настройках Fortnite, иначе API вернёт 403. Все запросы — за текущий сезон (`TimeWindow.SEASON`); общая статистика за всё время не поддерживается.
 
-Привязки `@user → Epic` хранятся в SQLite (таблица `epic_links`). Для `/teamstats` бот пишет ежедневные снапшоты в `squad_snapshots`, чтобы считать дельты за 24 ч и 7 дн.
+Привязки `@user → Epic` хранятся в PostgreSQL (таблица `fortnite_bot.epic_links`). Для `/teamstats` бот пишет ежедневные снапшоты в `squad_snapshots`, чтобы считать дельты за 24 ч и 7 дн.
 
 ## Переменные окружения
 
 | Переменная | Обяз. | По умолчанию | Назначение |
 |---|---|---|---|
 | `BOT_TOKEN` | да | — | Токен Telegram-бота |
-| `DB_PATH` | нет | `bot.db` | Путь к SQLite (`/app/data/bot.db` в Docker) |
+| `DATABASE_URL` | да | — | PostgreSQL connection string; для Supabase требуется SSL |
+| `DATABASE_POOL_MIN` | нет | `1` | Минимальный размер пула соединений |
+| `DATABASE_POOL_MAX` | нет | `4` | Максимальный размер пула соединений |
+| `DATABASE_CONNECT_TIMEOUT` | нет | `10` | Таймаут подключения к PostgreSQL, секунды |
 | `LOG_LEVEL` | нет | `INFO` | Уровень логирования |
 | `XAI_API_KEY` | нет | — | Ключ xAI; без него `/roast` и LLM-аналитика `/teamstats` отключены |
 | `ROAST_PROBABILITY` | нет | `0.05` | Вероятность срабатывания roast на сообщение |
@@ -96,6 +99,16 @@ uv run python -m bot
 | `FORTNITE_STATS_TTL_SEC` | нет | `600` | TTL in-memory кеша статистики |
 | `FORTNITE_REQUEST_TIMEOUT` | нет | `15` | Таймаут запроса к Fortnite API |
 | `ADMIN_USER_ID` | нет | — | Telegram user_id единственного админа бота (нужен для `/linkepicfor`) |
+
+Для постоянного контейнера используйте direct Supabase URL на `:5432`, если хост проходит IPv6-preflight. На IPv4-only хостинге используйте session pooler Supavisor на `:5432`. Transaction pooler `:6543` для этого сервиса не поддерживается.
+
+Импорт существующей SQLite выполняется при остановленном боте:
+
+```bash
+uv run python tools/migrate_sqlite.py inspect data/bot.db
+uv run python tools/migrate_sqlite.py import data/bot.db --database-url "$DATABASE_URL"
+uv run python tools/migrate_sqlite.py verify data/bot.db --database-url "$DATABASE_URL"
+```
 
 ## Разработка
 
@@ -122,7 +135,7 @@ CI (`.github/workflows/lint.yml`) гоняет `ruff check` + `ruff format --che
 
 - `__main__.py` — entry point: bot/dispatcher, инициализация БД, восстановление активных сессий, фоновые задачи (`expire_sessions`, `check_status_loop`, `cleanup_snapshots_loop`, `weekly_stats_drop_loop`).
 - `handlers.py` — aiogram Router: команды, callback-кнопки, `maybe_roast`, welcome, `_run_teamstats` (шара для еженедельного авто-дропа).
-- `db.py` — SQLite через aiosqlite; dataclasses `Session`/`ChatStats`/`EpicLink`/`SquadSnapshot`. Миграции — идемпотентные `ALTER TABLE ADD COLUMN` на старте.
+- `db.py` — PostgreSQL через Psycopg 3 async pool; dataclasses `Session`/`ChatStats`/`EpicLink`/`SquadSnapshot`. Схема управляется файлами `supabase/migrations/`, а startup только проверяет её версию.
 - `messages.py` — билдеры текста и клавиатур; 19 randomized тем сбора, 3 layout'а статистики; константы (`SQUAD_SIZE=4`, `PLAY_DEADLINE_HOUR=23`).
 - `roast.py` — xAI Grok (Unhinged + `temperature=1.3`), per-chat dialog memory, `generate_team_stats_roast` для `/teamstats`.
 - `status.py` — мониторинг Epic Games status API.

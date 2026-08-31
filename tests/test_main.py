@@ -7,9 +7,10 @@ from pathlib import Path
 
 
 def test_dotenv_is_loaded_before_bot_modules(tmp_path: Path):
-    (tmp_path / ".env").write_text("DB_PATH=/tmp/from-dotenv.db\nFORTNITE_API_KEY=dotenv-key\n")
+    database_url = "postgresql://postgres:postgres@localhost:5432/fortnite_test"
+    (tmp_path / ".env").write_text(f"DATABASE_URL={database_url}\nFORTNITE_API_KEY=dotenv-key\n")
     env = os.environ.copy()
-    env.pop("DB_PATH", None)
+    env.pop("DATABASE_URL", None)
     env.pop("FORTNITE_API_KEY", None)
     repo_root = Path(__file__).parents[1]
     env["PYTHONPATH"] = str(repo_root)
@@ -18,7 +19,7 @@ def test_dotenv_is_loaded_before_bot_modules(tmp_path: Path):
         [
             sys.executable,
             "-c",
-            "import bot.__main__; from bot import db, fortnite; print(db.DB_PATH); print(fortnite.API_KEY)",
+            "import bot.__main__; from bot import db, fortnite; print(db.DATABASE_URL); print(fortnite.API_KEY)",
         ],
         cwd=tmp_path,
         env=env,
@@ -27,4 +28,4 @@ def test_dotenv_is_loaded_before_bot_modules(tmp_path: Path):
         text=True,
     )
 
-    assert result.stdout.splitlines() == ["/tmp/from-dotenv.db", "dotenv-key"]
+    assert result.stdout.splitlines() == [database_url, "dotenv-key"]

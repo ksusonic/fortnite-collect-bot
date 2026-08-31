@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 
 import bot.config  # noqa: F401  # load .env before importing environment-backed bot modules
-from bot.db import init_db, load_active_sessions, load_all_roast_state, sessions
+from bot.db import close_db, init_db, load_active_sessions, load_all_roast_state, sessions
 from bot.handlers import expire_sessions, router, weekly_stats_drop_loop
 from bot.roast import restore_roast_state
 from bot.status import check_status_loop
@@ -70,17 +70,16 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    from bot.db import DB_PATH
     from bot.roast import MODEL, ROAST_COOLDOWN_SEC, ROAST_PROBABILITY
 
     token = os.getenv("BOT_TOKEN")
     admin_user_id = int(os.getenv("ADMIN_USER_ID", "0")) or None
     logger.info(
-        "startup config: log_level=%s db_path=%s bot_token=%s xai_api_key=%s "
+        "startup config: log_level=%s database_url=%s bot_token=%s xai_api_key=%s "
         "fortnite_api_key=%s admin_user_id=%s "
         "roast_probability=%.3f roast_cooldown=%ss roast_model=%s",
         log_level,
-        DB_PATH,
+        "set" if os.getenv("DATABASE_URL") else "missing",
         "set" if token else "missing",
         "set" if os.getenv("XAI_API_KEY") else "missing",
         "set" if os.getenv("FORTNITE_API_KEY") else "missing",
@@ -130,6 +129,7 @@ async def main() -> None:
         from bot import fortnite
 
         await fortnite.close()
+        await close_db()
 
 
 if __name__ == "__main__":
