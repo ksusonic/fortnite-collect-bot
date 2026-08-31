@@ -22,6 +22,7 @@ class Session:
     pass_players: dict[int, str] = field(default_factory=dict)
     is_complete: bool = False
     is_expired: bool = False
+    is_closed: bool = False
     style: int = 0
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None
@@ -41,6 +42,7 @@ async def init_db() -> None:
                 initiator_name TEXT NOT NULL,
                 is_complete INTEGER NOT NULL DEFAULT 0,
                 is_expired INTEGER NOT NULL DEFAULT 0,
+                is_closed INTEGER NOT NULL DEFAULT 0,
                 style INTEGER NOT NULL DEFAULT 0,
                 created_at REAL NOT NULL,
                 completed_at REAL
@@ -67,6 +69,11 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE sessions ADD COLUMN llm_header TEXT")
         except Exception:
             pass
+        columns = {row[1] for row in await (await db.execute("PRAGMA table_info(sessions)")).fetchall()}
+        if "is_closed" not in columns:
+            await db.execute("ALTER TABLE sessions ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0")
+            # Before live waitlists, both successful and expired sessions were terminal.
+            await db.execute("UPDATE sessions SET is_closed = 1 WHERE is_complete = 1 OR is_expired = 1")
         await db.execute(
             """CREATE TABLE IF NOT EXISTS responses (
                 message_id INTEGER NOT NULL,
@@ -74,6 +81,7 @@ async def init_db() -> None:
                 user_name TEXT NOT NULL,
                 response TEXT NOT NULL CHECK(response IN ('go', 'pass')),
                 responded_at REAL NOT NULL,
+                joined_at REAL,
                 PRIMARY KEY (message_id, user_id),
                 FOREIGN KEY (message_id) REFERENCES sessions(message_id)
             )"""
@@ -86,6 +94,10 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass
+        response_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(responses)")).fetchall()}
+        if "joined_at" not in response_columns:
+            await db.execute("ALTER TABLE responses ADD COLUMN joined_at REAL")
+            await db.execute("UPDATE responses SET joined_at = responded_at WHERE response = 'go'")
         await db.execute(
             """CREATE TABLE IF NOT EXISTS chat_features (
                 chat_id INTEGER NOT NULL,
@@ -163,9 +175,9 @@ async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired,
+               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, is_closed,
                 style, created_at, completed_at, time_slots, tag_line, llm_header)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
@@ -173,6 +185,7 @@ async def save_session(session: Session) -> None:
                 session.initiator_name,
                 int(session.is_complete),
                 int(session.is_expired),
+                int(session.is_closed),
                 session.style,
                 session.created_at,
                 session.completed_at,
@@ -191,22 +204,41 @@ async def save_response(
     response: str,
     time_slot: str | None = None,
     is_bot: bool = False,
+    became_complete: bool = False,
 ) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
+        now = time.time()
         await db.execute(
-            """INSERT OR REPLACE INTO responses
-               (message_id, user_id, user_name, response, responded_at, time_slot, is_bot)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO responses
+               (message_id, user_id, user_name, response, responded_at, time_slot, is_bot, joined_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(message_id, user_id) DO UPDATE SET
+                   user_name = excluded.user_name,
+                   response = excluded.response,
+                   responded_at = excluded.responded_at,
+                   time_slot = excluded.time_slot,
+                   is_bot = excluded.is_bot,
+                   joined_at = CASE
+                       WHEN excluded.response = 'pass' THEN NULL
+                       WHEN responses.response = 'go' THEN responses.joined_at
+                       ELSE excluded.joined_at
+                   END""",
             (
                 message_id,
                 user_id,
                 user_name,
                 response,
-                time.time(),
+                now,
                 time_slot,
                 int(is_bot),
+                now if response == "go" else None,
             ),
         )
+        if became_complete:
+            await db.execute(
+                "UPDATE sessions SET is_complete = 1, completed_at = COALESCE(completed_at, ?) WHERE message_id = ?",
+                (now, message_id),
+            )
         await db.commit()
 
 
@@ -235,6 +267,7 @@ async def load_session(message_id: int) -> Session | None:
             initiator_name=row["initiator_name"],
             is_complete=bool(row["is_complete"]),
             is_expired=bool(row["is_expired"]),
+            is_closed=bool(row["is_closed"]) if "is_closed" in row.keys() else bool(row["is_complete"]),
             style=row["style"],
             created_at=row["created_at"],
             completed_at=row["completed_at"],
@@ -244,7 +277,9 @@ async def load_session(message_id: int) -> Session | None:
         )
 
         cursor = await db.execute(
-            "SELECT user_id, user_name, response, time_slot FROM responses WHERE message_id = ?",
+            """SELECT user_id, user_name, response, time_slot FROM responses
+               WHERE message_id = ?
+               ORDER BY CASE WHEN joined_at IS NULL THEN 1 ELSE 0 END, joined_at, responded_at""",
             (message_id,),
         )
         async for resp_row in cursor:
@@ -262,7 +297,7 @@ async def load_session(message_id: int) -> Session | None:
 async def mark_complete(message_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE sessions SET is_complete = 1, completed_at = ? WHERE message_id = ?",
+            "UPDATE sessions SET is_complete = 1, completed_at = COALESCE(completed_at, ?) WHERE message_id = ?",
             (time.time(), message_id),
         )
         await db.commit()
@@ -271,9 +306,16 @@ async def mark_complete(message_id: int) -> None:
 async def mark_expired(message_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE sessions SET is_complete = 1, is_expired = 1, completed_at = ? WHERE message_id = ?",
-            (time.time(), message_id),
+            "UPDATE sessions SET is_closed = 1, is_expired = 1 WHERE message_id = ?",
+            (message_id,),
         )
+        await db.commit()
+
+
+async def mark_closed(message_id: int) -> None:
+    """Close a live session without turning a previously filled squad into a failure."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE sessions SET is_closed = 1 WHERE message_id = ?", (message_id,))
         await db.commit()
 
 
@@ -308,12 +350,16 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
         stats.completed_sessions = (await cur.fetchone())["cnt"]
 
         cur = await db.execute(
-            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_expired = 1",
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_closed = 1 AND is_expired = 1",
             (chat_id,),
         )
         stats.expired_sessions = (await cur.fetchone())["cnt"]
 
-        stats.active_sessions = stats.total_sessions - stats.completed_sessions - stats.expired_sessions
+        cur = await db.execute(
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_closed = 0",
+            (chat_id,),
+        )
+        stats.active_sessions = (await cur.fetchone())["cnt"]
 
         # Top players (most "go" responses in this chat)
         cur = await db.execute(
@@ -543,7 +589,7 @@ async def load_active_sessions() -> list[Session]:
     result: list[Session] = []
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT message_id FROM sessions WHERE is_complete = 0")
+        cursor = await db.execute("SELECT message_id FROM sessions WHERE is_closed = 0")
         rows = await cursor.fetchall()
 
     for row in rows:

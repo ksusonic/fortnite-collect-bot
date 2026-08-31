@@ -129,6 +129,7 @@ def random_style() -> int:
 
 
 NOW_SLOT = "now"
+RESERVE_SIZE = 4
 
 # Relative readiness offers in minutes; capped at +2h (product decision —
 # people coordinate as "через полчаса", not by the clock).
@@ -196,9 +197,21 @@ def _eta_label(slot: str) -> str:
     return label
 
 
-def _player_eta_list(session: Session) -> str:
+def split_roster(session: Session) -> tuple[dict[int, str], dict[int, str]]:
+    """Return the confirmed squad and FIFO reserve without mutating queue order."""
+    players = list(session.go_players.items())
+    return dict(players[:SQUAD_SIZE]), dict(players[SQUAD_SIZE : SQUAD_SIZE + RESERVE_SIZE])
+
+
+def _player_eta_list(
+    session: Session,
+    players: dict[int, str] | None = None,
+    *,
+    preserve_order: bool = False,
+) -> str:
     """Flat numbered list of go-players, each annotated with their ETA."""
-    if not session.go_players:
+    players = session.go_players if players is None else players
+    if not players:
         return "   (пока пусто)"
 
     def sort_key(item: tuple[int, str]) -> tuple[int, str]:
@@ -206,7 +219,8 @@ def _player_eta_list(session: Session) -> str:
         return (0, "") if slot == NOW_SLOT else (1, slot)
 
     lines: list[str] = []
-    for idx, (uid, name) in enumerate(sorted(session.go_players.items(), key=sort_key), 1):
+    ordered_players = players.items() if preserve_order else sorted(players.items(), key=sort_key)
+    for idx, (uid, name) in enumerate(ordered_players, 1):
         slot = session.player_slots.get(uid)
         eta = f" — {_eta_label(slot)}" if slot else ""
         lines.append(f"   {idx}. {_user_link(uid, name)}{eta}")
@@ -215,12 +229,13 @@ def _player_eta_list(session: Session) -> str:
 
 def build_gather_text(session: Session) -> str:
     style = _STYLES[session.style % len(_STYLES)]
-    go_count = len(session.go_players)
+    squad, reserve = split_roster(session)
+    go_count = len(squad)
     initiator = _user_link(session.initiator_id, session.initiator_name)
     has_slots = bool(session.time_slots)
-    player_text = _player_eta_list(session) if has_slots else _player_list(session.go_players)
+    player_text = _player_eta_list(session, squad) if has_slots else _player_list(squad)
 
-    if session.is_complete:
+    if go_count == SQUAD_SIZE:
         lines = [
             style.done_header,
             _DIVIDER,
@@ -229,9 +244,13 @@ def build_gather_text(session: Session) -> str:
             _DIVIDER,
             "❌ <b>Пас</b>",
             _player_list(session.pass_players),
-            _DIVIDER,
-            style.done_footer,
         ]
+        if reserve:
+            reserve_text = (
+                _player_eta_list(session, reserve, preserve_order=True) if has_slots else _player_list(reserve)
+            )
+            lines[4:4] = [_DIVIDER, f"🪑 <b>Резерв</b> {len(reserve)}/{RESERVE_SIZE}", reserve_text]
+        lines.extend([_DIVIDER, style.done_footer])
         return "\n".join(lines)
 
     template = session.llm_header or style.header
@@ -310,30 +329,31 @@ _STATS_STYLES: list[StatsStyle] = [
 
 def _build_closed_text(session: Session, footer: str) -> str:
     style = _STYLES[session.style % len(_STYLES)]
-    go_count = len(session.go_players)
+    squad, reserve = split_roster(session)
+    go_count = len(squad)
     initiator = _user_link(session.initiator_id, session.initiator_name)
     template = session.llm_header or style.header
     header = template.replace("{name}", initiator)
     has_slots = bool(session.time_slots)
-    player_text = _player_eta_list(session) if has_slots else _player_list(session.go_players)
+    player_text = _player_eta_list(session, squad) if has_slots else _player_list(squad)
 
     lines = [
         header,
         _DIVIDER,
         f"✅ <b>Go</b> {go_count}/{SQUAD_SIZE}",
         player_text,
-        _DIVIDER,
-        "❌ <b>Пас</b>",
-        _player_list(session.pass_players),
-        _DIVIDER,
-        footer,
     ]
+    if reserve:
+        reserve_text = _player_eta_list(session, reserve, preserve_order=True) if has_slots else _player_list(reserve)
+        lines.extend([_DIVIDER, f"🪑 <b>Резерв</b> {len(reserve)}/{RESERVE_SIZE}", reserve_text])
+    lines.extend([_DIVIDER, "❌ <b>Пас</b>", _player_list(session.pass_players), _DIVIDER, footer])
     return "\n".join(lines)
 
 
 def build_expired_text(session: Session) -> str:
-    if len(session.go_players) >= 2:
-        footer = f"⏰ Окно закрылось. В деле было {len(session.go_players)} — добивайте в игре \U0001f3ae"
+    squad, _ = split_roster(session)
+    if len(squad) >= 2:
+        footer = f"⏰ Окно закрылось. В деле было {len(squad)} — добивайте в игре \U0001f3ae"
     else:
         footer = "⏰ Время вышло — сбор отменён."
     return _build_closed_text(session, footer)

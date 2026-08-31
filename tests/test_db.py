@@ -14,6 +14,7 @@ from bot.db import (
     get_chat_participants,
     load_active_sessions,
     load_session,
+    mark_closed,
     mark_complete,
     mark_expired,
     save_response,
@@ -88,24 +89,59 @@ async def test_load_session_handles_non_dict_tag_line(tmp_db, make_session):
     assert loaded.tagged_users == {}
 
 
-async def test_load_active_sessions_skips_completed_and_expired(tmp_db, make_session):
+async def test_legacy_migration_closes_terminal_sessions_and_backfills_fifo(tmp_path, monkeypatch):
+    db_file = tmp_path / "legacy.db"
+    monkeypatch.setattr(db_module, "DB_PATH", str(db_file))
+    async with aiosqlite.connect(db_file) as db:
+        await db.execute(
+            """CREATE TABLE sessions (
+                message_id INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, initiator_id INTEGER NOT NULL,
+                initiator_name TEXT NOT NULL, is_complete INTEGER NOT NULL DEFAULT 0,
+                is_expired INTEGER NOT NULL DEFAULT 0, style INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL, completed_at REAL, time_slots TEXT, tag_line TEXT, llm_header TEXT
+            )"""
+        )
+        await db.execute(
+            """CREATE TABLE responses (
+                message_id INTEGER NOT NULL, user_id INTEGER NOT NULL, user_name TEXT NOT NULL,
+                response TEXT NOT NULL, responded_at REAL NOT NULL, time_slot TEXT, is_bot INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (message_id, user_id)
+            )"""
+        )
+        await db.execute("INSERT INTO sessions VALUES (1, -100, 1, '@host', 1, 0, 0, 100, 120, NULL, NULL, NULL)")
+        await db.execute("INSERT INTO responses VALUES (1, 10, '@p1', 'go', 110, 'now', 0)")
+        await db.commit()
+
+    await db_module.init_db()
+
+    async with aiosqlite.connect(db_file) as db:
+        session_row = await (await db.execute("SELECT is_closed FROM sessions WHERE message_id = 1")).fetchone()
+        response_row = await (await db.execute("SELECT joined_at FROM responses WHERE user_id = 10")).fetchone()
+    assert session_row == (1,)
+    assert response_row == (110.0,)
+
+
+async def test_load_active_sessions_keeps_filled_live_but_skips_closed_and_expired(tmp_db, make_session):
     active = make_session()
-    completed = make_session()
-    completed.is_complete = True
+    filled_live = make_session()
+    filled_live.is_complete = True
+    closed = make_session()
+    closed.is_complete = True
     expired = make_session()
-    expired.is_complete = True
     expired.is_expired = True
 
-    for s in (active, completed, expired):
+    for s in (active, filled_live, closed, expired):
         await save_session(s)
 
-    await mark_complete(completed.message_id)
+    await mark_complete(filled_live.message_id)
+    await mark_closed(closed.message_id)
     await mark_expired(expired.message_id)
 
     loaded = await load_active_sessions()
     ids = {s.message_id for s in loaded}
     assert active.message_id in ids
-    assert completed.message_id not in ids
+    assert filled_live.message_id in ids
+    assert closed.message_id not in ids
     assert expired.message_id not in ids
 
 
@@ -119,6 +155,19 @@ async def test_load_active_sessions_restores_responses(tmp_db, make_session):
     assert loaded.go_players == {10: "@p1"}
     assert loaded.player_slots == {10: "19:00"}
     assert loaded.pass_players == {11: "@p2"}
+
+
+async def test_go_queue_order_survives_slot_change_and_reload(tmp_db, make_session):
+    s = make_session()
+    await save_session(s)
+    await save_response(s.message_id, 10, "@p1", "go", time_slot="19:00")
+    await save_response(s.message_id, 11, "@p2", "go", time_slot="19:00")
+    await save_response(s.message_id, 10, "@p1", "go", time_slot="20:00")
+
+    loaded = await load_session(s.message_id)
+    assert loaded is not None
+    assert list(loaded.go_players) == [10, 11]
+    assert loaded.player_slots[10] == "20:00"
 
 
 async def test_afk_hides_user_from_fort_mentions_until_expiry(tmp_db, make_session):

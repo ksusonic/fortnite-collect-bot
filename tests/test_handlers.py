@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -16,7 +17,14 @@ from bot.handlers import (
     on_callback,
     sweep_expired_sessions,
 )
-from bot.messages import PLAY_DEADLINE_HOUR, SESSION_TIMEOUT
+from bot.messages import (
+    PLAY_DEADLINE_HOUR,
+    RESERVE_SIZE,
+    SESSION_TIMEOUT,
+    SQUAD_SIZE,
+    build_gather_text,
+    split_roster,
+)
 
 
 def _make_user(user_id: int = 1, username: str | None = "host", first_name: str = "Host", is_bot: bool = False):
@@ -120,6 +128,99 @@ async def test_callback_marks_complete_when_squad_full(tmp_db):
 
     assert session.is_complete is True
     assert len(session.go_players) == 4
+
+
+async def test_callback_adds_late_players_to_fifo_reserve(tmp_db):
+    session = _make_session()
+    await save_session(session)
+    sessions[session.message_id] = session
+
+    for uid in range(10, 10 + SQUAD_SIZE + RESERVE_SIZE):
+        await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
+
+    squad, reserve = split_roster(session)
+    assert list(squad) == [10, 11, 12, 13]
+    assert list(reserve) == [14, 15, 16, 17]
+    session.player_slots[14] = "20:00"
+    session.player_slots[15] = "now"
+    rendered = build_gather_text(session)
+    assert "🪑 <b>Резерв</b> 4/4" in rendered
+    assert rendered.index("@u14") < rendered.index("@u15")
+
+    rejected = _make_callback("slot:19:00", session.message_id, user_id=18)
+    await on_callback(rejected)
+    assert 18 not in session.go_players
+    rejected.answer.assert_awaited_once_with("Резерв заполнен.")
+
+
+async def test_confirmed_pass_promotes_first_reserve(tmp_db):
+    session = _make_session()
+    await save_session(session)
+    sessions[session.message_id] = session
+    for uid in (10, 11, 12, 13, 14, 15):
+        await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
+
+    await on_callback(_make_callback("pass", session.message_id, user_id=10))
+
+    squad, reserve = split_roster(session)
+    assert list(squad) == [11, 12, 13, 14]
+    assert list(reserve) == [15]
+    assert 10 in session.pass_players
+
+
+async def test_confirmed_pass_without_reserve_reopens_squad(tmp_db):
+    session = _make_session()
+    await save_session(session)
+    sessions[session.message_id] = session
+    for uid in (10, 11, 12, 13):
+        await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
+
+    await on_callback(_make_callback("pass", session.message_id, user_id=10))
+
+    squad, reserve = split_roster(session)
+    assert len(squad) == 3
+    assert reserve == {}
+    assert session.is_complete is True  # historical fill remains recorded
+    assert session.is_closed is False
+
+
+async def test_closed_session_rejects_callbacks(tmp_db):
+    session = _make_session()
+    session.is_closed = True
+    await save_session(session)
+    sessions[session.message_id] = session
+    callback = _make_callback("slot:19:00", session.message_id, user_id=10)
+
+    await on_callback(callback)
+
+    assert session.go_players == {}
+    callback.answer.assert_awaited_once_with("Сбор завершён.")
+
+
+async def test_callback_rolls_back_memory_when_persistence_fails(tmp_db, monkeypatch):
+    session = _make_session()
+    await save_session(session)
+    sessions[session.message_id] = session
+    monkeypatch.setattr(handlers, "save_response", AsyncMock(side_effect=RuntimeError("db unavailable")))
+    callback = _make_callback("slot:19:00", session.message_id, user_id=10)
+
+    await on_callback(callback)
+
+    assert session.go_players == {}
+    assert session.player_slots == {}
+    callback.answer.assert_awaited_once_with("Не удалось сохранить ответ. Попробуй ещё раз.", show_alert=True)
+
+
+async def test_concurrent_go_callbacks_respect_squad_and_reserve_cap(tmp_db):
+    session = _make_session()
+    await save_session(session)
+    sessions[session.message_id] = session
+    callbacks = [_make_callback("slot:19:00", session.message_id, user_id=uid) for uid in range(20, 32)]
+
+    await asyncio.gather(*(on_callback(callback) for callback in callbacks))
+
+    assert len(session.go_players) == SQUAD_SIZE + RESERVE_SIZE
+    assert sum(callback.answer.await_count for callback in callbacks) == len(callbacks)
 
 
 # ---------- /fort anti-spam ----------
