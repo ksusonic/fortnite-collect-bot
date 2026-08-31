@@ -7,10 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot import handlers
-from bot.db import Session, save_session, sessions
+from bot.db import Session, get_afk_until, save_session, sessions
 from bot.handlers import (
     FORT_REPLACE_COOLDOWN,
     _fort_attempt_times,
+    cmd_afk,
     cmd_fort,
     on_callback,
     sweep_expired_sessions,
@@ -235,6 +236,37 @@ async def test_cmd_fort_after_cooldown_replaces_session(tmp_db):
     assert 444 in sessions
     assert 333 not in sessions
     sessions.pop(444, None)
+
+
+# ---------- /afk mention suppression ----------
+
+
+async def test_cmd_afk_sets_duration_and_off_clears_it(tmp_db):
+    user = _make_user(user_id=42, username="away")
+    msg = MagicMock()
+    msg.from_user = user
+    msg.chat = SimpleNamespace(id=-100, type="group")
+    msg.answer = AsyncMock()
+
+    before = time.time()
+    await cmd_afk(msg, SimpleNamespace(args="2w"))
+    muted_until = await get_afk_until(-100, 42)
+    assert muted_until is not None
+    assert before + 14 * 86400 <= muted_until <= time.time() + 14 * 86400
+
+    await cmd_afk(msg, SimpleNamespace(args="off"))
+    assert await get_afk_until(-100, 42) is None
+
+
+async def test_cmd_afk_rejects_invalid_duration(tmp_db):
+    msg = MagicMock()
+    msg.from_user = _make_user(user_id=42)
+    msg.chat = SimpleNamespace(id=-100, type="group")
+    msg.answer = AsyncMock()
+
+    await cmd_afk(msg, SimpleNamespace(args="tomorrow"))
+
+    msg.answer.assert_awaited_once_with("Использование: /afk 1d, /afk 2w или /afk off")
 
 
 # ---------- expiration: timeout and play deadline ----------
