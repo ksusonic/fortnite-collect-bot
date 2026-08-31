@@ -7,8 +7,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
-from dotenv import load_dotenv
 
+import bot.config  # noqa: F401  # load .env before importing environment-backed bot modules
 from bot.db import init_db, load_active_sessions, load_all_roast_state, sessions
 from bot.handlers import expire_sessions, router, weekly_stats_drop_loop
 from bot.roast import restore_roast_state
@@ -64,8 +64,6 @@ async def heartbeat_loop(path: str) -> None:
 
 
 async def main() -> None:
-    load_dotenv()
-
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
         level=log_level,

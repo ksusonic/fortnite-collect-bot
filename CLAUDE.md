@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Telegram bot for gathering a 4-player Fortnite squad via inline buttons in group chats. Command `/fort` starts a gathering session, users press a time-slot button or "Pass", the message updates in real-time, and announces when the squad is full. The bot also monitors Epic Games server status and can roast group members via xAI Grok.
+Telegram bot for gathering a 4-player Fortnite squad via inline buttons in group chats. Command `/fort` starts a gathering session, users press a time-slot button or "Pass", the message updates in real-time, and keeps a four-player FIFO reserve after the squad fills. The bot also monitors Epic Games server status and can roast group members via xAI Grok.
 
 Stack: Python 3.14, aiogram 3.x, aiosqlite, xai-sdk, aiohttp, uv.
 
@@ -36,7 +36,7 @@ uv run pre-commit run --all-files
 
 ## Bot commands (group chats only)
 
-- `/fort` — start a gathering session with **relative readiness** buttons (`⚡ Сейчас`, `🕐 +30м`, `🕐 +1ч`, `🕐 +2ч`; capped at +2 h, trimmed so the absolute target stays before 23:00 MSK). Each `go` press resolves its offer into an absolute `HH:MM` target at press time, stored per player; the message lists every player with their ETA (`≈ 19:30 (через ~25м)`). Optional time argument `/fort <hour>` (e.g. `/fort 18`, also accepts `18:00`) pins a single absolute slot at that hour (no relative offers); rejected if the hour is malformed, past, or after `PLAY_DEADLINE_HOUR`. If an active session exists, repeated `/fort` within `FORT_REPLACE_COOLDOWN` (30 s) gets a 👎 reaction; after the cooldown it cancels the old session and creates a new one.
+- `/fort` — start a gathering session with **relative readiness** buttons (`⚡ Сейчас`, `🕐 +30м`, `🕐 +1ч`, `🕐 +2ч`; capped at +2 h, trimmed so the absolute target stays before 23:00 MSK). Each `go` press resolves its offer into an absolute `HH:MM` target at press time. The first four players form the squad; the next four enter a FIFO reserve and are promoted automatically when a confirmed player presses Pass. Optional `/fort <hour>` pins one absolute slot. A live session remains editable after filling and is closed when replaced, expired, or cancelled.
 - `/afk <Nd|Nw>` — suppress the caller's proactive `📣` mention in new `/fort` sessions for a per-chat duration such as `1d` or `2w`; `/afk off` clears it early. Normal Go/Pass rendering is unchanged.
 - `/rm` — cancel and delete current active session
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
@@ -66,7 +66,8 @@ All bot code lives in `bot/`:
 ## Key design decisions
 
 - **Dual storage**: in-memory `sessions` dict for fast access + SQLite for persistence across restarts. Cache is authoritative during runtime; SQLite is synced on every mutation.
-- **Session keyed by message_id**: each `/fort` creates one session tied to the bot's reply message_id. Only one active (incomplete) session per chat allowed; a repeat `/fort` only replaces it once `FORT_REPLACE_COOLDOWN` seconds have passed since the original (otherwise it's rejected with a 👎 reaction).
+- **Session keyed by message_id**: each `/fort` creates one session tied to the bot's reply message_id. `is_closed` controls whether callbacks are accepted, while `is_complete` records that the squad reached four players at least once. Only one live session per chat is kept; a replacement closes the previous one.
+- **FIFO reserve**: `responses.joined_at` preserves Go order across slot changes and restarts. The first four ordered responses are confirmed and the next four are reserves. Per-session locks serialize callbacks; Pass removes a player and promotes the first reserve automatically.
 - **Relative time slots**: `generate_time_slots()` returns relative offer tokens `["now", "30", "60", "120"]` (minutes, from `SLOT_OFFERS_MIN`, capped at +2 h and trimmed by `PLAY_DEADLINE_HOUR`); `/fort <hour>` instead returns a single absolute `["HH:00"]`. Buttons use callback data `slot:<token>`; on press `on_callback` resolves a minute offer into an absolute `HH:MM` target (`now + offset`) and stores that string in `player_slots` / `responses.time_slot` (so the schema is unchanged — only the value's meaning is relative-resolved). `_player_eta_list` renders each player's ETA; legacy `HH:MM` tokens still render fine. After `PLAY_DEADLINE_HOUR` the background expirer also closes any open session.
 - **Traction-aware expiry**: `sweep_expired_sessions` uses `SESSION_TIMEOUT` (1 h) for sets with <2 `go`, but `SESSION_TIMEOUT_TRACTION` (3 h) once 2+ players are in — a set that gained traction usually fills in-game, so it isn't killed at the 1 h mark (fixes a morning set expiring 2 min before its own play time). `build_expired_text` closes softly when 2+ joined ("добивайте в игре") vs. the bare "сбор отменён" when nobody did.
 - **Tagged users**: at `/fort`, pulls last 20 distinct `go`-responders from `responses` (excluding bots, the initiator, and users with an active per-chat `afk_mutes` row) into `session.tagged_users`. They render as a `📣 @user1 @user2…` line until each responds.

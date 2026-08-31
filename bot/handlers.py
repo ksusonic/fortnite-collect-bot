@@ -34,7 +34,7 @@ from bot.db import (
     get_snapshot_before,
     is_feature_enabled,
     load_session,
-    mark_complete,
+    mark_closed,
     mark_expired,
     resolve_user_by_username,
     save_epic_link,
@@ -57,6 +57,7 @@ from bot.messages import (
     MSK,
     NOW_SLOT,
     PLAY_DEADLINE_HOUR,
+    RESERVE_SIZE,
     SESSION_TIMEOUT,
     SESSION_TIMEOUT_TRACTION,
     SQUAD_SIZE,
@@ -70,6 +71,7 @@ from bot.messages import (
     generate_time_slots,
     my_fn_caption,
     random_style,
+    split_roster,
 )
 from bot.roast import (
     ROAST_PROBABILITY,
@@ -92,6 +94,7 @@ _AFK_DURATION_RE = re.compile(r"([1-9]\d{0,3})([dw])")
 
 # Strong refs to fire-and-forget background tasks so they aren't garbage-collected mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
+_session_locks: dict[int, asyncio.Lock] = {}
 
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
 
@@ -193,9 +196,8 @@ async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
     header = await generate_fort_header(session.chat_id)
     if not header:
         return
-    if session.is_complete or session.is_expired:
-        # Squad filled or session was replaced/cancelled while we waited — don't
-        # overwrite the closed screen with a gather header.
+    if session.is_closed:
+        # Session was replaced/cancelled while we waited.
         return
     session.llm_header = header
     await save_session(session)
@@ -204,7 +206,9 @@ async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
             text=build_gather_text(session),
             chat_id=session.chat_id,
             message_id=session.message_id,
-            reply_markup=build_keyboard(len(session.go_players), time_slots=session.time_slots or None),
+            reply_markup=build_keyboard(
+                min(len(session.go_players), SQUAD_SIZE), time_slots=session.time_slots or None
+            ),
         )
     except TelegramBadRequest:
         pass
@@ -246,13 +250,16 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
     _fort_attempt_times[cooldown_key] = now
 
     active_session = next(
-        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_closed),
         None,
     )
     if active_session is not None:
-        active_session.is_complete = True
-        active_session.is_expired = True
-        await mark_expired(active_session.message_id)
+        active_session.is_closed = True
+        if active_session.is_complete:
+            await mark_closed(active_session.message_id)
+        else:
+            active_session.is_expired = True
+            await mark_expired(active_session.message_id)
         try:
             await message.bot.edit_message_text(
                 text=build_cancelled_text(active_session),
@@ -262,6 +269,7 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
         except TelegramBadRequest:
             pass
         sessions.pop(active_session.message_id, None)
+        _session_locks.pop(active_session.message_id, None)
 
     name = _display_name(user)
     slots = generate_time_slots(start_hour=target_hour)
@@ -279,7 +287,7 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
     )
 
     text = build_gather_text(session)
-    keyboard = build_keyboard(len(session.go_players), time_slots=slots)
+    keyboard = build_keyboard(0, time_slots=slots)
     sent = await message.answer(text, reply_markup=keyboard)
 
     session.message_id = sent.message_id
@@ -628,13 +636,16 @@ async def cmd_teamstats_private(message: Message) -> None:
 @router.message(Command("rm"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_rm(message: Message) -> None:
     active_session = next(
-        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_complete),
+        (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_closed),
         None,
     )
     if active_session is not None:
-        active_session.is_complete = True
-        active_session.is_expired = True
-        await mark_expired(active_session.message_id)
+        active_session.is_closed = True
+        if active_session.is_complete:
+            await mark_closed(active_session.message_id)
+        else:
+            active_session.is_expired = True
+            await mark_expired(active_session.message_id)
         try:
             await message.bot.delete_message(
                 chat_id=active_session.chat_id,
@@ -643,6 +654,7 @@ async def cmd_rm(message: Message) -> None:
         except TelegramBadRequest:
             pass
         sessions.pop(active_session.message_id, None)
+        _session_locks.pop(active_session.message_id, None)
 
     try:
         await message.delete()
@@ -746,82 +758,107 @@ async def on_callback(callback: CallbackQuery) -> None:
 
     message_id = callback.message.message_id
 
-    session = sessions.get(message_id)
-    if session is None:
-        session = await load_session(message_id)
-        if session is not None:
-            sessions[message_id] = session
+    lock = _session_locks.setdefault(message_id, asyncio.Lock())
+    async with lock:
+        session = sessions.get(message_id)
+        if session is None:
+            session = await load_session(message_id)
+            if session is not None:
+                sessions[message_id] = session
 
-    if session is None:
-        await callback.answer("Сбор устарел")
-        return
-
-    if session.is_expired:
-        await callback.answer("Сбор завершён.")
-        return
-
-    user_id = callback.from_user.id
-    name = _display_name(callback.from_user)
-    raw = callback.data
-    stored_slot: str | None = None
-
-    if raw.startswith("slot:"):
-        action = "go"
-        offer = raw[5:]  # relative offer token: "now" / "30" / "60" / "120" (or legacy "HH:MM")
-        if offer not in session.time_slots:
-            await callback.answer("Слот недоступен.")
+        if session is None:
+            await callback.answer("Сбор устарел")
             return
-        # Resolve the relative offer into the player's absolute readiness target
-        # at press time, so the ETA stays stable as the message is re-rendered.
-        if offer == NOW_SLOT or not offer.isdigit():
-            stored_slot = offer
+
+        if session.is_closed:
+            await callback.answer("Сбор завершён.")
+            return
+
+        user_id = callback.from_user.id
+        name = _display_name(callback.from_user)
+        raw = callback.data
+        stored_slot: str | None = None
+
+        if raw.startswith("slot:"):
+            action = "go"
+            offer = raw[5:]
+            if offer not in session.time_slots:
+                await callback.answer("Слот недоступен.")
+                return
+            if offer == NOW_SLOT or not offer.isdigit():
+                stored_slot = offer
+            else:
+                target = datetime.now(MSK) + timedelta(minutes=int(offer))
+                stored_slot = target.strftime("%H:%M")
         else:
-            target = datetime.now(MSK) + timedelta(minutes=int(offer))
-            stored_slot = target.strftime("%H:%M")
-    else:
-        action = raw
+            action = raw
 
-    if action == "go" and stored_slot is None and user_id in session.go_players:
-        await callback.answer("Ты уже в деле!")
-        return
-    if action == "pass" and user_id in session.pass_players:
-        await callback.answer("Ты уже в списке пасующих.")
-        return
+        already_go = user_id in session.go_players
+        if action == "go" and stored_slot is None and already_go:
+            await callback.answer("Ты уже в деле!")
+            return
+        if action == "pass" and user_id in session.pass_players:
+            await callback.answer("Ты уже в списке пасующих.")
+            return
+        if action == "go" and not already_go and len(session.go_players) >= SQUAD_SIZE + RESERVE_SIZE:
+            await callback.answer("Резерв заполнен.")
+            return
 
-    # Перемещение между списками
-    session.go_players.pop(user_id, None)
-    session.pass_players.pop(user_id, None)
-    session.player_slots.pop(user_id, None)
+        old_go = session.go_players.copy()
+        old_pass = session.pass_players.copy()
+        old_slots = session.player_slots.copy()
 
-    if action == "go":
-        session.go_players[user_id] = name
-        if stored_slot:
-            session.player_slots[user_id] = stored_slot
-    else:
-        session.pass_players[user_id] = name
+        # Preserve FIFO position when a confirmed or reserve player only changes their slot.
+        if action == "go":
+            session.pass_players.pop(user_id, None)
+            if not already_go:
+                session.go_players[user_id] = name
+            else:
+                session.go_players[user_id] = name
+            if stored_slot:
+                session.player_slots[user_id] = stored_slot
+        else:
+            session.go_players.pop(user_id, None)
+            session.player_slots.pop(user_id, None)
+            session.pass_players[user_id] = name
 
-    await save_response(
-        message_id,
-        user_id,
-        name,
-        action,
-        time_slot=stored_slot,
-        is_bot=callback.from_user.is_bot,
-    )
+        became_complete = not session.is_complete and len(session.go_players) >= SQUAD_SIZE
+        try:
+            await save_response(
+                message_id,
+                user_id,
+                name,
+                action,
+                time_slot=stored_slot,
+                is_bot=callback.from_user.is_bot,
+                became_complete=became_complete,
+            )
+        except Exception:
+            session.go_players = old_go
+            session.pass_players = old_pass
+            session.player_slots = old_slots
+            logger.error("failed to persist gathering response for message %s", message_id, exc_info=True)
+            await callback.answer("Не удалось сохранить ответ. Попробуй ещё раз.", show_alert=True)
+            return
+        if became_complete:
+            session.is_complete = True
+            session.completed_at = time.time()
 
-    if not session.is_complete and len(session.go_players) >= SQUAD_SIZE:
-        session.is_complete = True
-        await mark_complete(message_id)
+        squad, reserve = split_roster(session)
+        text = build_gather_text(session)
+        keyboard = build_keyboard(len(squad), time_slots=session.time_slots or None)
 
-    text = build_gather_text(session)
-    keyboard = build_keyboard(len(session.go_players), time_slots=session.time_slots or None)
+        try:
+            await callback.message.edit_text(text, reply_markup=keyboard)
+        except TelegramBadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                logger.warning("failed to update gathering message %s", message_id, exc_info=True)
 
-    try:
-        await callback.message.edit_text(text, reply_markup=keyboard)
-    except TelegramBadRequest:
-        pass
-
-    await callback.answer()
+        if action == "go" and user_id in reserve:
+            position = list(reserve).index(user_id) + 1
+            await callback.answer(f"Сквад полон — ты в резерве №{position}.")
+        else:
+            await callback.answer()
 
 
 async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadline: bool | None = None) -> list[int]:
@@ -834,15 +871,19 @@ async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadli
     # A set that gathered traction (2+ "go") lives longer — it usually fills in
     # the game rather than failing, so don't kill it at the 1h mark.
     def _timed_out(s: Session) -> bool:
-        timeout = SESSION_TIMEOUT_TRACTION if len(s.go_players) >= 2 else SESSION_TIMEOUT
+        squad, _ = split_roster(s)
+        timeout = SESSION_TIMEOUT_TRACTION if len(squad) >= 2 else SESSION_TIMEOUT
         return now - s.created_at > timeout
 
-    expired = [s for s in sessions.values() if not s.is_complete and (_timed_out(s) or past_deadline)]
+    expired = [s for s in sessions.values() if not s.is_closed and (_timed_out(s) or past_deadline)]
     expired_ids: list[int] = []
     for session in expired:
-        session.is_complete = True
-        session.is_expired = True
-        await mark_expired(session.message_id)
+        session.is_closed = True
+        if session.is_complete:
+            await mark_closed(session.message_id)
+        else:
+            session.is_expired = True
+            await mark_expired(session.message_id)
         try:
             await bot.edit_message_text(
                 text=build_expired_text(session),
@@ -852,6 +893,7 @@ async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadli
         except TelegramBadRequest:
             pass
         sessions.pop(session.message_id, None)
+        _session_locks.pop(session.message_id, None)
         expired_ids.append(session.message_id)
     return expired_ids
 
