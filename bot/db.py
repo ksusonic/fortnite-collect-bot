@@ -30,6 +30,7 @@ class Session:
     player_slots: dict[int, str] = field(default_factory=dict)  # user_id -> slot
     tagged_users: dict[int, str] = field(default_factory=dict)  # user_id -> name
     llm_header: str | None = None  # Grok-generated gather header; falls back to style.header
+    fort_title: str | None = None
 
 
 async def init_db() -> None:
@@ -70,6 +71,11 @@ async def init_db() -> None:
         except Exception:
             pass
         columns = {row[1] for row in await (await db.execute("PRAGMA table_info(sessions)")).fetchall()}
+        if "fort_title" not in columns:
+            await db.execute("ALTER TABLE sessions ADD COLUMN fort_title TEXT")
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS chat_fort_titles (chat_id INTEGER PRIMARY KEY, title TEXT NOT NULL)"
+        )
         if "is_closed" not in columns:
             await db.execute("ALTER TABLE sessions ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0")
             # Before live waitlists, both successful and expired sessions were terminal.
@@ -171,13 +177,29 @@ async def init_db() -> None:
         await db.commit()
 
 
+async def get_fort_title(chat_id: int) -> str | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT title FROM chat_fort_titles WHERE chat_id = ?", (chat_id,))
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_fort_title(chat_id: int, title: str | None) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        if title is None:
+            await db.execute("DELETE FROM chat_fort_titles WHERE chat_id = ?", (chat_id,))
+        else:
+            await db.execute("INSERT OR REPLACE INTO chat_fort_titles (chat_id, title) VALUES (?, ?)", (chat_id, title))
+        await db.commit()
+
+
 async def save_session(session: Session) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO sessions
                (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, is_closed,
-                style, created_at, completed_at, time_slots, tag_line, llm_header)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                style, created_at, completed_at, time_slots, tag_line, llm_header, fort_title)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.message_id,
                 session.chat_id,
@@ -192,6 +214,7 @@ async def save_session(session: Session) -> None:
                 json.dumps(session.time_slots) if session.time_slots else None,
                 json.dumps({str(k): v for k, v in session.tagged_users.items()}) if session.tagged_users else None,
                 session.llm_header,
+                session.fort_title,
             ),
         )
         await db.commit()
@@ -274,6 +297,7 @@ async def load_session(message_id: int) -> Session | None:
             time_slots=time_slots,
             tagged_users=tagged_users,
             llm_header=llm_header,
+            fort_title=row["fort_title"] if "fort_title" in row.keys() else None,
         )
 
         cursor = await db.execute(

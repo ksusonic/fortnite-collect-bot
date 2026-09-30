@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiogram import Bot
 
 from bot import handlers
 from bot.db import Session, get_afk_until, save_session, sessions
@@ -232,7 +233,7 @@ async def test_cmd_fort_replaces_when_no_active_session(tmp_db):
     msg = MagicMock()
     msg.from_user = user
     msg.chat = SimpleNamespace(id=-100, type="group")
-    msg.bot = MagicMock()
+    msg.bot = MagicMock(spec=Bot)
     msg.bot.edit_message_text = AsyncMock()
     msg.react = AsyncMock()
     msg.delete = AsyncMock()
@@ -261,7 +262,7 @@ async def test_cmd_fort_same_user_within_cooldown_thumbs_down(tmp_db):
     msg = MagicMock()
     msg.from_user = user
     msg.chat = SimpleNamespace(id=session.chat_id, type="group")
-    msg.bot = MagicMock()
+    msg.bot = MagicMock(spec=Bot)
     msg.react = AsyncMock()
     msg.delete = AsyncMock()
     msg.answer = AsyncMock()
@@ -291,7 +292,7 @@ async def test_cmd_fort_other_user_not_blocked_by_someone_elses_cooldown(tmp_db)
     msg = MagicMock()
     msg.from_user = user
     msg.chat = SimpleNamespace(id=session.chat_id, type="group")
-    msg.bot = MagicMock()
+    msg.bot = MagicMock(spec=Bot)
     msg.bot.edit_message_text = AsyncMock()
     msg.react = AsyncMock()
     msg.delete = AsyncMock()
@@ -321,7 +322,7 @@ async def test_cmd_fort_after_cooldown_replaces_session(tmp_db):
     msg = MagicMock()
     msg.from_user = user
     msg.chat = SimpleNamespace(id=old.chat_id, type="group")
-    msg.bot = MagicMock()
+    msg.bot = MagicMock(spec=Bot)
     msg.bot.edit_message_text = AsyncMock()
     msg.react = AsyncMock()
     msg.delete = AsyncMock()
@@ -378,7 +379,7 @@ async def test_sweep_expires_session_past_timeout(tmp_db):
     await save_session(stale)
     sessions[stale.message_id] = stale
 
-    bot = MagicMock()
+    bot = MagicMock(spec=Bot)
     bot.edit_message_text = AsyncMock()
 
     expired_ids = await sweep_expired_sessions(bot, past_deadline=False)
@@ -391,7 +392,7 @@ async def test_sweep_does_not_expire_fresh_session(tmp_db):
     await save_session(fresh)
     sessions[fresh.message_id] = fresh
 
-    bot = MagicMock()
+    bot = MagicMock(spec=Bot)
     bot.edit_message_text = AsyncMock()
 
     expired_ids = await sweep_expired_sessions(bot, past_deadline=False)
@@ -405,7 +406,7 @@ async def test_sweep_expires_all_when_past_play_deadline(tmp_db):
     await save_session(fresh)
     sessions[fresh.message_id] = fresh
 
-    bot = MagicMock()
+    bot = MagicMock(spec=Bot)
     bot.edit_message_text = AsyncMock()
 
     expired_ids = await sweep_expired_sessions(bot, past_deadline=True)
