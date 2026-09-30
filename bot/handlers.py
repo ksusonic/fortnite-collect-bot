@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     CallbackQuery,
@@ -214,6 +214,27 @@ async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
         pass
 
 
+async def _set_session_pin(bot: Bot, session: Session, *, pinned: bool) -> None:
+    """Change only this gathering's pin; Telegram failures must not interrupt its lifecycle."""
+    try:
+        if pinned:
+            await bot.pin_chat_message(
+                chat_id=session.chat_id,
+                message_id=session.message_id,
+                disable_notification=True,
+            )
+        else:
+            await bot.unpin_chat_message(chat_id=session.chat_id, message_id=session.message_id)
+    except TelegramAPIError:
+        logger.warning(
+            "failed to %s gathering message %s in chat %s",
+            "pin" if pinned else "unpin",
+            session.message_id,
+            session.chat_id,
+            exc_info=True,
+        )
+
+
 @router.message(Command("fort"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_fort(message: Message, command: CommandObject | None = None) -> None:
     user = message.from_user
@@ -268,6 +289,7 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
             )
         except TelegramBadRequest:
             pass
+        await _set_session_pin(message.bot, active_session, pinned=False)
         sessions.pop(active_session.message_id, None)
         _session_locks.pop(active_session.message_id, None)
 
@@ -294,6 +316,7 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
     sessions[sent.message_id] = session
 
     await save_session(session)
+    await _set_session_pin(message.bot, session, pinned=True)
 
     task = asyncio.create_task(_apply_fort_llm_header(message.bot, session))
     _bg_tasks.add(task)
@@ -646,6 +669,7 @@ async def cmd_rm(message: Message) -> None:
         else:
             active_session.is_expired = True
             await mark_expired(active_session.message_id)
+        await _set_session_pin(message.bot, active_session, pinned=False)
         try:
             await message.bot.delete_message(
                 chat_id=active_session.chat_id,
@@ -892,6 +916,7 @@ async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadli
             )
         except TelegramBadRequest:
             pass
+        await _set_session_pin(bot, session, pinned=False)
         sessions.pop(session.message_id, None)
         _session_locks.pop(session.message_id, None)
         expired_ids.append(session.message_id)
