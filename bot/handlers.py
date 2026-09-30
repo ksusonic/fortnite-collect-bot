@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatMemberStatus, ChatType, MessageEntityType
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
@@ -30,6 +30,7 @@ from bot.db import (
     get_chats_with_epic_links,
     get_epic_link,
     get_feature_value,
+    get_fort_title,
     get_last_weekly_drop,
     get_snapshot_before,
     is_feature_enabled,
@@ -43,6 +44,7 @@ from bot.db import (
     sessions,
     set_afk,
     set_feature,
+    set_fort_title,
     set_last_weekly_drop,
 )
 from bot.fortnite import (
@@ -306,6 +308,7 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
         style=random_style(),
         time_slots=slots,
         tagged_users=tagged_users,
+        fort_title=await get_fort_title(message.chat.id),
     )
 
     text = build_gather_text(session)
@@ -331,6 +334,59 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
 @router.message(Command("fort"))
 async def cmd_fort_private(message: Message) -> None:
     await message.answer("Эта команда работает только в группах.")
+
+
+@router.message(Command("fortemoji"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_fortemoji(message: Message, command: CommandObject) -> None:
+    if message.from_user is None:
+        return
+    member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+    if member.status not in {ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR}:
+        await message.reply("Настроить заголовок сбора может только администратор чата.")
+        return
+    if command.args == "off":
+        await set_fort_title(message.chat.id, None)
+        await message.reply("В новых сборах будет обычный заголовок 🎮 FORT.")
+        return
+
+    source = message.reply_to_message
+    entities = sorted(
+        (
+            entity
+            for entity in ((source.entities or source.caption_entities or []) if source else [])
+            if entity.type == MessageEntityType.CUSTOM_EMOJI
+        ),
+        key=lambda entity: entity.offset,
+    )
+    if len(entities) != 4:
+        await message.reply(
+            "Напиши FORT четырьмя emoji из WideABC и ответь на это сообщение командой /fortemoji. "
+            "Отключить: /fortemoji off."
+        )
+        return
+    try:
+        pack = await message.bot.get_sticker_set("WideABC")
+    except TelegramAPIError:
+        logger.warning("failed to load WideABC emoji pack", exc_info=True)
+        await message.reply("Не удалось проверить WideABC. Попробуй ещё раз позже.")
+        return
+    pack_ids = {sticker.custom_emoji_id for sticker in pack.stickers if sticker.custom_emoji_id}
+    if any(entity.custom_emoji_id not in pack_ids for entity in entities):
+        await message.reply("Все четыре буквы должны быть emoji из набора https://t.me/addemoji/WideABC.")
+        return
+    title = "".join(
+        f'<tg-emoji emoji-id="{entity.custom_emoji_id}">'
+        f"{html.escape(entity.extract_from(source.text or source.caption))}</tg-emoji>"
+        for entity in entities
+    )
+    # Send before saving: Telegram validates whether this bot may use custom emoji.
+    try:
+        await message.reply(f"Заголовок новых сборов: {title}")
+    except TelegramAPIError:
+        logger.warning("failed to send custom FORT emoji title", exc_info=True)
+        await message.reply("Telegram не принял custom emoji. Проверь Premium у владельца бота.")
+        return
+    await set_fort_title(message.chat.id, title)
 
 
 @router.message(Command("stats"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))

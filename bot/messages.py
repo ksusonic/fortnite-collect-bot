@@ -121,6 +121,26 @@ _STYLES: list[Style] = [
         "✅ Скуад собран — снеки на столе.",
         "Поехали.",
     ),
+    Style(
+        "🚌 {name} завёл боевой автобус — запрыгивайте.",
+        "🚌 Скуад на борту — можно взлетать.",
+        "🪂 Увидимся на высадке.",
+    ),
+    Style(
+        "🦙 {name} нашёл ламу с лутом и зовёт делить добычу.",
+        "🎒 Скуад собран — лута хватит всем.",
+        "💎 Забираем легендарки.",
+    ),
+    Style(
+        "🌀 {name} зовёт в катку, пока зона не закрылась.",
+        "🛡 Скуад собран — держимся вместе.",
+        "🏃 Погнали в зону.",
+    ),
+    Style(
+        "👑 {name} зовёт за короной Victory Royale.",
+        "🔥 Все четверо на месте — идём за победой.",
+        "🏆 Корона сама себя не заберёт.",
+    ),
 ]
 
 
@@ -237,6 +257,7 @@ def build_gather_text(session: Session) -> str:
 
     if go_count == SQUAD_SIZE:
         lines = [
+            session.fort_title or "🎮 <b>FORT</b>",
             style.done_header,
             _DIVIDER,
             f"\U0001f44a <b>Состав</b> {go_count}",
@@ -249,7 +270,7 @@ def build_gather_text(session: Session) -> str:
             reserve_text = (
                 _player_eta_list(session, reserve, preserve_order=True) if has_slots else _player_list(reserve)
             )
-            lines[4:4] = [_DIVIDER, f"🪑 <b>Резерв</b> {len(reserve)}/{RESERVE_SIZE}", reserve_text]
+            lines[5:5] = [_DIVIDER, f"🪑 <b>Резерв</b> {len(reserve)}/{RESERVE_SIZE}", reserve_text]
         lines.extend([_DIVIDER, style.done_footer])
         return "\n".join(lines)
 
@@ -259,6 +280,7 @@ def build_gather_text(session: Session) -> str:
     pending_tags = {uid: name for uid, name in session.tagged_users.items() if uid not in responded}
 
     lines = [
+        session.fort_title or "🎮 <b>FORT</b>",
         header,
         _DIVIDER,
         f"✅ <b>Go</b> {go_count}/{SQUAD_SIZE}",
@@ -338,6 +360,7 @@ def _build_closed_text(session: Session, footer: str) -> str:
     player_text = _player_eta_list(session, squad) if has_slots else _player_list(squad)
 
     lines = [
+        session.fort_title or "🎮 <b>FORT</b>",
         header,
         _DIVIDER,
         f"✅ <b>Go</b> {go_count}/{SQUAD_SIZE}",
