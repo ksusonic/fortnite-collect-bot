@@ -21,6 +21,11 @@ describe("Sentry privacy", () => {
       ),
     ).toBe("SELF_SIGNED_CERT_IN_CHAIN");
     expect(diagnosticCode({ code: "private-message" })).toBeUndefined();
+    expect(diagnosticCode(new Error("Query read timeout"))).toBe(
+      "PG_QUERY_READ_TIMEOUT",
+    );
+    expect(diagnosticCode({ code: "57014" })).toBe("57014");
+    expect(diagnosticCode({ code: "unknown" })).toBeUndefined();
     expect(diagnosticCode(new Error("private payload"))).toBeUndefined();
   });
   it("keeps the selected project and disables private data collection", () => {
