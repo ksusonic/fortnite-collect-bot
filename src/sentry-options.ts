@@ -23,8 +23,20 @@ const diagnosticCodes = new Set([
   "ETIMEDOUT",
   "ENOTFOUND",
   "EAI_AGAIN",
+  "57014", // query cancellation / statement timeout
+  "55P03", // lock unavailable
+  "40P01", // deadlock
+  "42P01", // missing table
+  "42703", // missing column
+  "42883", // missing function
+  "42501", // insufficient privilege
+  "28P01", // authentication failure
+  "25P02", // transaction aborted
+  "23505", // unique constraint
 ]);
 export function diagnosticCode(error: unknown): string | undefined {
+  if (error instanceof Error && error.message === "Query read timeout")
+    return "PG_QUERY_READ_TIMEOUT";
   if (!error || typeof error !== "object" || !("code" in error)) return;
   const code = error.code;
   return typeof code === "string" && diagnosticCodes.has(code)
