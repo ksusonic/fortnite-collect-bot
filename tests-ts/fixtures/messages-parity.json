@@ -1,0 +1,1056 @@
+{
+  "now": 1791025200.0,
+  "sessions": [
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 0,
+        "created_at": 1791006422.290445,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🍕 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> заказал пиццу и зовёт в катку.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🍕 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> заказал пиццу и зовёт в катку.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🍕 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> заказал пиццу и зовёт в катку.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 1,
+        "created_at": 1791006422.290494,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n✅ Все собрались.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\nПоехали.",
+      "expired": "🎮 <b>FORT</b>\n💻 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> закрыл ноут и сел за PC.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n💻 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> закрыл ноут и сел за PC.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 2,
+        "created_at": 1791006422.2905579,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 3,
+        "created_at": 1791006422.290577,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🪂 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> готовится к прыжку.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🪂 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> готовится к прыжку.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🪂 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> готовится к прыжку.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 4,
+        "created_at": 1791006422.290596,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n✅ Скуад собран.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\nПоехали.",
+      "expired": "🎮 <b>FORT</b>\n📅 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> нашёл свободный вечер.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n📅 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> нашёл свободный вечер.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 5,
+        "created_at": 1791006422.2906308,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 6,
+        "created_at": 1791006422.290645,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🏆 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> объявил сбор на Victory Royale.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🏆 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> объявил сбор на Victory Royale.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🏆 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> объявил сбор на Victory Royale.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 7,
+        "created_at": 1791006422.2906592,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n✅ Все в сборе.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\nУдачной катки.",
+      "expired": "🎮 <b>FORT</b>\n🎧 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> надел наушники.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n🎧 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> надел наушники.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 8,
+        "created_at": 1791006422.290692,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 9,
+        "created_at": 1791006422.290706,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🎮 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> заебался работать — го катка.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🎮 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> заебался работать — го катка.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🎮 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> заебался работать — го катка.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 10,
+        "created_at": 1791006422.290721,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n✅ Гипотеза подтверждена — скуад собран.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\nПереходим к практике.",
+      "expired": "🎮 <b>FORT</b>\n🧠 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> понял: без катки никуда.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n🧠 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> понял: без катки никуда.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 11,
+        "created_at": 1791006422.2907531,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 12,
+        "created_at": 1791006422.290766,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🍻 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> берёт пиво и зовёт ебашить.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🍻 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> берёт пиво и зовёт ебашить.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🍻 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> берёт пиво и зовёт ебашить.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 13,
+        "created_at": 1791006422.2907789,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n✅ Спасены — все собрались.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\nПоехали.",
+      "expired": "🎮 <b>FORT</b>\n😤 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> пришёл с работы и охуел.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n😤 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> пришёл с работы и охуел.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 14,
+        "created_at": 1791006422.2908108,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 15,
+        "created_at": 1791006422.290824,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🤙 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт катнуть по-пацански.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🤙 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт катнуть по-пацански.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🤙 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт катнуть по-пацански.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 16,
+        "created_at": 1791006422.290839,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n✅ Скуад собран, ща всех нахлобучим.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\nПоехали.",
+      "expired": "🎮 <b>FORT</b>\n🎯 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> хочет кого-нибудь нахлобучить.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n🎯 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> хочет кого-нибудь нахлобучить.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 17,
+        "created_at": 1791006422.29087,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 18,
+        "created_at": 1791006422.290883,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🍿 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> принёс снеки и зовёт играть.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🍿 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> принёс снеки и зовёт играть.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🍿 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> принёс снеки и зовёт играть.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 19,
+        "created_at": 1791006422.290897,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🚌 Скуад на борту — можно взлетать.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🪂 Увидимся на высадке.",
+      "expired": "🎮 <b>FORT</b>\n🚌 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> завёл боевой автобус — запрыгивайте.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n🚌 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> завёл боевой автобус — запрыгивайте.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 20,
+        "created_at": 1791006422.2909281,
+        "completed_at": null,
+        "time_slots": [],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": "Custom {name} header",
+        "fort_title": "<tg-emoji emoji-id=\"123\">F</tg-emoji>"
+      },
+      "gather": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "<tg-emoji emoji-id=\"123\">F</tg-emoji>\nCustom <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> header\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a>\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [[2, "A & B"]],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 21,
+        "created_at": 1791006422.290941,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [[2, "now"]],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🌀 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт в катку, пока зона не закрылась.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n\n📣 <a href=\"tg://user?id=5\">Pending &lt;&amp;&gt;</a>",
+      "expired": "🎮 <b>FORT</b>\n🌀 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт в катку, пока зона не закрылась.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Время вышло — сбор отменён.",
+      "cancelled": "🎮 <b>FORT</b>\n🌀 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт в катку, пока зона не закрылась.\n─────────────────────\n✅ <b>Go</b> 1/4\n   1. <a href=\"tg://user?id=2\">A &amp; B</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    },
+    {
+      "session": {
+        "chat_id": -100,
+        "message_id": 10,
+        "initiator_id": 20,
+        "initiator_name": "<Host & \"captain\">",
+        "go_players": [
+          [20, "Host"],
+          [2, "Early"],
+          [90, "Late"],
+          [3, "Ready"],
+          [1, "Reserve <one>"],
+          [4, "Reserve two"]
+        ],
+        "pass_players": [[3, "No <thanks>"]],
+        "is_complete": false,
+        "is_expired": false,
+        "is_closed": false,
+        "style": 22,
+        "created_at": 1791006422.2909598,
+        "completed_at": null,
+        "time_slots": ["now", "30", "60"],
+        "player_slots": [
+          [20, "22:00"],
+          [2, "now"],
+          [90, "22:30"],
+          [3, "21:00"],
+          [1, "22:00"],
+          [4, "now"]
+        ],
+        "tagged_users": [
+          [2, "Ignored"],
+          [3, "Pass"],
+          [5, "Pending <&>"]
+        ],
+        "llm_header": null,
+        "fort_title": null
+      },
+      "gather": "🎮 <b>FORT</b>\n🔥 Все четверо на месте — идём за победой.\n─────────────────────\n👊 <b>Состав</b> 4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🏆 Корона сама себя не заберёт.",
+      "expired": "🎮 <b>FORT</b>\n👑 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт за короной Victory Royale.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n⏰ Окно закрылось. В деле было 4 — добивайте в игре 🎮",
+      "cancelled": "🎮 <b>FORT</b>\n👑 <a href=\"tg://user?id=20\">&lt;Host &amp; &quot;captain&quot;&gt;</a> зовёт за короной Victory Royale.\n─────────────────────\n✅ <b>Go</b> 4/4\n   1. <a href=\"tg://user?id=2\">Early</a> — сейчас\n   2. <a href=\"tg://user?id=3\">Ready</a> — ≈ 21:00 (через ~420м)\n   3. <a href=\"tg://user?id=20\">Host</a> — ≈ 22:00 (через ~480м)\n   4. <a href=\"tg://user?id=90\">Late</a> — ≈ 22:30 (через ~510м)\n─────────────────────\n🪑 <b>Резерв</b> 2/4\n   1. <a href=\"tg://user?id=1\">Reserve &lt;one&gt;</a> — ≈ 22:00 (через ~480м)\n   2. <a href=\"tg://user?id=4\">Reserve two</a> — сейчас\n─────────────────────\n❌ <b>Пас</b>\n   1. <a href=\"tg://user?id=3\">No &lt;thanks&gt;</a>\n─────────────────────\n🔄 Сбор отменён — запущен новый."
+    }
+  ],
+  "stats": {
+    "total_sessions": 16,
+    "completed_sessions": 9,
+    "expired_sessions": 6,
+    "active_sessions": 1,
+    "top_players": [
+      ["<Alpha>", 12],
+      ["Beta", 9],
+      ["Gamma", 6],
+      ["Delta", 3],
+      ["Epsilon", 1]
+    ],
+    "top_initiators": [
+      ["Alpha", 10],
+      ["Beta", 3]
+    ],
+    "top_passers": [["Slow", 4]],
+    "avg_fill_seconds": 120.5,
+    "fastest_fill_seconds": 7.5,
+    "top_streaks": [
+      ["Alpha", 8],
+      ["Beta", 3]
+    ],
+    "best_hours": [
+      [20, 5, 140.3],
+      [21, 1, null]
+    ]
+  },
+  "stats_texts": [
+    "📊 <b>Статистика сборов</b>\n─────────────────────\n🎮 <b>Сводка</b>\n🎮 Всего: <b>16</b>  ·  ✅ <b>9</b>  ·  ⏰ <b>6</b>  ·  🟡 <b>1</b>\n📈 Процент сборки: <b>56%</b>\n─────────────────────\n⏱ <b>Время до сбора</b>\n   Среднее: <b>2m 0s</b>\n   Рекорд:  <b>8s</b> — рекорд чата\n─────────────────────\n🏆 <b>Самые активные</b>\n🥇 &lt;Alpha&gt;  ████████ <b>12</b>\n🥈 Beta  ██████░░ <b>9</b>\n🥉 Gamma  ████░░░░ <b>6</b>\n   4. Delta  ██░░░░░░ <b>3</b>\n   5. Epsilon  █░░░░░░░ <b>1</b>\n─────────────────────\n📢 <b>Кто чаще зовёт</b>\n   1. Alpha  ██████ <b>10</b>\n   2. Beta  ██░░░░ <b>3</b>\n─────────────────────\n😴 <b>Чаще пасуют</b>\n   1. Slow  ██████ <b>4</b>\n─────────────────────\n🔥 <b>Серии участия</b>\n🥇 Alpha  <b>8</b> 🔥🔥🔥🔥🔥\n🥈 Beta  <b>3</b> 🔥🔥🔥\n─────────────────────\n🕒 <b>Лучшее время</b>\n   20:00 — <b>5</b> сборов, среднее <b>2m 20s</b>\n   21:00 — <b>1</b> сборов, среднее <b>—</b>",
+    "📋 <b>Сводка по чату</b>\n─────────────────────\n🎮 <b>Сессии</b>\n🎮 Всего: <b>16</b>  ·  ✅ <b>9</b>  ·  ⏰ <b>6</b>  ·  🟡 <b>1</b>\n📈 Процент сборки: <b>56%</b>\n─────────────────────\n⚡ <b>Скорость сбора</b>\n   Среднее: <b>2m 0s</b>\n   Рекорд:  <b>8s</b> — минимальное время\n─────────────────────\n⭐ <b>Лидеры по участию</b>\n🥇 &lt;Alpha&gt;  ████████ <b>12</b>\n🥈 Beta  ██████░░ <b>9</b>\n🥉 Gamma  ████░░░░ <b>6</b>\n   4. Delta  ██░░░░░░ <b>3</b>\n   5. Epsilon  █░░░░░░░ <b>1</b>\n─────────────────────\n📡 <b>Чаще зовут</b>\n   1. Alpha  ██████ <b>10</b>\n   2. Beta  ██░░░░ <b>3</b>\n─────────────────────\n🛋 <b>Чаще пасуют</b>\n   1. Slow  ██████ <b>4</b>\n─────────────────────\n💪 <b>Серии подряд</b>\n🥇 Alpha  <b>8</b> 🔥🔥🔥🔥🔥\n🥈 Beta  <b>3</b> 🔥🔥🔥\n─────────────────────\n🎯 <b>Пиковые часы</b>\n   20:00 — <b>5</b> сборов, среднее <b>2m 20s</b>\n   21:00 — <b>1</b> сборов, среднее <b>—</b>",
+    "📈 <b>Отчёт по сборам</b>\n─────────────────────\n🗂 <b>Итого</b>\n🎮 Всего: <b>16</b>  ·  ✅ <b>9</b>  ·  ⏰ <b>6</b>  ·  🟡 <b>1</b>\n📈 Процент сборки: <b>56%</b>\n─────────────────────\n🚀 <b>Скорость сбора</b>\n   Среднее: <b>2m 0s</b>\n   Рекорд:  <b>8s</b> — лучший результат\n─────────────────────\n👑 <b>Топ участников</b>\n🥇 &lt;Alpha&gt;  ████████ <b>12</b>\n🥈 Beta  ██████░░ <b>9</b>\n🥉 Gamma  ████░░░░ <b>6</b>\n   4. Delta  ██░░░░░░ <b>3</b>\n   5. Epsilon  █░░░░░░░ <b>1</b>\n─────────────────────\n🔔 <b>Топ инициаторов</b>\n   1. Alpha  ██████ <b>10</b>\n   2. Beta  ██░░░░ <b>3</b>\n─────────────────────\n🐌 <b>Топ пасующих</b>\n   1. Slow  ██████ <b>4</b>\n─────────────────────\n🔥 <b>Серии подряд</b>\n🥇 Alpha  <b>8</b> 🔥🔥🔥🔥🔥\n🥈 Beta  <b>3</b> 🔥🔥🔥\n─────────────────────\n⏰ <b>Популярное время</b>\n   20:00 — <b>5</b> сборов, среднее <b>2m 20s</b>\n   21:00 — <b>1</b> сборов, среднее <b>—</b>"
+  ],
+  "player": {
+    "epic_account_id": "abc",
+    "epic_name": "Epic <name>",
+    "overall": {
+      "matches": 25,
+      "wins": 5,
+      "kills": 70,
+      "kd": 3.5,
+      "win_rate": 0.2,
+      "minutes_played": 135
+    },
+    "solo": {
+      "matches": 25,
+      "wins": 5,
+      "kills": 70,
+      "kd": 3.5,
+      "win_rate": 0.2,
+      "minutes_played": 135
+    },
+    "duo": null,
+    "squad": {
+      "matches": 25,
+      "wins": 5,
+      "kills": 70,
+      "kd": 3.5,
+      "win_rate": 0.2,
+      "minutes_played": 135
+    },
+    "fetched_at": 1791025200.0,
+    "image_url": "https://example.com/card.png"
+  },
+  "link": {
+    "chat_id": -100,
+    "user_id": 20,
+    "user_name": "A & <B>",
+    "epic_name": "Epic <name>",
+    "epic_account_id": "abc",
+    "linked_at": 1791025200.0
+  },
+  "caption": "🎯 <a href=\"tg://user?id=20\">A &amp; &lt;B&gt;</a> · Epic <b>Epic &lt;name&gt;</b>\n🗓 обновлено 03.10 14:00 MSK",
+  "player_text": "🎮 <b>Fortnite stats</b> — <a href=\"tg://user?id=20\">A &amp; &lt;B&gt;</a>\n🎭 Epic: <b>Epic &lt;name&gt;</b>\n─────────────────────\n📊 <b>Overall</b>\n   Матчи: <b>25</b>  ·  Победы: <b>5</b>  ·  K/D: <b>3.50</b>\n   Win rate: <b>20.0%</b>  ·  Киллы: <b>70</b>\n   В игре: <b>2ч 15м</b>\n─────────────────────\n🧍 <b>Solo</b>\n   Матчи: <b>25</b>  ·  Победы: <b>5</b>  ·  K/D: <b>3.50</b>\n   Win rate: <b>20.0%</b>  ·  Киллы: <b>70</b>\n   В игре: <b>2ч 15м</b>\n─────────────────────\n👪 <b>Squad</b>\n   Матчи: <b>25</b>  ·  Победы: <b>5</b>  ·  K/D: <b>3.50</b>\n   Win rate: <b>20.0%</b>  ·  Киллы: <b>70</b>\n   В игре: <b>2ч 15м</b>\n─────────────────────\n🕓 Обновлено: 03.10 14:00 MSK",
+  "team_successes": [
+    [
+      {
+        "chat_id": -100,
+        "user_id": 0,
+        "user_name": "A & <B>",
+        "epic_name": "E0",
+        "epic_account_id": "0",
+        "linked_at": 1791025200.0
+      },
+      {
+        "epic_account_id": "0",
+        "epic_name": "E0",
+        "overall": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "solo": null,
+        "duo": null,
+        "squad": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "fetched_at": 1791025200.0,
+        "image_url": null
+      }
+    ],
+    [
+      {
+        "chat_id": -100,
+        "user_id": 1,
+        "user_name": "Very long player name 🎮",
+        "epic_name": "E1",
+        "epic_account_id": "1",
+        "linked_at": 1791025200.0
+      },
+      {
+        "epic_account_id": "1",
+        "epic_name": "E1",
+        "overall": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "solo": null,
+        "duo": null,
+        "squad": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "fetched_at": 1791025200.0,
+        "image_url": null
+      }
+    ],
+    [
+      {
+        "chat_id": -100,
+        "user_id": 2,
+        "user_name": "C",
+        "epic_name": "E2",
+        "epic_account_id": "2",
+        "linked_at": 1791025200.0
+      },
+      {
+        "epic_account_id": "2",
+        "epic_name": "E2",
+        "overall": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "solo": null,
+        "duo": null,
+        "squad": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "fetched_at": 1791025200.0,
+        "image_url": null
+      }
+    ],
+    [
+      {
+        "chat_id": -100,
+        "user_id": 3,
+        "user_name": "D",
+        "epic_name": "E3",
+        "epic_account_id": "3",
+        "linked_at": 1791025200.0
+      },
+      {
+        "epic_account_id": "3",
+        "epic_name": "E3",
+        "overall": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "solo": null,
+        "duo": null,
+        "squad": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "fetched_at": 1791025200.0,
+        "image_url": null
+      }
+    ],
+    [
+      {
+        "chat_id": -100,
+        "user_id": 4,
+        "user_name": "E",
+        "epic_name": "E4",
+        "epic_account_id": "4",
+        "linked_at": 1791025200.0
+      },
+      {
+        "epic_account_id": "4",
+        "epic_name": "E4",
+        "overall": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "solo": null,
+        "duo": null,
+        "squad": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "fetched_at": 1791025200.0,
+        "image_url": null
+      }
+    ],
+    [
+      {
+        "chat_id": -100,
+        "user_id": 5,
+        "user_name": "F",
+        "epic_name": "E5",
+        "epic_account_id": "5",
+        "linked_at": 1791025200.0
+      },
+      {
+        "epic_account_id": "5",
+        "epic_name": "E5",
+        "overall": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "solo": null,
+        "duo": null,
+        "squad": {
+          "matches": 25,
+          "wins": 5,
+          "kills": 70,
+          "kd": 3.5,
+          "win_rate": 0.2,
+          "minutes_played": 135
+        },
+        "fetched_at": 1791025200.0,
+        "image_url": null
+      }
+    ]
+  ],
+  "team_missing": [
+    [
+      {
+        "chat_id": -100,
+        "user_id": 20,
+        "user_name": "A & <B>",
+        "epic_name": "Epic <name>",
+        "epic_account_id": "abc",
+        "linked_at": 1791025200.0
+      },
+      "нет данных за неделю"
+    ]
+  ],
+  "team_text": "🏆 <b>Fortnite Squad</b> — 6 игроков · за неделю\n\n🥇 <b>MVP недели</b>: <code>A &amp; &lt;B&gt;</code>\n   🎯 5W · 💥 70K · ⚔️ 3.50 K/D · 🎮 25M\n\n────────────────────\n📊 <b>Сводка за неделю</b>\n• 🎮 150 матчей  ·  🏆 30W (20.0%)\n• 💥 420 киллов  ·  ⚔️ K/D 3.50\n────────────────────\n🏅 <b>Лидеры недели</b>\n<pre>     Игрок            M  W   K   K/D\n───  ──────────────  ──  ─  ──  ────\n🥇   A &amp; &lt;B&gt;         25  5  70  3.50\n🥈   Very long pla…  25  5  70  3.50\n🥉   C               25  5  70  3.50\n     D               25  5  70  3.50\n     E               25  5  70  3.50</pre>\n─────────────────────\n💤 <b>Вне недельного зачёта</b>\n   <code>A &amp; &lt;B&gt;</code> — нет данных за неделю\n─────────────────────\n⚠️ <b>Без данных</b>\n   🔒 Приватный профиль: <code>A &amp; &lt;B&gt;</code>\n   💭 Без матчей: <code>A &amp; &lt;B&gt;</code>\n   👻 Не найден: <code>A &amp; &lt;B&gt;</code>\n   🚫 API недоступен: <code>A &amp; &lt;B&gt;</code>",
+  "team_facts": "Статистика ТОЛЬКО за последние 7 дней (свежая форма, не за сезон).\n\nИгроков: 6\nЗа неделю (все режимы): 150 матчей, 30 побед (20.0%), 420 киллов, K/D 3.50\nMVP недели: A & <B> — 25M, 5W, 70K, K/D 3.50\nТоп недели:\n1. A & <B> 25M 5W 70K K/D 3.50\n2. Very long player name 🎮 25M 5W 70K K/D 3.50\n3. C 25M 5W 70K K/D 3.50\n4. D 25M 5W 70K K/D 3.50\n5. E 25M 5W 70K K/D 3.50\nДинамика за 24ч:\n- A & <B>: 0 новых матчей\n- Very long player name 🎮: +2M, +1W, +10K, K/D за период 2.50\nБез недельных данных (НЕ оценивай и не упоминай как слабых): A & <B>"
+}

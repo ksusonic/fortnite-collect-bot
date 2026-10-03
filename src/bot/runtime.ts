@@ -1,0 +1,242 @@
+import * as Sentry from "@sentry/nextjs";
+import { scopedFetch } from "./transport";
+import { Bot, BotError, type ApiClientOptions } from "grammy";
+import type { Update } from "grammy/types";
+import * as db from "./db";
+import {
+  registerHandlers,
+  runTeamstats,
+  sweep_expired_sessions,
+} from "./handlers";
+import {
+  advisoryLock,
+  current,
+  getRoastState,
+  invocation,
+  raw,
+  withWork,
+  type RoastEntry,
+} from "./storage";
+import { AmbiguousOutcome, telegramTransformer, Work } from "./work";
+
+export function createBot(): Bot {
+  const token = process.env.BOT_TOKEN;
+  if (!token) throw new Error("BOT_TOKEN is not configured");
+  const bot = new Bot(token, {
+    client: {
+      timeoutSeconds: 30,
+      fetch: scopedFetch as unknown as ApiClientOptions["fetch"],
+    },
+  });
+  bot.api.config.use((previous, method, payload, signal) => {
+    if (
+      ["sendMessage", "editMessageText", "sendPhoto"].includes(method) &&
+      !("parse_mode" in payload)
+    ) {
+      Object.assign(payload, { parse_mode: "HTML" });
+    }
+    return previous(method, payload, signal);
+  });
+  bot.api.config.use(telegramTransformer);
+  registerHandlers(bot);
+  return bot;
+}
+export function updateChat(update: Update): number | null {
+  if (update.message) return update.message.chat.id;
+  if (update.edited_message) return update.edited_message.chat.id;
+  if (update.my_chat_member) return update.my_chat_member.chat.id;
+  if (update.chat_member) return update.chat_member.chat.id;
+  if (update.callback_query)
+    return update.callback_query.message?.chat.id ?? null;
+  return null;
+}
+export function validateUpdate(value: unknown): asserts value is Update {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("update_id" in value) ||
+    !Number.isSafeInteger(value.update_id) ||
+    Number(value.update_id) < 0
+  )
+    throw new Error("invalid update");
+  for (const type of [
+    "message",
+    "edited_message",
+    "callback_query",
+    "my_chat_member",
+    "chat_member",
+  ]) {
+    if (
+      type in value &&
+      (!value[type as keyof typeof value] ||
+        typeof value[type as keyof typeof value] !== "object")
+    )
+      throw new Error("invalid update");
+  }
+}
+export async function enqueue(
+  id: string,
+  kind: string,
+  chat: number | null,
+  payload: unknown,
+) {
+  await raw(
+    "INSERT INTO work_items(id,kind,chat_id,payload) VALUES ($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING",
+    [id, kind, chat, JSON.stringify(payload)],
+  );
+}
+async function hydrate(chat: number | null) {
+  if (chat === null) return;
+  for (const session of await db.load_active_sessions(chat))
+    db.getSessions().set(`${session.chat_id}:${session.message_id}`, session);
+  for (const [cid, history, messages, last] of await db.load_all_roast_state(
+    chat,
+  )) {
+    Object.assign(getRoastState(cid), {
+      history: history as RoastEntry[],
+      message_ids: messages,
+      last_roast: last,
+    });
+  }
+}
+interface Item {
+  id: string;
+  kind: string;
+  chat_id: number | null;
+  status: string;
+  payload: Record<string, unknown>;
+}
+export async function executeItem(item: Item, bot: Bot): Promise<string> {
+  await raw(
+    "UPDATE work_items SET attempts=attempts+1,updated_at=now() WHERE id=$1",
+    [item.id],
+  );
+  try {
+    await withWork(new Work(item.id), async () => {
+      await hydrate(item.chat_id);
+      if (item.kind === "update")
+        await bot.handleUpdate(item.payload as unknown as Update);
+      else if (item.kind === "expiry")
+        await sweep_expired_sessions(
+          bot,
+          Number(item.payload.now),
+          Boolean(item.payload.past_deadline),
+        );
+      else if (item.kind === "weekly") {
+        const last = await db.get_last_weekly_drop(item.chat_id!);
+        if (last === null || last <= Number(item.payload.now) - 6 * 86400) {
+          await runTeamstats(bot, item.chat_id!, true);
+          await db.set_last_weekly_drop(
+            item.chat_id!,
+            Number(item.payload.now),
+          );
+        }
+      } else if (item.kind === "status")
+        await bot.api.sendMessage(item.chat_id!, String(item.payload.text));
+      else throw new Error("unknown work kind");
+      if (item.chat_id !== null) {
+        const state = getRoastState(item.chat_id);
+        await db.save_roast_state(
+          item.chat_id,
+          state.history,
+          state.message_ids,
+          state.last_roast,
+        );
+      }
+    });
+    await raw(
+      "UPDATE work_items SET status='complete',error=NULL,updated_at=now() WHERE id=$1",
+      [item.id],
+    );
+    return "complete";
+  } catch (error) {
+    if (error instanceof BotError) error = error.error;
+    if (error instanceof AmbiguousOutcome) {
+      Sentry.captureMessage("Uncertain Telegram send requires review", {
+        level: "warning",
+        tags: { component: "bot", work_kind: item.kind },
+      });
+      return "ambiguous";
+    }
+    Sentry.captureException(error, {
+      tags: { component: "bot", work_kind: item.kind },
+    });
+    console.error(
+      "work failed",
+      item.id,
+      error instanceof Error ? error.name : "Error",
+    );
+    await raw(
+      "UPDATE work_items SET status='failed',error=$1,updated_at=now() WHERE id=$2",
+      [error instanceof Error ? error.name : "Error", item.id],
+    );
+    return "failed";
+  }
+}
+export async function drainChat(
+  chat: number | null,
+  bot: Bot,
+  signal?: AbortSignal,
+): Promise<string> {
+  return invocation(
+    chat,
+    async () => {
+      return (
+        (await advisoryLock(
+          `chat:${chat === null ? "None" : chat}`,
+          async () => {
+            await bot.init();
+            const rows = (
+              await raw<Item>(
+                "SELECT * FROM work_items WHERE chat_id IS NOT DISTINCT FROM $1 AND kind<>'job' AND status<>'complete' ORDER BY created_at,id LIMIT 20",
+                [chat],
+              )
+            ).rows;
+            for (const item of rows) {
+              if (item.status === "ambiguous") return "ambiguous";
+              const result = await executeItem(item, bot);
+              if (result !== "complete") return result;
+            }
+            return "complete";
+          },
+        )) ?? "failed"
+      );
+    },
+    signal,
+  );
+}
+export async function processUpdate(
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<string> {
+  validateUpdate(payload);
+  const chat = updateChat(payload),
+    id = `update:${payload.update_id}`;
+  const status = await invocation(
+    null,
+    async () => {
+      await enqueue(id, "update", chat, payload);
+      return (await raw("SELECT status FROM work_items WHERE id=$1", [id]))
+        .rows[0].status;
+    },
+    signal,
+  );
+  if (status === "complete") return status;
+  await drainChat(chat, createBot(), signal);
+  return invocation(
+    null,
+    async () =>
+      (await raw("SELECT status FROM work_items WHERE id=$1", [id])).rows[0]
+        .status,
+    signal,
+  );
+}
+export async function recoverPending(bot: Bot) {
+  const signal = current().signal;
+  const rows = (
+    await raw(
+      "SELECT chat_id FROM work_items WHERE kind<>'job' AND status IN ('pending','failed') GROUP BY chat_id ORDER BY min(created_at) LIMIT 20",
+    )
+  ).rows;
+  for (const row of rows) await drainChat(row.chat_id, bot, signal);
+}

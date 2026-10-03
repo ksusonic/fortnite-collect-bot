@@ -5,12 +5,13 @@
 
 version: 2
 updates:
-  - package-ecosystem: "uv"
+  # GitHub uses the npm ecosystem for pnpm package.json and pnpm-lock.yaml.
+  - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
     groups:
-      python:
+      typescript:
         patterns:
           - "*"
 

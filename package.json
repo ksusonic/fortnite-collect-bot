@@ -1,0 +1,46 @@
+{
+  "name": "fortnite-collect-bot",
+  "version": "4.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.8.1",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "bot": "tsx --env-file-if-exists=.env src/bot/cli.ts"
+  },
+  "dependencies": {
+    "@sentry/nextjs": "^11.4.0",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/connect": "^2.4.0",
+    "grammy": "^1.38.0",
+    "next": "^16.0.0",
+    "pg": "^8.16.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1",
+    "undici": "^8.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/node-fetch": "^2.6.13",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.0.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.3"
+  }
+}
