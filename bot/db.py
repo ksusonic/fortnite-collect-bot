@@ -323,7 +323,7 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
         completed_ids = [row["message_id"] for row in await cur.fetchall()]
 
         if completed_ids:
-            placeholders = ",".join("%s" * len(completed_ids))
+            placeholders = ",".join(["%s"] * len(completed_ids))
             cur = await db.execute(
                 f"""SELECT message_id, user_id, user_name FROM responses
                     WHERE chat_id = %s AND message_id IN ({placeholders}) AND response = 'go'""",

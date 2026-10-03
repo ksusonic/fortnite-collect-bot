@@ -276,3 +276,22 @@ async def test_stats_count_player_once_after_name_change(tmp_db):
     stats = await db_module.get_chat_stats(-100)
     assert stats.top_players == [("New name", 2)]
     assert stats.top_initiators == [("New host", 2)]
+
+
+@pytest.mark.parametrize("completed_count", [1, 3])
+async def test_stats_streaks_for_completed_sessions(tmp_db, completed_count):
+    for message_id in range(1, completed_count + 1):
+        session = Session(
+            chat_id=-100,
+            message_id=message_id,
+            initiator_id=1,
+            initiator_name="Host",
+            created_at=1000 + message_id,
+            is_closed=True,
+        )
+        await save_session(session)
+        await save_response(message_id, 10, "Player", "go", chat_id=-100)
+        await mark_complete(message_id, chat_id=-100)
+    stats = await db_module.get_chat_stats(-100)
+    assert stats.completed_sessions == completed_count
+    assert stats.top_streaks == [("Player", completed_count)]
