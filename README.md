@@ -30,9 +30,8 @@ Supabase-базой во Франкфурте. Используйте session po
    имена файлов в `fortnite_bot.migrations`. Для отдельной локальной базы доступна команда `migrate`.
 2. Задайте production-секреты из таблицы ниже. Vercel-интеграция уже предоставляет
    `POSTGRES_URL_NON_POOLING`; этого достаточно, если `DATABASE_URL` не задан.
-3. Разверните проверенную ветку на production. `/health` должен возвращать HTTP 200
-   без входа в Vercel. Превью должны оставаться защищёнными и использовать отдельного
-   тестового бота, отдельную базу и отдельные API-ключи.
+3. Production автоматически разворачивается из `main`. Preview-деплои отключены
+   в настройках проекта и `vercel.json`. `/health` должен возвращать HTTP 200 без входа в Vercel.
 4. После проверки выполните `uv run python -m bot register-webhook https://your-production-domain`
    либо отправьте authenticated POST на `/api/admin/register-webhook`.
    Регистрация устанавливает secret_token, max_connections=1, нужные router update types
