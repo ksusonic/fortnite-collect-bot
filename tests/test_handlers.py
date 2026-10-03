@@ -64,7 +64,7 @@ def _make_session(message_id: int = 555, chat_id: int = -100, created_at: float 
 async def test_callback_slot_then_pass_switches_lists(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
 
     # User 42 picks 19:00.
     cb1 = _make_callback("slot:19:00", session.message_id, user_id=42)
@@ -84,7 +84,7 @@ async def test_callback_slot_then_pass_switches_lists(tmp_db):
 async def test_callback_slot_to_other_slot(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
 
     await on_callback(_make_callback("slot:19:00", session.message_id, user_id=7))
     assert session.player_slots[7] == "19:00"
@@ -98,7 +98,7 @@ async def test_callback_slot_to_other_slot(tmp_db):
 async def test_callback_pass_back_to_slot(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
 
     await on_callback(_make_callback("pass", session.message_id, user_id=9))
     assert 9 in session.pass_players
@@ -111,7 +111,7 @@ async def test_callback_pass_back_to_slot(tmp_db):
 async def test_callback_unknown_slot_rejected(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
 
     cb = _make_callback("slot:99:00", session.message_id, user_id=5)
     await on_callback(cb)
@@ -122,7 +122,7 @@ async def test_callback_unknown_slot_rejected(tmp_db):
 async def test_callback_marks_complete_when_squad_full(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
 
     for uid in (10, 11, 12, 13):
         await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
@@ -134,7 +134,7 @@ async def test_callback_marks_complete_when_squad_full(tmp_db):
 async def test_callback_adds_late_players_to_fifo_reserve(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
 
     for uid in range(10, 10 + SQUAD_SIZE + RESERVE_SIZE):
         await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
@@ -157,7 +157,7 @@ async def test_callback_adds_late_players_to_fifo_reserve(tmp_db):
 async def test_confirmed_pass_promotes_first_reserve(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     for uid in (10, 11, 12, 13, 14, 15):
         await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
 
@@ -172,7 +172,7 @@ async def test_confirmed_pass_promotes_first_reserve(tmp_db):
 async def test_confirmed_pass_without_reserve_reopens_squad(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     for uid in (10, 11, 12, 13):
         await on_callback(_make_callback("slot:19:00", session.message_id, user_id=uid))
 
@@ -189,7 +189,7 @@ async def test_closed_session_rejects_callbacks(tmp_db):
     session = _make_session()
     session.is_closed = True
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     callback = _make_callback("slot:19:00", session.message_id, user_id=10)
 
     await on_callback(callback)
@@ -201,7 +201,7 @@ async def test_closed_session_rejects_callbacks(tmp_db):
 async def test_callback_rolls_back_memory_when_persistence_fails(tmp_db, monkeypatch):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     monkeypatch.setattr(handlers, "save_response", AsyncMock(side_effect=RuntimeError("db unavailable")))
     callback = _make_callback("slot:19:00", session.message_id, user_id=10)
 
@@ -215,7 +215,7 @@ async def test_callback_rolls_back_memory_when_persistence_fails(tmp_db, monkeyp
 async def test_concurrent_go_callbacks_respect_squad_and_reserve_cap(tmp_db):
     session = _make_session()
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     callbacks = [_make_callback("slot:19:00", session.message_id, user_id=uid) for uid in range(20, 32)]
 
     await asyncio.gather(*(on_callback(callback) for callback in callbacks))
@@ -246,15 +246,15 @@ async def test_cmd_fort_replaces_when_no_active_session(tmp_db):
 
     msg.react.assert_not_awaited()
     msg.answer.assert_awaited()
-    assert 777 in sessions
-    sessions.pop(777, None)
+    assert (-100, 777) in sessions
+    sessions.pop((-100, 777), None)
 
 
 async def test_cmd_fort_same_user_within_cooldown_thumbs_down(tmp_db):
     """The same user repeating /fort within FORT_REPLACE_COOLDOWN gets 👎."""
     session = _make_session(message_id=222, created_at=time.time() - (FORT_REPLACE_COOLDOWN - 5))
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     # Simulate that user 1 has just done /fort.
     _fort_attempt_times[(session.chat_id, 1)] = time.time() - (FORT_REPLACE_COOLDOWN - 5)
 
@@ -272,8 +272,8 @@ async def test_cmd_fort_same_user_within_cooldown_thumbs_down(tmp_db):
     msg.react.assert_awaited()
     msg.answer.assert_not_awaited()
     # Session untouched.
-    assert sessions[222].is_expired is False
-    assert sessions[222].is_complete is False
+    assert sessions[(-100, 222)].is_expired is False
+    assert sessions[(-100, 222)].is_complete is False
 
 
 async def test_cmd_fort_other_user_not_blocked_by_someone_elses_cooldown(tmp_db):
@@ -284,7 +284,7 @@ async def test_cmd_fort_other_user_not_blocked_by_someone_elses_cooldown(tmp_db)
     """
     session = _make_session(message_id=223, created_at=time.time() - (FORT_REPLACE_COOLDOWN - 10))
     await save_session(session)
-    sessions[session.message_id] = session
+    sessions[(session.chat_id, session.message_id)] = session
     # User 1 (spammer) just did /fort.
     _fort_attempt_times[(session.chat_id, 1)] = time.time() - 1
 
@@ -304,9 +304,9 @@ async def test_cmd_fort_other_user_not_blocked_by_someone_elses_cooldown(tmp_db)
 
     msg.react.assert_not_awaited()
     msg.answer.assert_awaited()
-    assert 224 in sessions
-    assert 223 not in sessions
-    sessions.pop(224, None)
+    assert (-100, 224) in sessions
+    assert (-100, 223) not in sessions
+    sessions.pop((-100, 224), None)
 
 
 async def test_cmd_fort_after_cooldown_replaces_session(tmp_db):
@@ -314,7 +314,7 @@ async def test_cmd_fort_after_cooldown_replaces_session(tmp_db):
     old = _make_session(message_id=333, created_at=time.time() - (FORT_REPLACE_COOLDOWN + 5))
     old.initiator_id = 3
     await save_session(old)
-    sessions[old.message_id] = old
+    sessions[(old.chat_id, old.message_id)] = old
     # Same user attempted /fort more than the cooldown window ago.
     _fort_attempt_times[(old.chat_id, 3)] = time.time() - (FORT_REPLACE_COOLDOWN + 5)
 
@@ -335,9 +335,9 @@ async def test_cmd_fort_after_cooldown_replaces_session(tmp_db):
     msg.react.assert_not_awaited()
     msg.answer.assert_awaited()
     # New session present, old one popped.
-    assert 444 in sessions
-    assert 333 not in sessions
-    sessions.pop(444, None)
+    assert (-100, 444) in sessions
+    assert (-100, 333) not in sessions
+    sessions.pop((-100, 444), None)
 
 
 # ---------- /afk mention suppression ----------
@@ -377,7 +377,7 @@ async def test_cmd_afk_rejects_invalid_duration(tmp_db):
 async def test_sweep_expires_session_past_timeout(tmp_db):
     stale = _make_session(message_id=900, created_at=time.time() - SESSION_TIMEOUT - 60)
     await save_session(stale)
-    sessions[stale.message_id] = stale
+    sessions[(stale.chat_id, stale.message_id)] = stale
 
     bot = MagicMock(spec=Bot)
     bot.edit_message_text = AsyncMock()
@@ -390,21 +390,21 @@ async def test_sweep_expires_session_past_timeout(tmp_db):
 async def test_sweep_does_not_expire_fresh_session(tmp_db):
     fresh = _make_session(message_id=901, created_at=time.time())
     await save_session(fresh)
-    sessions[fresh.message_id] = fresh
+    sessions[(fresh.chat_id, fresh.message_id)] = fresh
 
     bot = MagicMock(spec=Bot)
     bot.edit_message_text = AsyncMock()
 
     expired_ids = await sweep_expired_sessions(bot, past_deadline=False)
     assert expired_ids == []
-    assert 901 in sessions
+    assert (-100, 901) in sessions
 
 
 async def test_sweep_expires_all_when_past_play_deadline(tmp_db):
     """After PLAY_DEADLINE_HOUR=23 MSK every open session must be closed regardless of age."""
     fresh = _make_session(message_id=902, created_at=time.time())
     await save_session(fresh)
-    sessions[fresh.message_id] = fresh
+    sessions[(fresh.chat_id, fresh.message_id)] = fresh
 
     bot = MagicMock(spec=Bot)
     bot.edit_message_text = AsyncMock()

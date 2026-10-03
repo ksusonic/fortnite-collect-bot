@@ -4,12 +4,16 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass
 
 import aiohttp
 import fortnite_api
 from fortnite_api import GameLanguage, StatsImageType, TimeWindow
 from fortnite_api.errors import Forbidden, FortniteAPIException, NotFound, RateLimited
+
+from bot.storage import ContextMap
+from bot.work import external_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +69,13 @@ class PlayerStats:
     image_url: str | None = None
 
 
-_client: fortnite_api.Client | None = None
+_client_context = ContextVar("fortnite_client", default=None)
 _client_lock = asyncio.Lock()
-_stats_cache: dict[tuple[str, bool], tuple[float, PlayerStats]] = {}
+_stats_cache = ContextMap("fortnite_cache")
 # Cache locks are keyed either by (account_id, with_image) tuple
 # (for account_id lookups) or by the string "name:<lower>" (for name lookups,
 # which are not cached but still coalesced).
-_stats_locks: dict[tuple[str, bool] | str, asyncio.Lock] = {}
+_stats_locks = ContextMap("fortnite_locks")
 
 
 def is_configured() -> bool:
@@ -79,28 +83,30 @@ def is_configured() -> bool:
 
 
 async def _get_client() -> fortnite_api.Client:
-    global _client
+    _client = _client_context.get()
     if _client is not None:
         return _client
     async with _client_lock:
+        _client = _client_context.get()
         if _client is None:
             _client = fortnite_api.Client(
                 api_key=API_KEY,
                 session=aiohttp.ClientSession(),
                 default_language=GameLanguage.RUSSIAN,
             )
+            _client_context.set(_client)
         return _client
 
 
 async def close() -> None:
-    global _client
+    _client = _client_context.get()
     if _client is None:
         return
     try:
         await _client.http.close()
     except Exception:
         logger.warning("fortnite client close failed", exc_info=True)
-    _client = None
+    _client_context.set(None)
 
 
 def _to_mode(stats: fortnite_api.BrGameModeStats | None) -> ModeStats | None:
@@ -159,7 +165,7 @@ async def _call_sdk(
     )
 
 
-async def fetch_stats(
+async def _fetch_stats(
     *,
     name: str | None = None,
     account_id: str | None = None,
@@ -234,3 +240,35 @@ async def fetch_stats(
             except Exception:
                 logger.warning("failed to save squad snapshot", exc_info=True)
         return stats
+
+
+async def fetch_stats(*, name=None, account_id=None, with_image=False) -> PlayerStats:
+    async def fetch():
+        try:
+            result = await _fetch_stats(name=name, account_id=account_id, with_image=with_image)
+            return {"stats": asdict(result)}
+        except FortniteError as exc:
+            return {
+                "error": type(exc).__name__,
+                "message": str(exc),
+                "epic_account_id": getattr(exc, "epic_account_id", None),
+                "epic_name": getattr(exc, "epic_name", None),
+            }
+
+    value = await external_checkpoint(f"fortnite:{name}:{account_id}:{with_image}", fetch)
+    if "error" in value:
+        if value["error"] == "StatsEmpty":
+            raise StatsEmpty(epic_account_id=value["epic_account_id"], epic_name=value["epic_name"])
+        cls = {
+            "EpicNameNotFound": EpicNameNotFound,
+            "StatsPrivate": StatsPrivate,
+            "FortniteUnavailable": FortniteUnavailable,
+        }.get(value["error"], FortniteError)
+        raise cls(value["message"])
+    values = value["stats"]
+    return PlayerStats(
+        **{
+            key: ModeStats(**item) if key in {"overall", "solo", "duo", "squad"} and item else item
+            for key, item in values.items()
+        }
+    )

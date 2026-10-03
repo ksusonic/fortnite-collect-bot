@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass, field
 
-import aiosqlite
+from bot.storage import ContextMap, Jsonb, database, migrate, timestamp
+from bot.storage import chat_id as current_chat_id
 
-DB_PATH = os.getenv("DB_PATH", "bot.db")
-
-sessions: dict[int, Session] = {}
+sessions = ContextMap("sessions")
 
 
 @dataclass
@@ -34,185 +32,54 @@ class Session:
 
 
 async def init_db() -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS sessions (
-                message_id INTEGER PRIMARY KEY,
-                chat_id INTEGER NOT NULL,
-                initiator_id INTEGER NOT NULL,
-                initiator_name TEXT NOT NULL,
-                is_complete INTEGER NOT NULL DEFAULT 0,
-                is_expired INTEGER NOT NULL DEFAULT 0,
-                is_closed INTEGER NOT NULL DEFAULT 0,
-                style INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL,
-                completed_at REAL
-            )"""
-        )
-        # Migration: add columns if upgrading from older schema
-        try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN is_expired INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN completed_at REAL")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN time_slots TEXT")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN tag_line TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE sessions ADD COLUMN llm_header TEXT")
-        except Exception:
-            pass
-        columns = {row[1] for row in await (await db.execute("PRAGMA table_info(sessions)")).fetchall()}
-        if "fort_title" not in columns:
-            await db.execute("ALTER TABLE sessions ADD COLUMN fort_title TEXT")
-        await db.execute(
-            "CREATE TABLE IF NOT EXISTS chat_fort_titles (chat_id INTEGER PRIMARY KEY, title TEXT NOT NULL)"
-        )
-        if "is_closed" not in columns:
-            await db.execute("ALTER TABLE sessions ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0")
-            # Before live waitlists, both successful and expired sessions were terminal.
-            await db.execute("UPDATE sessions SET is_closed = 1 WHERE is_complete = 1 OR is_expired = 1")
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS responses (
-                message_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                user_name TEXT NOT NULL,
-                response TEXT NOT NULL CHECK(response IN ('go', 'pass')),
-                responded_at REAL NOT NULL,
-                joined_at REAL,
-                PRIMARY KEY (message_id, user_id),
-                FOREIGN KEY (message_id) REFERENCES sessions(message_id)
-            )"""
-        )
-        try:
-            await db.execute("ALTER TABLE responses ADD COLUMN time_slot TEXT")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE responses ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
-        response_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(responses)")).fetchall()}
-        if "joined_at" not in response_columns:
-            await db.execute("ALTER TABLE responses ADD COLUMN joined_at REAL")
-            await db.execute("UPDATE responses SET joined_at = responded_at WHERE response = 'go'")
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS chat_features (
-                chat_id INTEGER NOT NULL,
-                feature TEXT NOT NULL,
-                enabled INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (chat_id, feature)
-            )"""
-        )
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS afk_mutes (
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                muted_until REAL NOT NULL,
-                PRIMARY KEY (chat_id, user_id)
-            )"""
-        )
-        try:
-            await db.execute("ALTER TABLE chat_features ADD COLUMN value REAL")
-        except Exception:
-            pass
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS roast_state (
-                chat_id INTEGER PRIMARY KEY,
-                history_json TEXT,
-                roast_msgs_json TEXT,
-                last_roast REAL
-            )"""
-        )
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS epic_links (
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                user_name TEXT NOT NULL,
-                epic_name TEXT NOT NULL,
-                epic_account_id TEXT NOT NULL,
-                linked_at REAL NOT NULL,
-                PRIMARY KEY (chat_id, user_id)
-            )"""
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_epic_links_chat ON epic_links (chat_id)")
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS squad_snapshots (
-                epic_account_id TEXT NOT NULL,
-                fetched_at REAL NOT NULL,
-                matches INTEGER NOT NULL,
-                wins INTEGER NOT NULL,
-                kills INTEGER NOT NULL,
-                deaths_est INTEGER NOT NULL,
-                kd REAL NOT NULL,
-                PRIMARY KEY (epic_account_id, fetched_at)
-            )"""
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_squad_snapshots_acc_ts "
-            "ON squad_snapshots (epic_account_id, fetched_at DESC)"
-        )
-        # Migration: weekly view moved from squad-only to overall (all modes).
-        # New nullable columns — old rows stay NULL and are treated as "no
-        # weekly baseline" until a fresh overall snapshot ages in.
-        for col, coltype in (
-            ("overall_matches", "INTEGER"),
-            ("overall_wins", "INTEGER"),
-            ("overall_kills", "INTEGER"),
-            ("overall_deaths_est", "INTEGER"),
-            ("overall_kd", "REAL"),
-        ):
-            try:
-                await db.execute(f"ALTER TABLE squad_snapshots ADD COLUMN {col} {coltype}")
-            except Exception:
-                pass
-        await db.commit()
+    await migrate()
 
 
 async def get_fort_title(chat_id: int) -> str | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT title FROM chat_fort_titles WHERE chat_id = ?", (chat_id,))
+    async with database() as db:
+        cursor = await db.execute("SELECT title FROM chat_fort_titles WHERE chat_id = %s", (chat_id,))
         row = await cursor.fetchone()
         return row[0] if row else None
 
 
 async def set_fort_title(chat_id: int, title: str | None) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         if title is None:
-            await db.execute("DELETE FROM chat_fort_titles WHERE chat_id = ?", (chat_id,))
+            await db.execute("DELETE FROM chat_fort_titles WHERE chat_id = %s", (chat_id,))
         else:
-            await db.execute("INSERT OR REPLACE INTO chat_fort_titles (chat_id, title) VALUES (?, ?)", (chat_id, title))
+            await db.execute(
+                """INSERT INTO chat_fort_titles (chat_id, title) VALUES (%s, %s) ON CONFLICT (chat_id) DO UPDATE SET
+                title = excluded.title""",
+                (chat_id, title),
+            )
         await db.commit()
 
 
 async def save_session(session: Session) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         await db.execute(
-            """INSERT OR REPLACE INTO sessions
-               (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired, is_closed,
-                style, created_at, completed_at, time_slots, tag_line, llm_header, fort_title)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO sessions (message_id, chat_id, initiator_id, initiator_name, is_complete, is_expired,
+            is_closed, style, created_at, completed_at, time_slots, tag_line, llm_header,
+            fort_title) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT
+            (chat_id, message_id) DO UPDATE SET initiator_id = excluded.initiator_id, initiator_name
+            = excluded.initiator_name, is_complete = excluded.is_complete, is_expired =
+            excluded.is_expired, is_closed = excluded.is_closed, style = excluded.style, created_at
+            = excluded.created_at, completed_at = excluded.completed_at, time_slots =
+            excluded.time_slots, tag_line = excluded.tag_line, llm_header = excluded.llm_header,
+            fort_title = excluded.fort_title""",
             (
                 session.message_id,
                 session.chat_id,
                 session.initiator_id,
                 session.initiator_name,
-                int(session.is_complete),
-                int(session.is_expired),
-                int(session.is_closed),
+                session.is_complete,
+                session.is_expired,
+                session.is_closed,
                 session.style,
-                session.created_at,
-                session.completed_at,
-                json.dumps(session.time_slots) if session.time_slots else None,
-                json.dumps({str(k): v for k, v in session.tagged_users.items()}) if session.tagged_users else None,
+                timestamp(session.created_at),
+                timestamp(session.completed_at),
+                Jsonb(session.time_slots),
+                Jsonb({str(k): v for k, v in session.tagged_users.items()}),
                 session.llm_header,
                 session.fort_title,
             ),
@@ -228,14 +95,16 @@ async def save_response(
     time_slot: str | None = None,
     is_bot: bool = False,
     became_complete: bool = False,
+    chat_id: int | None = None,
 ) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    chat_id = current_chat_id(chat_id)
+    async with database() as db:
         now = time.time()
         await db.execute(
             """INSERT INTO responses
-               (message_id, user_id, user_name, response, responded_at, time_slot, is_bot, joined_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(message_id, user_id) DO UPDATE SET
+               (chat_id, message_id, user_id, user_name, response, responded_at, time_slot, is_bot, joined_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT(chat_id, message_id, user_id) DO UPDATE SET
                    user_name = excluded.user_name,
                    response = excluded.response,
                    responded_at = excluded.responded_at,
@@ -247,28 +116,32 @@ async def save_response(
                        ELSE excluded.joined_at
                    END""",
             (
+                chat_id,
                 message_id,
                 user_id,
                 user_name,
                 response,
-                now,
+                timestamp(now),
                 time_slot,
-                int(is_bot),
-                now if response == "go" else None,
+                is_bot,
+                timestamp(now) if response == "go" else None,
             ),
         )
         if became_complete:
             await db.execute(
-                "UPDATE sessions SET is_complete = 1, completed_at = COALESCE(completed_at, ?) WHERE message_id = ?",
-                (now, message_id),
+                """UPDATE sessions SET is_complete = true, completed_at = COALESCE(completed_at, %s) WHERE chat_id = %s
+                AND message_id = %s""",
+                (timestamp(now), chat_id, message_id),
             )
         await db.commit()
 
 
-async def load_session(message_id: int) -> Session | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM sessions WHERE message_id = ?", (message_id,))
+async def load_session(message_id: int, chat_id: int | None = None) -> Session | None:
+    chat_id = current_chat_id(chat_id)
+    async with database() as db:
+        cursor = await db.execute(
+            "SELECT * FROM sessions WHERE chat_id = %s AND message_id = %s", (chat_id, message_id)
+        )
         row = await cursor.fetchone()
         if row is None:
             return None
@@ -302,9 +175,9 @@ async def load_session(message_id: int) -> Session | None:
 
         cursor = await db.execute(
             """SELECT user_id, user_name, response, time_slot FROM responses
-               WHERE message_id = ?
+               WHERE chat_id = %s AND message_id = %s
                ORDER BY CASE WHEN joined_at IS NULL THEN 1 ELSE 0 END, joined_at, responded_at""",
-            (message_id,),
+            (chat_id, message_id),
         )
         async for resp_row in cursor:
             if resp_row["response"] == "go":
@@ -318,28 +191,34 @@ async def load_session(message_id: int) -> Session | None:
         return session
 
 
-async def mark_complete(message_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+async def mark_complete(message_id: int, chat_id: int | None = None) -> None:
+    chat_id = current_chat_id(chat_id)
+    async with database() as db:
         await db.execute(
-            "UPDATE sessions SET is_complete = 1, completed_at = COALESCE(completed_at, ?) WHERE message_id = ?",
-            (time.time(), message_id),
+            """UPDATE sessions SET is_complete = true, completed_at = COALESCE(completed_at, %s) WHERE chat_id = %s
+            AND message_id = %s""",
+            (timestamp(time.time()), chat_id, message_id),
         )
         await db.commit()
 
 
-async def mark_expired(message_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+async def mark_expired(message_id: int, chat_id: int | None = None) -> None:
+    chat_id = current_chat_id(chat_id)
+    async with database() as db:
         await db.execute(
-            "UPDATE sessions SET is_closed = 1, is_expired = 1 WHERE message_id = ?",
-            (message_id,),
+            "UPDATE sessions SET is_closed = true, is_expired = true WHERE chat_id = %s AND message_id = %s",
+            (chat_id, message_id),
         )
         await db.commit()
 
 
-async def mark_closed(message_id: int) -> None:
+async def mark_closed(message_id: int, chat_id: int | None = None) -> None:
     """Close a live session without turning a previously filled squad into a failure."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE sessions SET is_closed = 1 WHERE message_id = ?", (message_id,))
+    chat_id = current_chat_id(chat_id)
+    async with database() as db:
+        await db.execute(
+            "UPDATE sessions SET is_closed = true WHERE chat_id = %s AND message_id = %s", (chat_id, message_id)
+        )
         await db.commit()
 
 
@@ -360,37 +239,35 @@ class ChatStats:
 
 async def get_chat_stats(chat_id: int) -> ChatStats:
     stats = ChatStats()
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-
+    async with database() as db:
         # Session counts
-        cur = await db.execute("SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ?", (chat_id,))
+        cur = await db.execute("SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = %s", (chat_id,))
         stats.total_sessions = (await cur.fetchone())["cnt"]
 
         cur = await db.execute(
-            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0",
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = %s AND is_complete = true AND is_expired = false",
             (chat_id,),
         )
         stats.completed_sessions = (await cur.fetchone())["cnt"]
 
         cur = await db.execute(
-            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_closed = 1 AND is_expired = 1",
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = %s AND is_closed = true AND is_expired = true",
             (chat_id,),
         )
         stats.expired_sessions = (await cur.fetchone())["cnt"]
 
         cur = await db.execute(
-            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = ? AND is_closed = 0",
+            "SELECT COUNT(*) as cnt FROM sessions WHERE chat_id = %s AND is_closed = false",
             (chat_id,),
         )
         stats.active_sessions = (await cur.fetchone())["cnt"]
 
         # Top players (most "go" responses in this chat)
         cur = await db.execute(
-            """SELECT r.user_name, COUNT(*) as cnt
+            """SELECT (array_agg(r.user_name ORDER BY r.responded_at DESC))[1] AS user_name, COUNT(*) as cnt
                FROM responses r
-               JOIN sessions s ON r.message_id = s.message_id
-               WHERE s.chat_id = ? AND r.response = 'go'
+               JOIN sessions s ON r.chat_id = s.chat_id AND r.message_id = s.message_id
+               WHERE s.chat_id = %s AND r.response = 'go'
                GROUP BY r.user_id
                ORDER BY cnt DESC
                LIMIT 10""",
@@ -400,9 +277,9 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
 
         # Top initiators
         cur = await db.execute(
-            """SELECT initiator_name, COUNT(*) as cnt
+            """SELECT (array_agg(initiator_name ORDER BY created_at DESC))[1] AS initiator_name, COUNT(*) as cnt
                FROM sessions
-               WHERE chat_id = ?
+               WHERE chat_id = %s
                GROUP BY initiator_id
                ORDER BY cnt DESC
                LIMIT 5""",
@@ -412,10 +289,10 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
 
         # Top passers
         cur = await db.execute(
-            """SELECT r.user_name, COUNT(*) as cnt
+            """SELECT (array_agg(r.user_name ORDER BY r.responded_at DESC))[1] AS user_name, COUNT(*) as cnt
                FROM responses r
-               JOIN sessions s ON r.message_id = s.message_id
-               WHERE s.chat_id = ? AND r.response = 'pass'
+               JOIN sessions s ON r.chat_id = s.chat_id AND r.message_id = s.message_id
+               WHERE s.chat_id = %s AND r.response = 'pass'
                GROUP BY r.user_id
                ORDER BY cnt DESC
                LIMIT 5""",
@@ -425,9 +302,10 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
 
         # Average and fastest fill time (only completed, non-expired sessions with completed_at)
         cur = await db.execute(
-            """SELECT AVG(completed_at - created_at) as avg_t, MIN(completed_at - created_at) as min_t
+            """SELECT AVG(EXTRACT(EPOCH FROM completed_at - created_at)) as avg_t,
+                      MIN(EXTRACT(EPOCH FROM completed_at - created_at)) as min_t
                FROM sessions
-               WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0 AND completed_at IS NOT NULL""",
+               WHERE chat_id = %s AND is_complete = true AND is_expired = false AND completed_at IS NOT NULL""",
             (chat_id,),
         )
         row = await cur.fetchone()
@@ -438,18 +316,18 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
         # Streaks
         cur = await db.execute(
             """SELECT message_id FROM sessions
-               WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0
+               WHERE chat_id = %s AND is_complete = true AND is_expired = false
                ORDER BY created_at DESC""",
             (chat_id,),
         )
         completed_ids = [row["message_id"] for row in await cur.fetchall()]
 
         if completed_ids:
-            placeholders = ",".join("?" * len(completed_ids))
+            placeholders = ",".join("%s" * len(completed_ids))
             cur = await db.execute(
                 f"""SELECT message_id, user_id, user_name FROM responses
-                    WHERE message_id IN ({placeholders}) AND response = 'go'""",
-                completed_ids,
+                    WHERE chat_id = %s AND message_id IN ({placeholders}) AND response = 'go'""",
+                [chat_id, *completed_ids],
             )
             go_by_session: dict[int, set[int]] = {mid: set() for mid in completed_ids}
             user_names: dict[int, str] = {}
@@ -471,11 +349,11 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
 
         # Best hours
         cur = await db.execute(
-            """SELECT CAST(strftime('%H', created_at + 3*3600, 'unixepoch') AS INTEGER) AS hour,
+            """SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Moscow')::integer AS hour,
                       COUNT(*) AS cnt,
-                      AVG(completed_at - created_at) AS avg_fill
+                      AVG(EXTRACT(EPOCH FROM completed_at - created_at)) AS avg_fill
                FROM sessions
-               WHERE chat_id = ? AND is_complete = 1 AND is_expired = 0 AND completed_at IS NOT NULL
+               WHERE chat_id = %s AND is_complete = true AND is_expired = false AND completed_at IS NOT NULL
                GROUP BY hour
                ORDER BY cnt DESC, avg_fill ASC
                LIMIT 2""",
@@ -488,46 +366,40 @@ async def get_chat_stats(chat_id: int) -> ChatStats:
 
 async def get_chat_participants(chat_id: int) -> list[tuple[int, str]]:
     """Return mentionable previous 'go' responders in this chat, most recent first."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with database() as db:
         cursor = await db.execute(
-            """SELECT r.user_id, r.user_name
-               FROM responses r
-               JOIN sessions s ON r.message_id = s.message_id
-               WHERE s.chat_id = ? AND r.response = 'go' AND r.is_bot = 0
-                 AND NOT EXISTS (
-                     SELECT 1 FROM afk_mutes a
-                     WHERE a.chat_id = s.chat_id
-                       AND a.user_id = r.user_id
-                       AND a.muted_until > ?
-                 )
-               GROUP BY r.user_id
-               ORDER BY MAX(r.responded_at) DESC
-               LIMIT 20""",
-            (chat_id, time.time()),
+            """SELECT user_id, user_name FROM (
+                   SELECT DISTINCT ON (r.user_id) r.user_id, r.user_name, r.responded_at
+                   FROM responses r WHERE r.chat_id = %s AND r.response = 'go' AND NOT r.is_bot
+                   AND NOT EXISTS (SELECT 1 FROM afk_mutes a WHERE a.chat_id = r.chat_id
+                       AND a.user_id = r.user_id AND a.muted_until > %s)
+                   ORDER BY r.user_id, r.responded_at DESC
+               ) recent ORDER BY responded_at DESC LIMIT 20""",
+            (chat_id, timestamp(time.time())),
         )
         return [(row["user_id"], row["user_name"]) for row in await cursor.fetchall()]
 
 
 async def set_afk(chat_id: int, user_id: int, muted_until: float) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         await db.execute(
-            "INSERT OR REPLACE INTO afk_mutes (chat_id, user_id, muted_until) VALUES (?, ?, ?)",
-            (chat_id, user_id, muted_until),
+            """INSERT INTO afk_mutes (chat_id, user_id, muted_until) VALUES (%s, %s, %s) ON CONFLICT (chat_id,
+            user_id) DO UPDATE SET muted_until = excluded.muted_until""",
+            (chat_id, user_id, timestamp(muted_until)),
         )
         await db.commit()
 
 
 async def clear_afk(chat_id: int, user_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM afk_mutes WHERE chat_id = ? AND user_id = ?", (chat_id, user_id))
+    async with database() as db:
+        await db.execute("DELETE FROM afk_mutes WHERE chat_id = %s AND user_id = %s", (chat_id, user_id))
         await db.commit()
 
 
 async def get_afk_until(chat_id: int, user_id: int) -> float | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         cursor = await db.execute(
-            "SELECT muted_until FROM afk_mutes WHERE chat_id = ? AND user_id = ?",
+            "SELECT muted_until FROM afk_mutes WHERE chat_id = %s AND user_id = %s",
             (chat_id, user_id),
         )
         row = await cursor.fetchone()
@@ -536,15 +408,15 @@ async def get_afk_until(chat_id: int, user_id: int) -> float | None:
 
 async def get_active_chat_ids(days: int = 14) -> list[int]:
     cutoff = time.time() - days * 86400
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT DISTINCT chat_id FROM sessions WHERE created_at > ?", (cutoff,))
+    async with database() as db:
+        cursor = await db.execute("SELECT DISTINCT chat_id FROM sessions WHERE created_at > %s", (timestamp(cutoff),))
         return [row[0] for row in await cursor.fetchall()]
 
 
 async def is_feature_enabled(chat_id: int, feature: str) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         cursor = await db.execute(
-            "SELECT enabled FROM chat_features WHERE chat_id = ? AND feature = ?",
+            "SELECT enabled FROM chat_features WHERE chat_id = %s AND feature = %s",
             (chat_id, feature),
         )
         row = await cursor.fetchone()
@@ -552,18 +424,19 @@ async def is_feature_enabled(chat_id: int, feature: str) -> bool:
 
 
 async def set_feature(chat_id: int, feature: str, enabled: bool, value: float | None = None) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         await db.execute(
-            "INSERT OR REPLACE INTO chat_features (chat_id, feature, enabled, value) VALUES (?, ?, ?, ?)",
-            (chat_id, feature, int(enabled), value),
+            """INSERT INTO chat_features (chat_id, feature, enabled, value) VALUES (%s, %s, %s, %s) ON CONFLICT
+            (chat_id, feature) DO UPDATE SET enabled = excluded.enabled, value = excluded.value""",
+            (chat_id, feature, enabled, value),
         )
         await db.commit()
 
 
 async def get_feature_value(chat_id: int, feature: str) -> float | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         cursor = await db.execute(
-            "SELECT value FROM chat_features WHERE chat_id = ? AND feature = ?",
+            "SELECT value FROM chat_features WHERE chat_id = %s AND feature = %s",
             (chat_id, feature),
         )
         row = await cursor.fetchone()
@@ -576,25 +449,28 @@ async def save_roast_state(
     roast_msg_ids: list[int] | None,
     last_roast: float | None,
 ) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         await db.execute(
-            """INSERT OR REPLACE INTO roast_state (chat_id, history_json, roast_msgs_json, last_roast)
-               VALUES (?, ?, ?, ?)""",
+            """INSERT INTO roast_state (chat_id, history_json, roast_msgs_json, last_roast) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (chat_id) DO UPDATE SET history_json = excluded.history_json,
+            roast_msgs_json = excluded.roast_msgs_json, last_roast = excluded.last_roast""",
             (
                 chat_id,
-                json.dumps(history_payload) if history_payload else None,
-                json.dumps(roast_msg_ids) if roast_msg_ids else None,
-                last_roast,
+                Jsonb(history_payload or []),
+                Jsonb(roast_msg_ids or []),
+                timestamp(last_roast),
             ),
         )
         await db.commit()
 
 
-async def load_all_roast_state() -> list[tuple[int, list[dict], list[int], float | None]]:
+async def load_all_roast_state(chat_id: int | None = None) -> list[tuple[int, list[dict], list[int], float | None]]:
     result: list[tuple[int, list[dict], list[int], float | None]] = []
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT chat_id, history_json, roast_msgs_json, last_roast FROM roast_state")
+    async with database() as db:
+        query = "SELECT chat_id, history_json, roast_msgs_json, last_roast FROM roast_state"
+        cursor = await db.execute(
+            query + " WHERE chat_id=%s" if chat_id is not None else query, (chat_id,) if chat_id is not None else ()
+        )
         rows = await cursor.fetchall()
     for row in rows:
         try:
@@ -609,15 +485,17 @@ async def load_all_roast_state() -> list[tuple[int, list[dict], list[int], float
     return result
 
 
-async def load_active_sessions() -> list[Session]:
+async def load_active_sessions(chat_id: int | None = None) -> list[Session]:
     result: list[Session] = []
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT message_id FROM sessions WHERE is_closed = 0")
+    async with database() as db:
+        query = "SELECT chat_id, message_id FROM sessions WHERE is_closed = false"
+        cursor = await db.execute(
+            query + " AND chat_id=%s" if chat_id is not None else query, (chat_id,) if chat_id is not None else ()
+        )
         rows = await cursor.fetchall()
 
     for row in rows:
-        session = await load_session(row["message_id"])
+        session = await load_session(row["message_id"], row["chat_id"])
         if session is not None:
             result.append(session)
     return result
@@ -640,21 +518,21 @@ async def save_epic_link(
     epic_name: str,
     epic_account_id: str,
 ) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         await db.execute(
-            """INSERT OR REPLACE INTO epic_links
-               (chat_id, user_id, user_name, epic_name, epic_account_id, linked_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (chat_id, user_id, user_name, epic_name, epic_account_id, time.time()),
+            """INSERT INTO epic_links (chat_id, user_id, user_name, epic_name, epic_account_id, linked_at) VALUES
+            (%s, %s, %s, %s, %s, %s) ON CONFLICT (chat_id, user_id) DO UPDATE SET user_name =
+            excluded.user_name, epic_name = excluded.epic_name, epic_account_id =
+            excluded.epic_account_id, linked_at = excluded.linked_at""",
+            (chat_id, user_id, user_name, epic_name, epic_account_id, timestamp(time.time())),
         )
         await db.commit()
 
 
 async def get_epic_link(chat_id: int, user_id: int) -> EpicLink | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with database() as db:
         cursor = await db.execute(
-            "SELECT * FROM epic_links WHERE chat_id = ? AND user_id = ?",
+            "SELECT * FROM epic_links WHERE chat_id = %s AND user_id = %s",
             (chat_id, user_id),
         )
         row = await cursor.fetchone()
@@ -671,10 +549,9 @@ async def get_epic_link(chat_id: int, user_id: int) -> EpicLink | None:
 
 
 async def get_chat_epic_links(chat_id: int) -> list[EpicLink]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with database() as db:
         cursor = await db.execute(
-            "SELECT * FROM epic_links WHERE chat_id = ? ORDER BY linked_at ASC",
+            "SELECT * FROM epic_links WHERE chat_id = %s ORDER BY linked_at ASC",
             (chat_id,),
         )
         rows = await cursor.fetchall()
@@ -723,15 +600,19 @@ async def save_squad_snapshot(
     overall_deaths_est: int | None = None,
     overall_kd: float | None = None,
 ) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         await db.execute(
-            """INSERT OR REPLACE INTO squad_snapshots
-               (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd,
-                overall_matches, overall_wins, overall_kills, overall_deaths_est, overall_kd)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO squad_snapshots (epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd,
+            overall_matches, overall_wins, overall_kills, overall_deaths_est, overall_kd) VALUES
+            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (epic_account_id,
+            fetched_at) DO UPDATE SET matches = excluded.matches, wins = excluded.wins, kills =
+            excluded.kills, deaths_est = excluded.deaths_est, kd = excluded.kd, overall_matches =
+            excluded.overall_matches, overall_wins = excluded.overall_wins, overall_kills =
+            excluded.overall_kills, overall_deaths_est = excluded.overall_deaths_est, overall_kd =
+            excluded.overall_kd""",
             (
                 epic_account_id,
-                fetched_at,
+                timestamp(fetched_at),
                 matches,
                 wins,
                 kills,
@@ -753,17 +634,16 @@ async def get_snapshot_before(
     """Closest snapshot at or before cutoff_ts. If floor_ts is given, the
     snapshot must also be no older than floor_ts — so a sparse history can't
     silently stretch the "last 7 days" window into several weeks."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with database() as db:
         sql = (
             "SELECT epic_account_id, fetched_at, matches, wins, kills, deaths_est, kd, "
             "overall_matches, overall_wins, overall_kills, overall_deaths_est, overall_kd "
-            "FROM squad_snapshots WHERE epic_account_id = ? AND fetched_at <= ?"
+            "FROM squad_snapshots WHERE epic_account_id = %s AND fetched_at <= %s"
         )
-        params: list = [epic_account_id, cutoff_ts]
+        params: list = [epic_account_id, timestamp(cutoff_ts)]
         if floor_ts is not None:
-            sql += " AND fetched_at >= ?"
-            params.append(floor_ts)
+            sql += " AND fetched_at >= %s"
+            params.append(timestamp(floor_ts))
         sql += " ORDER BY fetched_at DESC LIMIT 1"
         cursor = await db.execute(sql, params)
         row = await cursor.fetchone()
@@ -787,17 +667,17 @@ async def get_snapshot_before(
 
 async def cleanup_old_snapshots(older_than_days: int = 30) -> int:
     cutoff = time.time() - older_than_days * 86400
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         cursor = await db.execute(
-            "DELETE FROM squad_snapshots WHERE fetched_at < ?",
-            (cutoff,),
+            "DELETE FROM squad_snapshots WHERE fetched_at < %s",
+            (timestamp(cutoff),),
         )
         await db.commit()
         return cursor.rowcount
 
 
 async def get_chats_with_epic_links() -> list[int]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with database() as db:
         cursor = await db.execute("SELECT DISTINCT chat_id FROM epic_links")
         return [row[0] for row in await cursor.fetchall()]
 
@@ -811,12 +691,11 @@ async def set_last_weekly_drop(chat_id: int, ts: float) -> None:
 
 
 async def resolve_user_by_username(chat_id: int, username_with_at: str) -> tuple[int, str] | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with database() as db:
         cursor = await db.execute(
             """SELECT r.user_id, r.user_name
-               FROM responses r JOIN sessions s ON r.message_id = s.message_id
-               WHERE s.chat_id = ? AND LOWER(r.user_name) = LOWER(?) AND r.is_bot = 0
+               FROM responses r JOIN sessions s ON r.chat_id = s.chat_id AND r.message_id = s.message_id
+               WHERE s.chat_id = %s AND LOWER(r.user_name) = LOWER(%s) AND r.is_bot = false
                ORDER BY r.responded_at DESC LIMIT 1""",
             (chat_id, username_with_at),
         )

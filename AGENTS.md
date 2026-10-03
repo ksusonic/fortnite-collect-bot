@@ -1,38 +1,29 @@
 # AGENTS.md
 
-This file provides guidance to coding agents when working with code in this repository.
+## Project
 
-## Project overview
-
-Telegram bot for gathering a 4-player Fortnite squad via inline buttons in group chats. Command `/fort` starts a gathering session, users press a time-slot button or "Pass", the message updates in real-time, and keeps a four-player FIFO reserve after the squad fills. The bot also monitors Epic Games server status and can roast group members via xAI Grok.
-
-Stack: Python 3.14, aiogram 3.x, aiosqlite, xai-sdk, aiohttp, uv.
+Python 3.14 / aiogram 3.x Telegram bot for Fortnite gatherings. Production is FastAPI
+on Vercel plus Supabase Postgres, via Telegram webhooks. Use `uv` for every Python command.
+Do not use Docker or restore polling/SSH deployment. Preserve unrelated local files.
 
 ## Commands
 
 ```bash
-# Install dependencies
-uv sync
-
-# Run the bot locally (needs .env with BOT_TOKEN; XAI_API_KEY optional for /roast)
-uv run python -m bot
-
-# Run with Docker
-docker compose up -d
-
-# Check syntax/imports
-uv run python -c "from bot.handlers import router"
-
-# Lint & format
+uv sync --frozen
+uv run python -m bot serve
+uv run python -m bot migrate
+uv run python -m bot import /path/to/read-only-backup.db
+uv run python -m bot register-webhook https://production-domain
+uv run python -m bot webhook-info
 uv run ruff check --fix
 uv run ruff format
-
-# Install pre-commit hooks (one-time)
+TEST_DATABASE_URL=postgresql://localhost/fortnite_test uv run pytest -q
 uv run pre-commit install
-
-# Run pre-commit on all files
-uv run pre-commit run --all-files
 ```
+
+Tests require disposable Postgres and clear bot tables. Never use production URLs for tests.
+All `.env` variants are ignored; `config.example` contains placeholders only.
+Use Supabase tools for production database changes/imports/scheduling/verification.
 
 ## Bot commands (group chats only)
 
@@ -46,58 +37,48 @@ uv run pre-commit run --all-files
 - `/myfnstats` — sends a provider-rendered PNG card with caller's current-season BR stats (overall + per-input split); falls back to a text block if the image URL is absent or rejected by Telegram.
 - `/teamstats` — **last-7-days** squad aggregates for everyone in this chat who has linked an Epic account; MVP-of-the-week block, weekly summary, and a leaders `<pre>` table (top-5 by weekly wins) with medal column. Weekly numbers are derived from `squad_snapshots` deltas, not the season totals (provider has no weekly window). Players without a ~7-day-old baseline snapshot, or who didn't play this week, are listed in a "Вне недельного зачёта" section with a reason and excluded from the ranking/analysis. If nobody has weekly data yet, the command replies that snapshots are still accumulating. Appends an optional LLM analysis block from Grok if `XAI_API_KEY` is set. The bot also publishes `/teamstats` automatically every Friday at 21:00 MSK in chats with at least one linked Epic account (deduped via `chat_features.weekly_drop` with a 6-day window).
 
-## Linting & CI
 
-- **Pre-commit** (`.pre-commit-config.yaml`): runs `ruff-check --fix` and `ruff-format` on staged files. Install hooks with `uv run pre-commit install` after `uv sync`.
-- **CI** (`.github/workflows/lint.yml`): runs `ruff check` and `ruff format --check` on every PR via `astral-sh/ruff-action@v3`. Both must pass to merge.
-- **Ruff config** (`pyproject.toml`): line length 120, rules `E,F,W,I,B,UP`, double quotes.
+## Runtime invariants
 
-## Architecture
+- Postgres in private `fortnite_bot` schema is authoritative; invocation-local maps
+  are hydrated under a per-chat database advisory lock, including Telegram edits.
+- Use SSL and the session pooler on port 5432. Transaction pooler 6543 cannot carry
+  session advisory locks. Connections and HTTP clients close at invocation exit.
+- Sessions/responses use composite chat_id/message_id keys. One open session per chat
+  is enforced by a partial unique index. joined_at preserves FIFO across retries/restarts.
+- Completed Telegram/update/job actions are checkpointed. Reads replay their original
+  result; SQL writes commit atomically with their checkpoint. All branch inputs that
+  vary with time/randomness must use value_checkpoint; external results use external_checkpoint.
+- Never add detached tasks or endless loops. Work must be bounded and awaited.
+- Uncertain sends become ambiguous for manual review; never blindly resend. Keep the
+  causal chat queue blocked until the outcome is reconciled. Changing handler checkpoint
+  order requires draining or deliberately migrating incomplete work before rollout.
+- Store roast history, message IDs, cooldowns, status changes and job outcomes durably.
+- Keep HTML escaping of names and LLM replies, stored gathering styles/custom titles,
+  Go/Pass rendering, relative offers and reserve promotion behavior.
 
-All bot code lives in `bot/`:
+## Storage and recovery
 
-- `__main__.py` — entry point: creates Bot/Dispatcher, initializes DB, restores active sessions from SQLite into in-memory cache, starts background tasks (`expire_sessions`, `check_status_loop`, `cleanup_snapshots_loop`, `weekly_stats_drop_loop`), runs polling
-- `handlers.py` — aiogram Router with command handlers (`/fort`, `/rm`, `/stats`, `/roast`), callback query handler for slot/`go`/`pass` buttons, `maybe_roast` for non-command group messages, welcome message for new chat members; also contains `expire_sessions()` and `weekly_stats_drop_loop()` background coroutines. `_run_teamstats(bot, chat_id)` is the shared core of `/teamstats` reused by the weekly auto-drop.
-- `db.py` — SQLite persistence via aiosqlite; defines `Session`/`ChatStats`/`EpicLink`/`SquadSnapshot` dataclasses and module-level `sessions: dict[int, Session]` cache (keyed by message_id); all DB functions open a new connection per call. Tables: `sessions`, `responses`, `chat_features`, `roast_state`, `epic_links`, `squad_snapshots`
-- `messages.py` — text/keyboard builders; contains `_STYLES` list (19 randomized gathering themes), `_STATS_STYLES` (3 stats layouts), `generate_time_slots()`, constants (`SQUAD_SIZE=4`, `SESSION_TIMEOUT=3600`, `PLAY_DEADLINE_HOUR=23`); also `build_my_fn_stats_text`/`build_team_fn_stats_text` for Fortnite stat blocks
-- `roast.py` — xAI Grok integration (Unhinged persona via system prompt + `temperature=1.3`); manages per-chat dialog history (default 30 messages, both user and assistant turns) with 12-hour idle TTL, cooldown, probability roll, recent roast message-id tracking (so replies to bot's roasts force a new roast). Also exposes `generate_team_stats_roast(facts: str) -> str | None` — a stateless toxic analyzer of `/teamstats` numbers with its own dedicated system prompt, bypassing the per-chat `roast` feature toggle (gated only by `XAI_API_KEY`); fails silently to `None` on any error.
-- `status.py` — Fortnite server status monitoring via Epic Games status API; alerts active chats during 18:00–24:00 MSK on indicator changes (`down`/`degraded`/`restored`)
-- `fortnite.py` — `fortnite-api` SDK wrapper. Lazy singleton `Client` under `asyncio.Lock`, current-season BR stats fetch (`fetch_stats(name=...)` / `fetch_stats(account_id=..., with_image=...)`) via `TimeWindow.SEASON`. When `with_image=True`, requests `StatsImageType.ALL` and surfaces the provider's PNG URL as `PlayerStats.image_url`. In-memory TTL cache keyed by `(account_id, with_image)` with per-key `asyncio.Lock` coalescing, `asyncio.wait_for` per request, exception mapping (`EpicNameNotFound`/`StatsPrivate`/`StatsEmpty`/`FortniteUnavailable`). `StatsEmpty` carries `epic_account_id` and `epic_name` so callers can still persist a link for a player with 0 matches this season. After every successful API call (no cache hit) writes a squad-only snapshot row into `squad_snapshots` so `/teamstats` can compute 24h/7d deltas. `close()` shuts down the underlying aiohttp session at app exit.
+- `migrations/*.sql` are versioned; no schema changes or webhook registration at startup.
+- `importer.py` opens SQLite read-only, refuses nonempty targets, imports transactionally
+  and verifies counts, all normalized contents/keys and foreign keys. Preserve original backup.
+- Legacy terminal sessions close; joined_at backfills from responded_at. Missing AFK/titles
+  remain empty. Old news tables remain archives. Cleanup waits for verified import_manifest.
+- Never expose bot tables through the Data API. Keep schema privileges private and RLS enabled.
+- Preserve pre-launch export. Weekly stats need fresh baseline snapshots after recovery.
 
-## Key design decisions
+## Deployment and verification
 
-- **Dual storage**: in-memory `sessions` dict for fast access + SQLite for persistence across restarts. Cache is authoritative during runtime; SQLite is synced on every mutation.
-- **Session keyed by message_id**: each `/fort` creates one session tied to the bot's reply message_id. `is_closed` controls whether callbacks are accepted, while `is_complete` records that the squad reached four players at least once. Only one live session per chat is kept; a replacement closes the previous one.
-- **FIFO reserve**: `responses.joined_at` preserves Go order across slot changes and restarts. The first four ordered responses are confirmed and the next four are reserves. Per-session locks serialize callbacks; Pass removes a player and promotes the first reserve automatically.
-- **Relative time slots**: `generate_time_slots()` returns relative offer tokens `["now", "30", "60", "120"]` (minutes, from `SLOT_OFFERS_MIN`, capped at +2 h and trimmed by `PLAY_DEADLINE_HOUR`); `/fort <hour>` instead returns a single absolute `["HH:00"]`. Buttons use callback data `slot:<token>`; on press `on_callback` resolves a minute offer into an absolute `HH:MM` target (`now + offset`) and stores that string in `player_slots` / `responses.time_slot` (so the schema is unchanged — only the value's meaning is relative-resolved). `_player_eta_list` renders each player's ETA; legacy `HH:MM` tokens still render fine. After `PLAY_DEADLINE_HOUR` the background expirer also closes any open session.
-- **Traction-aware expiry**: `sweep_expired_sessions` uses `SESSION_TIMEOUT` (1 h) for sets with <2 `go`, but `SESSION_TIMEOUT_TRACTION` (3 h) once 2+ players are in — a set that gained traction usually fills in-game, so it isn't killed at the 1 h mark (fixes a morning set expiring 2 min before its own play time). `build_expired_text` closes softly when 2+ joined ("добивайте в игре") vs. the bare "сбор отменён" when nobody did.
-- **Tagged users**: at `/fort`, pulls last 20 distinct `go`-responders from `responses` (excluding bots, the initiator, and users with an active per-chat `afk_mutes` row) into `session.tagged_users`. They render as a `📣 @user1 @user2…` line until each responds.
-- **Per-chat feature toggles**: `chat_features` table stores `(chat_id, feature, enabled, value REAL)`. Currently used for `roast` with optional custom probability. Use `set_feature` / `is_feature_enabled` / `get_feature_value`.
-- **Roast forcing**: even with cooldown/probability not met, a reply to a known bot-roast message OR a `@bot` mention forces a roast. Bot tracks its own roast message ids per chat in a deque (size 100).
-- **Roast dialog memory**: `_RECENT[chat_id]` is a deque of `HistoryEntry(role, name, text, ts, message_id, reply_to_id)` capped at `ROAST_HISTORY_SIZE`. User messages and bot replies both go in (bot's roast captured after send). On any new entry, if the last record is older than `ROAST_HISTORY_TTL_SEC`, the deque is cleared first — so a chat that's been silent > 12 h starts a fresh context. `generate_roast` collapses adjacent user entries into one `user(...)` turn (lines `Имя: текст`) interleaved with `assistant(...)` turns; `reply_to_id` is resolved against the deque to inject `(в ответ на сообщение от X: «…»)` into the final user turn.
-- **Style index**: random style chosen at session creation, stored in DB `style` column, used consistently for all updates of that message.
-- **HTML parse mode**: set globally via `DefaultBotProperties`. User names rendered as `<a href="tg://user?id=...">` deep links with `html.escape()`. Roast text is also `html.escape()`-d before sending.
-- **DB migrations**: `init_db()` issues idempotent `ALTER TABLE ADD COLUMN ...` statements wrapped in `try/except` — schema upgrades run in-place on every startup, no migration framework. New columns must be nullable or have a default.
-- **DB_PATH env var**: defaults to `bot.db` locally; set to `/app/data/bot.db` in Docker via docker-compose to use the persistent `bot-data` volume.
-- **Fortnite stats are current-season only**: provider (`fortnite-api.com`) is called with `TimeWindow.SEASON` everywhere — no `lifetime` toggle. `/myfnstats` requests `StatsImageType.ALL`, gets back a PNG URL from the provider, and sends it via `bot.answer_photo(photo=url, caption=...)` so Telegram downloads the image itself (no local download, no Pillow). If the URL is missing or rejected (`TelegramBadRequest`), the handler falls back to the text builder. `/teamstats` always uses `with_image=False`. Each player must enable Public Game Stats in their Fortnite settings or the API returns 403 (mapped to `StatsPrivate`); an account with 0 matches this season raises `StatsEmpty` (success-shaped exception that still carries `epic_account_id`/`epic_name` so `/linkepicfor` can link new players at the start of a season). Cache lives in memory only (`STATS_TTL_SEC`, default 600 s) — restart drops it. Cache key is `(account_id, with_image)` so the image-bearing and image-less variants are kept separately. No background prefetch; all fetches are on-demand. Per-key `asyncio.Lock` coalesces concurrent fetches during `/teamstats`.
-- **Squad snapshots drive the weekly view**: snapshots are written lazily inside `fetch_stats` after a successful API call (no background fetching, no cache-hit writes). `cleanup_snapshots_loop` trims rows older than 30 days once a day. Inside `_run_teamstats`, `_compute_team_deltas` reads the closest snapshot ≥24h/≥7d old (PK + index reads, cheap, sequential) and computes per-player deltas `(d_matches, d_wins, d_kills, period_kd)`. `_build_weekly_view` then turns the 7d delta into a synthetic `PlayerStats` whose `squad`/`overall` fields hold the weekly statline, and feeds it into the same `build_team_fn_stats_text` builders — so the entire `/teamstats` message (HTML + Grok facts) is now last-7-days, not season. The 24h delta is still passed as an intra-week "freshness" block in the Grok facts. Players whose current `squad.matches < snapshot.matches` are dropped (season reset); players with no 7d baseline or 0 weekly matches go to the "Вне недельного зачёта" section and the Grok prompt is told not to judge them.
-- **Weekly /teamstats auto-drop**: `weekly_stats_drop_loop` fires every 5 min and triggers `_run_teamstats` for each chat with linked Epic accounts on Fridays 21:00–21:59 MSK. Dedup uses `chat_features` with `feature='weekly_drop'` and `value=last_drop_ts`; a 6-day cutoff guarantees at most one drop per Friday. With `silent_on_empty=True` it stays quiet when there are no successes or no weekly data (no snapshots old enough yet). No catch-up if the bot was down through the window. No toggle (YAGNI).
-
-## Environment variables
-
-| Variable | Required | Default | Purpose |
-|---|---|---|---|
-| `BOT_TOKEN` | yes | — | Telegram bot token |
-| `DB_PATH` | no | `bot.db` | SQLite file path |
-| `XAI_API_KEY` | no | — | Required for `/roast`; without it, roast is silently disabled |
-| `LOG_LEVEL` | no | `INFO` | Python logging level |
-| `ROAST_PROBABILITY` | no | `0.05` | Default chance per non-command group message to trigger a roast |
-| `ROAST_COOLDOWN_SEC` | no | `600` | Min seconds between roasts per chat |
-| `ROAST_HISTORY_SIZE` | no | `30` | Max messages (user + bot) kept per chat for roast context |
-| `ROAST_HISTORY_TTL_SEC` | no | `43200` | Idle seconds after which roast history is dropped on next message (default 12 h) |
-| `ROAST_MODEL` | no | `grok-3-mini` | xAI model id |
-| `ROAST_REQUEST_TIMEOUT` | no | `45` | xAI client RPC timeout in seconds |
-| `FORTNITE_API_KEY` | no | — | Required for `/linkepicfor`, `/myfnstats`, `/teamstats`; without it those commands answer "not configured" |
-| `FORTNITE_STATS_TTL_SEC` | no | `600` | In-memory TTL for cached Fortnite stats (per account_id) |
-| `FORTNITE_REQUEST_TIMEOUT` | no | `15` | Per-request timeout for the Fortnite API client (seconds) |
-| `ADMIN_USER_ID` | no | — | Telegram user_id of the single bot admin; required for `/linkepicfor`. Without it that command answers "not configured" |
+- Production Vercel project: fortnite-collect-bot in Daniil’s projects.
+- `app.py` FastAPI entrypoint; Python 3.14, fra1, 300-second function duration.
+- Production requires BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, CRON_SECRET, PUBLIC_BASE_URL,
+  and DATABASE_URL or integration-provided POSTGRES_URL_NON_POOLING. Optional xAI/Fortnite/admin
+  settings are documented in README. Previews need separate bot/database/API credentials.
+- Register stable production webhook explicitly only after verification, with secret_token,
+  max_connections=1, router-used update types and drop_pending_updates=false.
+- Supabase Cron/pg_net call authenticated job routes; URL/secret live in Vault.
+  See ops/schedules.sql. Verify actual HTTP outcomes, not only cron SQL success.
+- CI runs Ruff check/format and Postgres-backed tests. Check group membership, pin/delete
+  permissions, command menus and privacy mode separately from automated unit tests.
+- Keep source checks, CI, deployed behavior, Telegram webhook status and actual scheduled
+  outcomes separate when reporting completion.

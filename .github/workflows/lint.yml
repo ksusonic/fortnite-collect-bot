@@ -9,6 +9,8 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgresql://runner:test-only@127.0.0.1:5432/fortnite_test
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -20,4 +22,8 @@ jobs:
       - name: Smoke import
         run: uv run python -c "from bot.handlers import router; print(router)"
       - name: Pytest
-        run: uv run pytest -q
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE runner WITH LOGIN SUPERUSER PASSWORD 'test-only';"
+          sudo -u postgres createdb -O runner fortnite_test
+          uv run pytest -q

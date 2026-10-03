@@ -6,8 +6,11 @@ import os
 import random
 import time
 from collections import deque
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
+
+from bot.storage import ContextMap
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +27,12 @@ class HistoryEntry:
     reply_to_id: int | None = None
 
 
-_RECENT: dict[int, deque[HistoryEntry]] = {}
-_LAST_ROAST: dict[int, float] = {}
-_ROAST_MESSAGE_IDS: dict[int, deque[int]] = {}
+_RECENT = ContextMap("roast_recent")
+_LAST_ROAST = ContextMap("last_roast")
+_ROAST_MESSAGE_IDS = ContextMap("roast_message_ids")
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(3)
-_ROAST_LOCKS: dict[int, asyncio.Lock] = {}
-_client = None
+_ROAST_LOCKS = ContextMap("roast_locks")
+_client_context = ContextVar("roast_client", default=None)
 
 ROAST_PROBABILITY = float(os.getenv("ROAST_PROBABILITY", "0.05"))
 ROAST_COOLDOWN_SEC = int(os.getenv("ROAST_COOLDOWN_SEC", "600"))
@@ -137,36 +140,17 @@ def _evict_if_stale(bucket: deque[HistoryEntry]) -> None:
         bucket.clear()
 
 
-def _schedule_persist(chat_id: int) -> None:
-    """Fire-and-forget DB write of current in-memory roast state for chat_id."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return  # no loop (e.g. unit tests calling remember_* synchronously) — skip persistence
-    history = list(_RECENT.get(chat_id, ()))
-    msgs = list(_ROAST_MESSAGE_IDS.get(chat_id, ()))
-    last = _LAST_ROAST.get(chat_id)
-    payload = [
-        {
-            "role": e.role,
-            "name": e.name,
-            "text": e.text,
-            "ts": e.ts,
-            "message_id": e.message_id,
-            "reply_to_id": e.reply_to_id,
-        }
-        for e in history
-    ]
+async def persist_roast_state(chat_id: int) -> None:
+    from dataclasses import asdict
+
     from bot.db import save_roast_state
 
-    task = loop.create_task(save_roast_state(chat_id, payload, msgs, last))
-    task.add_done_callback(_log_persist_errors)
-
-
-def _log_persist_errors(task: asyncio.Task) -> None:
-    exc = task.exception()
-    if exc is not None:
-        logger.warning("roast state persist failed", exc_info=exc)
+    await save_roast_state(
+        chat_id,
+        [asdict(e) for e in _RECENT.get(chat_id, ())],
+        list(_ROAST_MESSAGE_IDS.get(chat_id, ())),
+        _LAST_ROAST.get(chat_id),
+    )
 
 
 def remember_message(
@@ -188,7 +172,6 @@ def remember_message(
             reply_to_id=reply_to_id,
         )
     )
-    _schedule_persist(chat_id)
 
 
 def remember_bot_message(chat_id: int, text: str, message_id: int) -> None:
@@ -203,14 +186,12 @@ def remember_bot_message(chat_id: int, text: str, message_id: int) -> None:
             message_id=message_id,
         )
     )
-    _schedule_persist(chat_id)
 
 
 def remember_roast_message(chat_id: int, message_id: int) -> None:
     if chat_id not in _ROAST_MESSAGE_IDS:
         _ROAST_MESSAGE_IDS[chat_id] = deque(maxlen=ROAST_TRACK_SIZE)
     _ROAST_MESSAGE_IDS[chat_id].append(message_id)
-    _schedule_persist(chat_id)
 
 
 def is_roast_message(chat_id: int, message_id: int) -> bool:
@@ -300,7 +281,7 @@ async def generate_roast(
     target_message_id: int | None = None,
     reply_to_id: int | None = None,
 ) -> str | None:
-    global _client
+    _client = _client_context.get()
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
         logger.warning("roast skip: XAI_API_KEY not set")
@@ -310,6 +291,7 @@ async def generate_roast(
         from xai_sdk import AsyncClient
 
         _client = AsyncClient(api_key=api_key, timeout=REQUEST_TIMEOUT)
+        _client_context.set(_client)
 
     from xai_sdk.chat import system, user
 
@@ -361,7 +343,7 @@ async def generate_roast(
             reply = response.content
             if reply:
                 _LAST_ROAST[chat_id] = time.time()
-                _schedule_persist(chat_id)
+
                 logger.info("roast ok: chat=%s len=%d attempt=%d", chat_id, len(reply), attempt)
                 return reply.strip()
             logger.warning("roast empty response: chat=%s attempt=%d", chat_id, attempt)
@@ -391,7 +373,7 @@ async def generate_team_stats_roast(facts: str) -> str | None:
     XAI_API_KEY env var. Returns None on any failure (network, timeout, empty
     response, missing API key) so the caller can degrade gracefully.
     """
-    global _client
+    _client = _client_context.get()
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
         return None
@@ -402,6 +384,7 @@ async def generate_team_stats_roast(facts: str) -> str | None:
         from xai_sdk import AsyncClient
 
         _client = AsyncClient(api_key=api_key, timeout=REQUEST_TIMEOUT)
+        _client_context.set(_client)
 
     from xai_sdk.chat import system, user
 
@@ -436,7 +419,7 @@ async def generate_fort_header(chat_id: int) -> str | None:
     style header. The returned string contains a {name} placeholder for the
     initiator link.
     """
-    global _client
+    _client = _client_context.get()
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
         return None
@@ -445,6 +428,7 @@ async def generate_fort_header(chat_id: int) -> str | None:
         from xai_sdk import AsyncClient
 
         _client = AsyncClient(api_key=api_key, timeout=REQUEST_TIMEOUT)
+        _client_context.set(_client)
 
     from xai_sdk.chat import system, user
 
@@ -480,3 +464,10 @@ async def generate_fort_header(chat_id: int) -> str | None:
     except Exception:
         logger.warning("fort-header request failed", exc_info=True)
         return None
+
+
+async def close() -> None:
+    client = _client_context.get()
+    if client is not None:
+        await client.close()
+        _client_context.set(None)

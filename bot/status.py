@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 import aiohttp
-
-from bot.db import get_active_chat_ids
 
 logger = logging.getLogger(__name__)
 
@@ -171,41 +168,3 @@ async def broadcast_alert(bot: object, chat_ids: list[int], text: str) -> None:
         return
     semaphore = asyncio.Semaphore(BROADCAST_CONCURRENCY)
     await asyncio.gather(*(_send_alert(bot, cid, text, semaphore) for cid in chat_ids))
-
-
-async def check_status_loop(bot: object) -> None:
-    global _last_status
-
-    from aiogram import Bot
-
-    assert isinstance(bot, Bot)
-
-    await asyncio.sleep(10)  # let the bot start up
-
-    async with aiohttp.ClientSession() as http:
-        while True:
-            try:
-                now = datetime.now(MSK)
-                hour = now.hour
-
-                if ALERT_START_HOUR <= hour or hour < ALERT_END_HOUR:
-                    status = await fetch_status(http)
-                    if status is not None:
-                        change = detect_change(_last_status, status)
-                        if change is not None:
-                            now_ts = time.time()
-                            if _should_emit_alert(change, now_ts):
-                                text = build_alert(change, status)
-                                chat_ids = await get_active_chat_ids()
-                                logger.info("status alert broadcast: change=%s chats=%d", change, len(chat_ids))
-                                await broadcast_alert(bot, chat_ids, text)
-                                _last_alert_sent[change] = now_ts
-                            else:
-                                logger.info("status alert suppressed (dedup): change=%s", change)
-                        _last_status = status
-                else:
-                    _last_status = None
-            except Exception:
-                logger.error("Error in status check loop", exc_info=True)
-
-            await asyncio.sleep(POLL_INTERVAL)
