@@ -24,6 +24,9 @@ Supabase Postgres. App Router также служит основой будущ�
 
 Node.js 24 LTS и pnpm. Пакеты устанавливаются
 напрямую с `registry.npmjs.org`, без proxy. `.nvmrc` фиксирует Node major.
+TypeScript 7 (`@typescript/native`) выполняет `pnpm typecheck`; alias `typescript`
+на `@typescript/typescript6` предоставляет compiler API для ESLint и Next.js.
+Типы Node.js остаются на major 24, как production runtime.
 
 ```bash
 pnpm install --frozen-lockfile
