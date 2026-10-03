@@ -96,6 +96,8 @@ async def inspect_bot(request: Request):
             await conn.execute("SELECT status,count(*) AS count FROM work_items GROUP BY status")
         ).fetchall()
     async with bot_client() as bot:
+        from aiogram.types import BotCommandScopeAllGroupChats
+
         me = await bot.get_me()
         memberships = []
         for row in chats:
@@ -120,5 +122,7 @@ async def inspect_bot(request: Request):
             "webhook": (await bot.get_webhook_info()).model_dump(mode="json"),
             "memberships": memberships,
             "work": counts,
-            "commands": [command.model_dump() for command in await bot.get_my_commands()],
+            "commands": [
+                command.model_dump() for command in await bot.get_my_commands(scope=BotCommandScopeAllGroupChats())
+            ],
         }

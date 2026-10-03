@@ -21,5 +21,6 @@ async def setup_bot_commands(bot: Bot) -> None:
     try:
         await bot.set_my_commands(GROUP_COMMANDS, scope=BotCommandScopeAllGroupChats())
         await bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
+        await bot.delete_my_commands()
     except Exception:
         logger.warning("set_my_commands failed", exc_info=True)
