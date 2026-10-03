@@ -1,11 +1,10 @@
 name: CI
-
 on:
   pull_request:
-
+  push:
+    branches: [main]
 permissions:
   contents: read
-
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -13,17 +12,19 @@ jobs:
       TEST_DATABASE_URL: postgresql://runner:test-only@127.0.0.1:5432/fortnite_test
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - run: uv sync --frozen
-      - name: Ruff check
-        run: uv run ruff check --output-format=github
-      - name: Ruff format check
-        run: uv run ruff format --check
-      - name: Smoke import
-        run: uv run python -c "from bot.handlers import router; print(router)"
-      - name: Pytest
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - name: Postgres-backed tests
         run: |
           sudo systemctl start postgresql
           sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE runner WITH LOGIN SUPERUSER PASSWORD 'test-only';"
           sudo -u postgres createdb -O runner fortnite_test
-          uv run pytest -q
+          pnpm test
+      - run: pnpm build
