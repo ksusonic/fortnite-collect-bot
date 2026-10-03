@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import time
 
-import aiosqlite
 import pytest
 
 from bot import db as db_module
@@ -21,6 +19,7 @@ from bot.db import (
     save_session,
     set_afk,
 )
+from bot.storage import Jsonb, database
 
 
 @pytest.fixture
@@ -61,10 +60,10 @@ async def test_load_session_handles_malformed_tag_line(tmp_db, make_session):
     s = make_session(tagged_users={})
     await save_session(s)
     # Inject malformed JSON into tag_line directly.
-    async with aiosqlite.connect(tmp_db) as db:
+    async with database() as db:
         await db.execute(
-            "UPDATE sessions SET tag_line = ? WHERE message_id = ?",
-            ("not a json", s.message_id),
+            "UPDATE sessions SET tag_line = %s WHERE message_id = %s",
+            (Jsonb("not a json"), s.message_id),
         )
         await db.commit()
 
@@ -76,11 +75,11 @@ async def test_load_session_handles_malformed_tag_line(tmp_db, make_session):
 async def test_load_session_handles_non_dict_tag_line(tmp_db, make_session):
     s = make_session(tagged_users={})
     await save_session(s)
-    async with aiosqlite.connect(tmp_db) as db:
+    async with database() as db:
         # JSON that parses but doesn't have .items() → AttributeError path.
         await db.execute(
-            "UPDATE sessions SET tag_line = ? WHERE message_id = ?",
-            (json.dumps([1, 2, 3]), s.message_id),
+            "UPDATE sessions SET tag_line = %s WHERE message_id = %s",
+            (Jsonb([1, 2, 3]), s.message_id),
         )
         await db.commit()
 
@@ -89,51 +88,19 @@ async def test_load_session_handles_non_dict_tag_line(tmp_db, make_session):
     assert loaded.tagged_users == {}
 
 
-async def test_legacy_migration_closes_terminal_sessions_and_backfills_fifo(tmp_path, monkeypatch):
-    db_file = tmp_path / "legacy.db"
-    monkeypatch.setattr(db_module, "DB_PATH", str(db_file))
-    async with aiosqlite.connect(db_file) as db:
-        await db.execute(
-            """CREATE TABLE sessions (
-                message_id INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, initiator_id INTEGER NOT NULL,
-                initiator_name TEXT NOT NULL, is_complete INTEGER NOT NULL DEFAULT 0,
-                is_expired INTEGER NOT NULL DEFAULT 0, style INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL, completed_at REAL, time_slots TEXT, tag_line TEXT, llm_header TEXT
-            )"""
-        )
-        await db.execute(
-            """CREATE TABLE responses (
-                message_id INTEGER NOT NULL, user_id INTEGER NOT NULL, user_name TEXT NOT NULL,
-                response TEXT NOT NULL, responded_at REAL NOT NULL, time_slot TEXT, is_bot INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (message_id, user_id)
-            )"""
-        )
-        await db.execute("INSERT INTO sessions VALUES (1, -100, 1, '@host', 1, 0, 0, 100, 120, NULL, NULL, NULL)")
-        await db.execute("INSERT INTO responses VALUES (1, 10, '@p1', 'go', 110, 'now', 0)")
-        await db.commit()
-
-    await db_module.init_db()
-
-    async with aiosqlite.connect(db_file) as db:
-        session_row = await (await db.execute("SELECT is_closed FROM sessions WHERE message_id = 1")).fetchone()
-        response_row = await (await db.execute("SELECT joined_at FROM responses WHERE user_id = 10")).fetchone()
-    assert session_row == (1,)
-    assert response_row == (110.0,)
-
-
 async def test_load_active_sessions_keeps_filled_live_but_skips_closed_and_expired(tmp_db, make_session):
     active = make_session()
-    filled_live = make_session()
+    filled_live = make_session(chat_id=-200)
     filled_live.is_complete = True
-    closed = make_session()
+    closed = make_session(is_closed=True)
     closed.is_complete = True
-    expired = make_session()
+    expired = make_session(is_closed=True)
     expired.is_expired = True
 
     for s in (active, filled_live, closed, expired):
         await save_session(s)
 
-    await mark_complete(filled_live.message_id)
+    await mark_complete(filled_live.message_id, filled_live.chat_id)
     await mark_closed(closed.message_id)
     await mark_expired(expired.message_id)
 
@@ -297,3 +264,15 @@ async def test_roast_state_roundtrip(tmp_db):
     assert len(history) == 2
     assert msgs == [2, 5, 7]
     assert last is not None
+
+
+async def test_stats_count_player_once_after_name_change(tmp_db):
+    first = Session(chat_id=-100, message_id=1, initiator_id=1, initiator_name="Old host", is_closed=True)
+    second = Session(chat_id=-100, message_id=2, initiator_id=1, initiator_name="New host")
+    await save_session(first)
+    await save_session(second)
+    await save_response(1, 10, "Old name", "go", chat_id=-100)
+    await save_response(2, 10, "New name", "go", chat_id=-100)
+    stats = await db_module.get_chat_stats(-100)
+    assert stats.top_players == [("New name", 2)]
+    assert stats.top_initiators == [("New host", 2)]

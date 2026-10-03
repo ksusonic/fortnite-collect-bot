@@ -1,56 +1,87 @@
 # Коробочка Fortnite Bot
 
-[![Docker](https://github.com/ksusonic/fortnite-collect-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/ksusonic/fortnite-collect-bot/actions/workflows/docker-publish.yml)
-[![CodeQL](https://github.com/ksusonic/fortnite-collect-bot/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/ksusonic/fortnite-collect-bot/actions/workflows/github-code-scanning/codeql)
-[![Lint](https://github.com/ksusonic/fortnite-collect-bot/actions/workflows/lint.yml/badge.svg)](https://github.com/ksusonic/fortnite-collect-bot/actions/workflows/lint.yml)
+Telegram-бот для сбора Fortnite-отряда: четыре игрока, FIFO-резерв, закрепление сбора,
+статистика, уведомления Epic и ответы Grok. Python 3.14, aiogram, FastAPI и Supabase Postgres.
+Работает на Vercel через Telegram webhook.
 
-Telegram-бот для сбора скуада в Fortnite на 4 человек. Команда `/fort` в группе создаёт сообщение с inline-кнопками по таймслотам — бот собирает голоса, обновляет сообщение в реальном времени и объявляет, когда команда готова. Дополнительно: мониторинг статуса серверов Epic, «режим отборной брани» через xAI Grok и блок текущей статистики Fortnite по всему чату.
+## Локальная разработка
 
-## Возможности
-
-- 🎯 **Сбор скуада** — `/fort` с кнопками таймслотов, тегами участников и FIFO-резервом на 4 места. Если игрок из основы пасует, первый резервист автоматически занимает его место.
-- 📌 **Активный сбор закреплён** — сообщение `/fort` автоматически закрепляется без уведомления и открепляется при истечении времени, замене новым сбором или `/rm`. Боту нужны права администратора на закрепление сообщений; без них сбор работает, а ошибка записывается в лог.
-- 📊 **Статистика чата** — `/stats`: топ игроков, скорость сбора, стрики, пиковые часы.
-- 🛰 **Алерты Epic** — фоновая проверка статуса серверов Fortnite, оповещения вечером (18:00–24:00 МСК).
-- 🔥 **Roast-режим** — `/roast on` подключает xAI Grok с дерзкой персоной (Unhinged), отвечающей на сообщения чата.
-- 🎮 **Fortnite stats** — `/linkepicfor`, `/myfnstats`, `/teamstats` тянут текущий сезон BR через `fortnite-api.com`, рисуют PNG-карточку, считают MVP и leaderboards по чату.
-- 🗓 **Еженедельный авто-дроп** — каждую пятницу в 21:00 МСК бот сам публикует `/teamstats` в чатах с привязанными Epic-аккаунтами.
-
-## Требования
-
-- [Docker](https://docs.docker.com/get-docker/) и Docker Compose
-- Telegram Bot Token (получить у [@BotFather](https://t.me/BotFather))
-- Опционально: `XAI_API_KEY` (для `/roast` и LLM-аналитики `/teamstats`) и `FORTNITE_API_KEY` (для команд по Fortnite-статистике)
-
-## Быстрый старт (Docker)
+Нужны Python 3.14, uv и отдельная локальная база Postgres 17.
 
 ```bash
-# 1. Клонировать репозиторий
-git clone https://github.com/ksusonic/fortnite-collect-bot.git
-cd fortnite-collect-bot
-
-# 2. Создать .env с токеном бота
-cp .env.example .env
-# Отредактировать .env — вписать BOT_TOKEN (остальные ключи опциональны)
-
-# 3. Запустить
-docker compose up -d
+cp config.example .env
+uv sync --frozen
+uv run python -m bot migrate
+uv run python -m bot serve
 ```
 
-Логи: `docker compose logs -f`. Остановить: `docker compose down`.
+Для локальной базы без SSL задайте `DATABASE_LOCAL_TEST=1`. В production SSL обязателен.
+`GET /health` проверяет загрузку приложения. Webhook принимает только запросы с
+`X-Telegram-Bot-Api-Secret-Token`. Приложение не регистрирует webhook при запуске.
 
-База хранится в bind-mount `./data` и переживает пересоздание контейнера.
+## Vercel и Supabase
 
-## Запуск без Docker
+Проект Vercel: `fortnite-collect-bot` в Daniil’s projects. FastAPI entrypoint — `app.py`.
+`vercel.json` задаёт Python-функцию на 300 секунд в `fra1`, рядом с подключённой
+Supabase-базой во Франкфурте. Используйте session pooler на порту 5432; порт 6543
+не поддерживает нужные session advisory locks.
 
-Требуется Python 3.14+ и [uv](https://docs.astral.sh/uv/).
+1. Примените SQL из `migrations/` по порядку через Supabase toolset и запишите
+   имена файлов в `fortnite_bot.migrations`. Для отдельной локальной базы доступна команда `migrate`.
+2. Задайте production-секреты из таблицы ниже. Vercel-интеграция уже предоставляет
+   `POSTGRES_URL_NON_POOLING`; этого достаточно, если `DATABASE_URL` не задан.
+3. Разверните проверенную ветку на production. `/health` должен возвращать HTTP 200
+   без входа в Vercel. Превью должны оставаться защищёнными и использовать отдельного
+   тестового бота, отдельную базу и отдельные API-ключи.
+4. После проверки выполните `uv run python -m bot register-webhook https://your-production-domain`
+   либо отправьте authenticated POST на `/api/admin/register-webhook`.
+   Регистрация устанавливает secret_token, max_connections=1, нужные router update types
+   и drop_pending_updates=false. GET `/api/admin/inspect` проверяет webhook, права и очередь.
+5. Через Supabase включите pg_cron и pg_net, сохраните production URL и CRON_SECRET
+   в Vault под именами `fortnite_bot_url` и `fortnite_bot_cron_secret`, затем примените
+   `ops/schedules.sql`. Все job/admin endpoints требуют `Authorization: Bearer <CRON_SECRET>`.
+
+Supabase Cron вызывает `/api/jobs/expiry` каждую минуту (также восстановление pending work),
+`status` каждые три минуты в 18:00–24:00 МСК, `weekly` каждые пять минут в пятницу
+21:00–21:59 МСК и `cleanup` ежедневно. UTC-расписания зафиксированы в SQL.
+`job_http_requests` сохраняет фактические HTTP-исходы, `work_items` — исходы обработки.
+Проверяйте оба: успех cron SQL означает постановку HTTP-запроса, а не выполнение job.
+
+Бот должен состоять в группе и иметь права на закрепление/удаление сообщений.
+Для roast нужна видимость обычных сообщений (проверьте privacy mode в BotFather).
+XAI_API_KEY сохраняет существующий Python SDK путь; Vercel Grok connector сейчас не используется.
+
+## Восстановление данных
 
 ```bash
-cp .env.example .env  # вписать BOT_TOKEN
-
-uv sync
-uv run python -m bot
+# Импорт только в пустую базу; SQLite открывается read-only.
+uv run python -m bot import /path/to/bot.db
 ```
+
+Импорт транзакционно переносит все поддержанные таблицы, нормализует старые поля,
+проверяет полное содержимое, ключи, количества и внешние ключи. Новые AFK/title данные
+пусты, если их не было в backup. Старые news-таблицы сохраняются как архивы.
+Очистка снапшотов разрешена только после появления `import_manifest`.
+Для импорта через Supabase tools можно сначала проверить backup в отдельной локальной
+базе и выполнить `PYTHONPATH=. uv run python scripts/export_verified_import.py`.
+Полученный SQL повторно проверяет содержимое до COMMIT.
+
+Храните исходный SQLite и pre-launch Postgres export вне Git. Нет восстановления
+данных новее backup. Старые снапшоты исторические: недельный зачёт возобновляется после
+накопления свежих baseline. При откате после запуска учитывайте новые записи Postgres.
+
+## Обработка повторов
+
+Postgres — источник истины. Сессии и ответы имеют составные ключи chat_id/message_id;
+частичный unique index допускает один открытый сбор на чат. Invocation-scoped соединения
+и advisory locks сериализуют изменения и Telegram edits в каждом чате.
+`work_steps` сохраняет checkpoints чтений, записей, внешних результатов и Telegram действий.
+Завершённые действия при retry не повторяются. Неопределённый исход send переводит работу
+в `ambiguous` и блокирует последующую обработку этого чата до проверки.
+Посмотрите request/result в `work_steps`, установите фактический исход, затем через
+Supabase исправьте checkpoint и верните item в pending; не сбрасывайте начатый send вслепую.
+Если отправку пришлось завершить вручную, отметьте item complete только после сверки
+Telegram и соответствующего состояния Postgres.
 
 ## Команды бота
 
@@ -78,14 +109,18 @@ uv run python -m bot
 
 Используется публичный API `fortnite-api.com`. Игрок должен включить **Public Game Stats** в настройках Fortnite, иначе API вернёт 403. Все запросы — за текущий сезон (`TimeWindow.SEASON`); общая статистика за всё время не поддерживается.
 
-Привязки `@user → Epic` хранятся в SQLite (таблица `epic_links`). Для `/teamstats` бот пишет ежедневные снапшоты в `squad_snapshots`, чтобы считать дельты за 24 ч и 7 дн.
+Привязки `@user → Epic` хранятся в Postgres (таблица `epic_links`). Для `/teamstats` бот пишет снапшоты при запросах статистики в `squad_snapshots`, чтобы считать дельты за 24 ч и 7 дн.
 
 ## Переменные окружения
 
 | Переменная | Обяз. | По умолчанию | Назначение |
 |---|---|---|---|
 | `BOT_TOKEN` | да | — | Токен Telegram-бота |
-| `DB_PATH` | нет | `bot.db` | Путь к SQLite (`/app/data/bot.db` в Docker) |
+| `DATABASE_URL` | да* | — | Supabase session pooler, порт 5432, SSL |
+| `POSTGRES_URL_NON_POOLING` | да* | — | Используется вместо DATABASE_URL при Vercel-интеграции Supabase |
+| `TELEGRAM_WEBHOOK_SECRET` | да | — | Секрет заголовка Telegram webhook |
+| `CRON_SECRET` | да | — | Bearer-секрет для job/admin endpoints |
+| `PUBLIC_BASE_URL` | да | — | Постоянный production URL без завершающего слеша |
 | `LOG_LEVEL` | нет | `INFO` | Уровень логирования |
 | `XAI_API_KEY` | нет | — | Ключ xAI; без него `/roast` и LLM-аналитика `/teamstats` отключены |
 | `ROAST_PROBABILITY` | нет | `0.05` | Вероятность срабатывания roast на сообщение |
@@ -99,33 +134,28 @@ uv run python -m bot
 | `FORTNITE_REQUEST_TIMEOUT` | нет | `15` | Таймаут запроса к Fortnite API |
 | `ADMIN_USER_ID` | нет | — | Telegram user_id единственного админа бота (нужен для `/linkepicfor`) |
 
-## Разработка
+
+*Нужен один из DATABASE_URL или POSTGRES_URL_NON_POOLING. Все `.env`-варианты исключены из Git.
+
+## Проверка изменений
 
 ```bash
-# Lint + format
-uv run ruff check --fix
-uv run ruff format
-
-# Pre-commit хуки (один раз)
+uv run ruff check
+uv run ruff format --check
+TEST_DATABASE_URL=postgresql://localhost/fortnite_test uv run pytest -q
 uv run pre-commit install
-
-# Прогнать pre-commit по всем файлам
 uv run pre-commit run --all-files
-
-# Sanity-check: импорт роутера
-uv run python -c "from bot.handlers import router"
 ```
 
-CI (`.github/workflows/lint.yml`) гоняет `ruff check` + `ruff format --check` на каждый PR. Docker-образ публикуется через `.github/workflows/docker-publish.yml`, security-сканирование — через GitHub CodeQL.
+TEST_DATABASE_URL должен указывать на disposable Postgres: тесты очищают bot-таблицы.
+GitHub CI запускает Ruff и полный suite с локальной Postgres-базой runner.
 
 ## Архитектура
 
-Код бота — в `bot/`:
-
-- `__main__.py` — entry point: bot/dispatcher, инициализация БД, восстановление активных сессий, фоновые задачи (`expire_sessions`, `check_status_loop`, `cleanup_snapshots_loop`, `weekly_stats_drop_loop`).
-- `handlers.py` — aiogram Router: команды, callback-кнопки, `maybe_roast`, welcome, `_run_teamstats` (шара для еженедельного авто-дропа).
-- `db.py` — SQLite через aiosqlite; dataclasses `Session`/`ChatStats`/`EpicLink`/`SquadSnapshot`. Миграции — идемпотентные `ALTER TABLE ADD COLUMN` на старте.
-- `messages.py` — билдеры текста и клавиатур; 19 randomized тем сбора, 3 layout'а статистики; константы (`SQUAD_SIZE=4`, `PLAY_DEADLINE_HOUR=23`).
-- `roast.py` — xAI Grok (Unhinged + `temperature=1.3`), per-chat dialog memory, `generate_team_stats_roast` для `/teamstats`.
-- `status.py` — мониторинг Epic Games status API.
-- `fortnite.py` — обёртка над `fortnite-api` SDK: ленивый клиент, кеш с `asyncio.Lock`-coalescing, маппинг ошибок (`EpicNameNotFound`/`StatsPrivate`/`StatsEmpty`/`FortniteUnavailable`).
+- `app.py` — HTTP/auth, webhook, jobs и защищённые maintenance endpoints.
+- `bot/runtime.py`, `work.py`, `storage.py` — invocation lifecycle, durable replay и locks.
+- `bot/db.py`, `migrations/`, `importer.py` — Postgres хранилище и recovery.
+- `bot/handlers.py`, `messages.py` — команды, FIFO-резерв и HTML-клавиатуры.
+- `bot/roast.py`, `fortnite.py`, `status.py` — Grok, сезонная статистика и Epic status.
+- `bot/jobs.py`, `ops/schedules.sql` — bounded jobs вместо фоновых циклов.
+- `bot/cli.py` — локальный сервер, миграции, импорт и явная регистрация webhook.

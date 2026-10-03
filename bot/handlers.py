@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -18,7 +19,6 @@ from aiogram.types import (
     Message,
     ReactionTypeEmoji,
 )
-from aiogram.utils.chat_action import ChatActionSender
 
 from bot import fortnite
 from bot.db import (
@@ -88,15 +88,22 @@ from bot.roast import (
     remember_roast_message,
     should_roast,
 )
+from bot.storage import ContextMap, database, timestamp, value_checkpoint
+from bot.work import external_checkpoint
+
+
+@asynccontextmanager
+async def typing_once(bot, chat_id):
+    await bot.send_chat_action(chat_id, "typing")
+    yield
+
 
 logger = logging.getLogger(__name__)
 
 FORT_REPLACE_COOLDOWN = 30  # per-user-per-chat cooldown between successful /fort attempts
 _AFK_DURATION_RE = re.compile(r"([1-9]\d{0,3})([dw])")
 
-# Strong refs to fire-and-forget background tasks so they aren't garbage-collected mid-flight.
-_bg_tasks: set[asyncio.Task] = set()
-_session_locks: dict[int, asyncio.Lock] = {}
+_session_locks = ContextMap("session_locks")
 
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0")) or None
 
@@ -152,7 +159,7 @@ def _epic_error_text(exc: FortniteError) -> str:
 
 # Last successful /fort timestamp per (chat_id, user_id). In-memory only —
 # a bot restart resets the cooldown, which is acceptable for spam protection.
-_fort_attempt_times: dict[tuple[int, int], float] = {}
+_fort_attempt_times = ContextMap("fort_attempt_times")
 
 
 def _prune_fort_attempts(now: float) -> None:
@@ -190,12 +197,12 @@ def _display_name(user) -> str:
 async def _apply_fort_llm_header(bot: Bot, session: Session) -> None:
     """Generate a Grok gather header (≤10s) and edit the /fort message in place.
 
-    Fire-and-forget from cmd_fort: the message is already shown with a hardcoded
+    Awaited by cmd_fort: the message is already shown with a hardcoded
     style, so any failure here is a silent no-op (graceful degradation). The
     session is the live in-memory object, so build_gather_text reflects any
     button presses that landed while we waited.
     """
-    header = await generate_fort_header(session.chat_id)
+    header = await external_checkpoint("fort-header", lambda: generate_fort_header(session.chat_id))
     if not header:
         return
     if session.is_closed:
@@ -256,7 +263,7 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
             await message.reply("Это время уже прошло. Для сбора прямо сейчас напиши <code>/fort</code> без числа.")
             return
 
-    now = time.time()
+    now = await value_checkpoint("fort-time", time.time)
     _prune_fort_attempts(now)
     cooldown_key = (message.chat.id, user.id)
     last_attempt = _fort_attempt_times.get(cooldown_key)
@@ -271,6 +278,12 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
             pass
         return
     _fort_attempt_times[cooldown_key] = now
+    async with database() as db:
+        await db.execute(
+            "INSERT INTO fort_cooldowns(chat_id,user_id,attempted_at) VALUES (%s,%s,%s) "
+            "ON CONFLICT(chat_id,user_id) DO UPDATE SET attempted_at=excluded.attempted_at",
+            (message.chat.id, user.id, timestamp(now)),
+        )
 
     active_session = next(
         (s for s in sessions.values() if s.chat_id == message.chat.id and not s.is_closed),
@@ -279,10 +292,10 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
     if active_session is not None:
         active_session.is_closed = True
         if active_session.is_complete:
-            await mark_closed(active_session.message_id)
+            await mark_closed(active_session.message_id, active_session.chat_id)
         else:
             active_session.is_expired = True
-            await mark_expired(active_session.message_id)
+            await mark_expired(active_session.message_id, active_session.chat_id)
         try:
             await message.bot.edit_message_text(
                 text=build_cancelled_text(active_session),
@@ -292,11 +305,11 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
         except TelegramBadRequest:
             pass
         await _set_session_pin(message.bot, active_session, pinned=False)
-        sessions.pop(active_session.message_id, None)
-        _session_locks.pop(active_session.message_id, None)
+        sessions.pop((active_session.chat_id, active_session.message_id), None)
+        _session_locks.pop((active_session.chat_id, active_session.message_id), None)
 
     name = _display_name(user)
-    slots = generate_time_slots(start_hour=target_hour)
+    slots = await value_checkpoint("fort-slots", lambda: generate_time_slots(start_hour=target_hour))
     participants = await get_chat_participants(message.chat.id)
     # Exclude the initiator from the tag list
     tagged_users = {uid: n for uid, n in participants if uid != user.id}
@@ -305,7 +318,8 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
         message_id=0,
         initiator_id=user.id,
         initiator_name=name,
-        style=random_style(),
+        style=await value_checkpoint("fort-style", random_style),
+        created_at=now,
         time_slots=slots,
         tagged_users=tagged_users,
         fort_title=await get_fort_title(message.chat.id),
@@ -316,14 +330,12 @@ async def cmd_fort(message: Message, command: CommandObject | None = None) -> No
     sent = await message.answer(text, reply_markup=keyboard)
 
     session.message_id = sent.message_id
-    sessions[sent.message_id] = session
+    sessions[(session.chat_id, sent.message_id)] = session
 
     await save_session(session)
     await _set_session_pin(message.bot, session, pinned=True)
 
-    task = asyncio.create_task(_apply_fort_llm_header(message.bot, session))
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
+    await _apply_fort_llm_header(message.bot, session)
 
     try:
         await message.delete()
@@ -487,7 +499,7 @@ async def cmd_linkepicfor(message: Message, command: CommandObject) -> None:
         return
     target_user_id, target_user_name = resolved
     try:
-        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        async with typing_once(bot=message.bot, chat_id=message.chat.id):
             stats = await fortnite.fetch_stats(name=epic_name)
     except StatsEmpty as exc:
         await save_epic_link(
@@ -534,7 +546,7 @@ async def cmd_myfnstats(message: Message) -> None:
         await message.answer("Тебя ещё не залинковали. Попроси админа: /linkepicfor @твой_ник EpicName")
         return
     try:
-        async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        async with typing_once(bot=message.bot, chat_id=message.chat.id):
             stats = await fortnite.fetch_stats(account_id=link.epic_account_id, with_image=True)
     except FortniteError as exc:
         await message.answer(_epic_error_text(exc))
@@ -568,7 +580,7 @@ async def _compute_team_deltas(
     overall migration have NULL overall_* and are treated as "no baseline".
     Players whose current matches < snapshot matches are dropped (season
     reset). A baseline older than *_BASELINE_MAX_AGE is rejected so a sparse
-    history can't stretch the window. 2 SQLite reads per player; with
+    history can't stretch the window. 2 Postgres reads per player; with
     N≤team-size and PK lookups it's cheap — kept sequential intentionally."""
     now = time.time()
     cutoff_24h = now - 24 * 3600
@@ -669,8 +681,8 @@ async def _run_teamstats(bot: Bot, chat_id: int, *, silent_on_empty: bool = Fals
             except FortniteError as exc:
                 return link, exc
 
-    async with ChatActionSender.typing(bot=bot, chat_id=chat_id):
-        results = await asyncio.gather(*(one(link) for link in links))
+    async with typing_once(bot=bot, chat_id=chat_id):
+        results = [await one(link) for link in links]
 
         successes = [(link, r) for link, r in results if not isinstance(r, FortniteError)]
         failures = [(link, r) for link, r in results if isinstance(r, FortniteError)]
@@ -695,7 +707,7 @@ async def _run_teamstats(bot: Bot, chat_id: int, *, silent_on_empty: bool = Fals
         )
 
         if facts and os.getenv("XAI_API_KEY"):
-            roast = await generate_team_stats_roast(facts)
+            roast = await external_checkpoint("team-roast", lambda: generate_team_stats_roast(facts))
             if roast:
                 html_text = _append_team_analysis(html_text, roast)
 
@@ -721,10 +733,10 @@ async def cmd_rm(message: Message) -> None:
     if active_session is not None:
         active_session.is_closed = True
         if active_session.is_complete:
-            await mark_closed(active_session.message_id)
+            await mark_closed(active_session.message_id, active_session.chat_id)
         else:
             active_session.is_expired = True
-            await mark_expired(active_session.message_id)
+            await mark_expired(active_session.message_id, active_session.chat_id)
         await _set_session_pin(message.bot, active_session, pinned=False)
         try:
             await message.bot.delete_message(
@@ -733,8 +745,8 @@ async def cmd_rm(message: Message) -> None:
             )
         except TelegramBadRequest:
             pass
-        sessions.pop(active_session.message_id, None)
-        _session_locks.pop(active_session.message_id, None)
+        sessions.pop((active_session.chat_id, active_session.message_id), None)
+        _session_locks.pop((active_session.chat_id, active_session.message_id), None)
 
     try:
         await message.delete()
@@ -809,18 +821,26 @@ async def maybe_roast(message: Message) -> None:
     forced = forced_by_reply or forced_by_mention
     async with get_roast_lock(chat_id):
         custom_prob = await get_feature_value(chat_id, "roast")
-        if not forced and not should_roast(chat_id, probability=custom_prob):
+        if not forced and not await value_checkpoint(
+            "roast-roll", lambda: should_roast(chat_id, probability=custom_prob)
+        ):
             return
         logger.info("roast attempt: chat=%s user=%s forced=%s", chat_id, user_name, forced)
-        async with ChatActionSender.typing(bot=message.bot, chat_id=chat_id):
-            reply = await generate_roast(
-                chat_id,
-                user_name,
-                text,
-                target_message_id=message.message_id,
-                reply_to_id=reply_to_id,
+        async with typing_once(bot=message.bot, chat_id=chat_id):
+            reply = await external_checkpoint(
+                "roast",
+                lambda: generate_roast(
+                    chat_id,
+                    user_name,
+                    text,
+                    target_message_id=message.message_id,
+                    reply_to_id=reply_to_id,
+                ),
             )
         if reply:
+            from bot.roast import _LAST_ROAST
+
+            _LAST_ROAST[chat_id] = await value_checkpoint("roast-time", time.time)
             payload = html.escape(reply)
             if len(payload) > TELEGRAM_MAX_MESSAGE_LEN:
                 payload = payload[: TELEGRAM_MAX_MESSAGE_LEN - 1] + "…"
@@ -838,13 +858,14 @@ async def on_callback(callback: CallbackQuery) -> None:
 
     message_id = callback.message.message_id
 
-    lock = _session_locks.setdefault(message_id, asyncio.Lock())
+    session_key = (callback.message.chat.id, message_id)
+    lock = _session_locks.setdefault(session_key, asyncio.Lock())
     async with lock:
-        session = sessions.get(message_id)
+        session = sessions.get(session_key)
         if session is None:
-            session = await load_session(message_id)
+            session = await load_session(message_id, callback.message.chat.id)
             if session is not None:
-                sessions[message_id] = session
+                sessions[session_key] = session
 
         if session is None:
             await callback.answer("Сбор устарел")
@@ -868,8 +889,9 @@ async def on_callback(callback: CallbackQuery) -> None:
             if offer == NOW_SLOT or not offer.isdigit():
                 stored_slot = offer
             else:
-                target = datetime.now(MSK) + timedelta(minutes=int(offer))
-                stored_slot = target.strftime("%H:%M")
+                stored_slot = await value_checkpoint(
+                    "callback-slot", lambda: (datetime.now(MSK) + timedelta(minutes=int(offer))).strftime("%H:%M")
+                )
         else:
             action = raw
 
@@ -912,12 +934,17 @@ async def on_callback(callback: CallbackQuery) -> None:
                 time_slot=stored_slot,
                 is_bot=callback.from_user.is_bot,
                 became_complete=became_complete,
+                chat_id=callback.message.chat.id,
             )
         except Exception:
             session.go_players = old_go
             session.pass_players = old_pass
             session.player_slots = old_slots
             logger.error("failed to persist gathering response for message %s", message_id, exc_info=True)
+            from bot.storage import _work
+
+            if _work.get() is not None:
+                raise
             await callback.answer("Не удалось сохранить ответ. Попробуй ещё раз.", show_alert=True)
             return
         if became_complete:
@@ -960,10 +987,10 @@ async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadli
     for session in expired:
         session.is_closed = True
         if session.is_complete:
-            await mark_closed(session.message_id)
+            await mark_closed(session.message_id, session.chat_id)
         else:
             session.is_expired = True
-            await mark_expired(session.message_id)
+            await mark_expired(session.message_id, session.chat_id)
         try:
             await bot.edit_message_text(
                 text=build_expired_text(session),
@@ -973,17 +1000,10 @@ async def sweep_expired_sessions(bot: Bot, now: float | None = None, past_deadli
         except TelegramBadRequest:
             pass
         await _set_session_pin(bot, session, pinned=False)
-        sessions.pop(session.message_id, None)
-        _session_locks.pop(session.message_id, None)
+        sessions.pop((session.chat_id, session.message_id), None)
+        _session_locks.pop((session.chat_id, session.message_id), None)
         expired_ids.append(session.message_id)
     return expired_ids
-
-
-async def expire_sessions(bot: Bot) -> None:
-    """Background task: expire sessions older than SESSION_TIMEOUT."""
-    while True:
-        await asyncio.sleep(60)
-        await sweep_expired_sessions(bot)
 
 
 # Weekly /teamstats auto-drop: Friday 21:00 MSK in every chat that has at least
@@ -1008,12 +1028,3 @@ async def _maybe_drop_weekly_stats(bot: Bot) -> None:
             await set_last_weekly_drop(chat_id, time.time())
         except Exception:
             logger.warning("weekly drop to chat %s failed", chat_id, exc_info=True)
-
-
-async def weekly_stats_drop_loop(bot: Bot) -> None:
-    while True:
-        try:
-            await _maybe_drop_weekly_stats(bot)
-        except Exception:
-            logger.warning("weekly stats drop failed", exc_info=True)
-        await asyncio.sleep(WEEKLY_DROP_INTERVAL_SEC)

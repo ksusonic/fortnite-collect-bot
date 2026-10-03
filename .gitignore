@@ -11,9 +11,13 @@ wheels/
 
 # Environment variables
 .env
+.env.*
+*.env
+*.env.*
+.vercel/
+.codex/
 
 # SQLite database
 *.db
 
 .claude/
-

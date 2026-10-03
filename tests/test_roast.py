@@ -13,8 +13,6 @@ def _reset_roast_state(monkeypatch):
     roast._RECENT.clear()
     roast._LAST_ROAST.clear()
     roast._ROAST_MESSAGE_IDS.clear()
-    # Prevent fire-and-forget DB writes from leaking into the real bot.db during unit tests.
-    monkeypatch.setattr(roast, "_schedule_persist", lambda _chat_id: None)
     yield
     roast._RECENT.clear()
     roast._LAST_ROAST.clear()
@@ -78,7 +76,7 @@ async def test_generate_roast_retries_on_transient_then_succeeds(monkeypatch):
 
     fake_chat = SimpleNamespace(sample=fake_sample)
     fake_client = SimpleNamespace(chat=SimpleNamespace(create=MagicMock(return_value=fake_chat)))
-    monkeypatch.setattr(roast, "_client", fake_client)
+    roast._client_context.set(fake_client)
 
     reply = await roast.generate_roast(chat_id=1, target_name="A", target_text="hi")
 
@@ -98,7 +96,7 @@ async def test_generate_roast_gives_up_after_max_attempts(monkeypatch):
 
     fake_chat = SimpleNamespace(sample=fake_sample)
     fake_client = SimpleNamespace(chat=SimpleNamespace(create=MagicMock(return_value=fake_chat)))
-    monkeypatch.setattr(roast, "_client", fake_client)
+    roast._client_context.set(fake_client)
 
     reply = await roast.generate_roast(chat_id=1, target_name="A", target_text="hi")
 
@@ -118,7 +116,7 @@ async def test_generate_roast_does_not_retry_non_retryable(monkeypatch):
 
     fake_chat = SimpleNamespace(sample=fake_sample)
     fake_client = SimpleNamespace(chat=SimpleNamespace(create=MagicMock(return_value=fake_chat)))
-    monkeypatch.setattr(roast, "_client", fake_client)
+    roast._client_context.set(fake_client)
 
     reply = await roast.generate_roast(chat_id=1, target_name="A", target_text="hi")
 
@@ -161,7 +159,7 @@ def _fort_client(content: str) -> SimpleNamespace:
 
 async def test_generate_fort_header_returns_line_with_placeholder(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "test")
-    monkeypatch.setattr(roast, "_client", _fort_client("🔥 {name} зовёт в катку, го"))
+    roast._client_context.set(_fort_client("🔥 {name} зовёт в катку, го"))
 
     reply = await roast.generate_fort_header(chat_id=1)
 
@@ -170,7 +168,7 @@ async def test_generate_fort_header_returns_line_with_placeholder(monkeypatch):
 
 async def test_generate_fort_header_injects_placeholder_when_missing(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "test")
-    monkeypatch.setattr(roast, "_client", _fort_client("го в катку, лудоманы"))
+    roast._client_context.set(_fort_client("го в катку, лудоманы"))
 
     reply = await roast.generate_fort_header(chat_id=1)
 
@@ -179,7 +177,7 @@ async def test_generate_fort_header_injects_placeholder_when_missing(monkeypatch
 
 async def test_generate_fort_header_takes_first_line_only(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "test")
-    monkeypatch.setattr(roast, "_client", _fort_client("{name} погнали\nвторая строка мусор"))
+    roast._client_context.set(_fort_client("{name} погнали\nвторая строка мусор"))
 
     reply = await roast.generate_fort_header(chat_id=1)
 
@@ -202,7 +200,7 @@ async def test_generate_fort_header_timeout_returns_none(monkeypatch):
 
     fake_chat = SimpleNamespace(sample=slow_sample)
     fake_client = SimpleNamespace(chat=SimpleNamespace(create=MagicMock(return_value=fake_chat)))
-    monkeypatch.setattr(roast, "_client", fake_client)
+    roast._client_context.set(fake_client)
 
     reply = await roast.generate_fort_header(chat_id=1)
 
@@ -211,7 +209,7 @@ async def test_generate_fort_header_timeout_returns_none(monkeypatch):
 
 async def test_generate_fort_header_empty_response_returns_none(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "test")
-    monkeypatch.setattr(roast, "_client", _fort_client(""))
+    roast._client_context.set(_fort_client(""))
 
     reply = await roast.generate_fort_header(chat_id=1)
 
