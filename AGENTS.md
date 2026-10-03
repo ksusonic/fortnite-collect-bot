@@ -73,7 +73,7 @@ Use Supabase tools for production database changes/imports/scheduling/verificati
 - `app.py` FastAPI entrypoint; Python 3.14, fra1, 300-second function duration.
 - Production requires BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, CRON_SECRET, PUBLIC_BASE_URL,
   and DATABASE_URL or integration-provided POSTGRES_URL_NON_POOLING. Optional xAI/Fortnite/admin
-  settings are documented in README. Previews need separate bot/database/API credentials.
+  settings are documented in README. Deploy production from main only; previews are disabled.
 - Register stable production webhook explicitly only after verification, with secret_token,
   max_connections=1, router-used update types and drop_pending_updates=false.
 - Supabase Cron/pg_net call authenticated job routes; URL/secret live in Vault.
