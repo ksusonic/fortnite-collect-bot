@@ -51,6 +51,37 @@ pnpm build
 Без `TEST_DATABASE_URL` Postgres-тесты пропускаются; такой запуск не доказывает
 работу storage/recovery. CI запускает проверки с отдельной базой.
 
+## CI/CD
+
+GitHub Actions сохраняет обязательный check `ci`: lint, форматирование, типы,
+Postgres/Vitest (включая importer) и Next.js build. pnpm store и `.next/cache`
+кэшируются; новые commits отменяют устаревшие CI/CodeQL runs. CI не получает
+production secrets; Sentry release/upload включены только в Vercel build.
+Ruleset `gymrules` требует PR, `ci` и актуальный `main`
+(**Require branches to be up to date before merging**). Имя check менять нельзя
+без одновременного обновления ruleset.
+
+Vercel Git integration собирает и публикует только `main`. Workflow
+`Production smoke` использует native `vercel.deployment.success`
+[repository_dispatch](https://vercel.com/docs/git/vercel-for-github#repository-dispatch-events)
+для production и доступен вручную через Actions. Он проверяет `/health` и отказ
+неавторизованных webhook/job/admin requests, без secrets и отправки сообщений.
+Ответ 403 принимается только с Vercel `x-vercel-mitigated: deny` и отмечается
+отдельно: это отказ firewall, application auth в таком запросе не проверен.
+Это проверка после публикации, а не deployment gate; она не доказывает доступность
+базы, правильность webhook или успешность cron. При необходимости блокировать
+публикацию до live-проверок используйте отдельную
+[Vercel Checks integration](https://vercel.com/docs/checks).
+
+Миграции остаются отдельной операцией через Supabase tools до совместимого
+деплоя; `fortnite_bot.migrations` ведёт собственный журнал. Не включайте
+Supabase GitHub auto-migrations поверх него без явного перехода на CLI history.
+[Supabase Branching](https://supabase.com/docs/guides/deployment/branching)
+даёт изолированные PR-базы, но потребует отдельного тестового контура: текущие
+destructive tests принимают только disposable localhost `fortnite_test`.
+Для этого проекта сохраняем локальный Postgres в CI и Supabase Cron/Vault/pg_net
+в production; schema, webhook и schedule не меняются автоматически при деплое.
+
 ## Production
 
 Проект `fortnite-collect-bot`, Node.js 24, регион `fra1`; function duration 300 секунд.
