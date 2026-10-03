@@ -11,6 +11,26 @@ type TransactionEvent = Parameters<
 
 export const SENTRY_DSN =
   "https://a997a7108b8315cf576e410c980f856a@o4510234774929408.ingest.de.sentry.io/4512190824513616";
+const diagnosticCodes = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_HAS_EXPIRED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+]);
+export function diagnosticCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("code" in error)) return;
+  const code = error.code;
+  return typeof code === "string" && diagnosticCodes.has(code)
+    ? code
+    : undefined;
+}
 export function sanitizeText(text: string): string {
   return text
     .replace(/\b(?:https?|postgres(?:ql)?):\/\/[^\s"'<>]+/gi, (value) => {

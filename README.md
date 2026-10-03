@@ -96,6 +96,7 @@ destructive tests принимают только disposable localhost `fortnite
 Нужны `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `CRON_SECRET`, `PUBLIC_BASE_URL`,
 `DATABASE_URL` либо `POSTGRES_URL_NON_POOLING`. Соединение с Supabase — SSL и session
 pooler 5432: transaction pooler 6543 несовместим с session advisory locks.
+Для Supabase pooler встроен официальный root CA; сертификат и hostname проверяются.
 Опционально: `FORTNITE_API_KEY`, `ADMIN_USER_ID` и настройки roast (модель,
 вероятность и cooldown). Grok получает app-scoped token через Vercel Connect
 `grok/fortnite-collect-bot`; отдельный ключ xAI в окружении не нужен. Секреты не должны иметь префикс `NEXT_PUBLIC_`.
