@@ -204,4 +204,4 @@ Vercel Web Analytics подключается через `@vercel/analytics` в 
 После деплоя нужно включить Web Analytics в dashboard проекта и проверить поступление
 событий. Browser analytics не подтверждает работу Telegram webhook и cron.
 
-Будущий Telegram Mini App: [docs/MINI_APP.md](docs/MINI_APP.md).
+Telegram Mini App со статистикой: [docs/MINI_APP.md](docs/MINI_APP.md).

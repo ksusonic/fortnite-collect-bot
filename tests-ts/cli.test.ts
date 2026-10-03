@@ -10,13 +10,18 @@ const mocks = vi.hoisted(() => ({
   commands: vi.fn(),
   webhook: vi.fn(),
   info: vi.fn(),
+  menu: vi.fn(),
 }));
 vi.mock("../src/bot/storage", () => ({ migrate: mocks.migrate }));
 vi.mock("../src/bot/importer", () => ({ importBackup: mocks.importer }));
 vi.mock("../src/bot/commands", () => ({ setupBotCommands: mocks.commands }));
 vi.mock("../src/bot/runtime", () => ({
   createBot: () => ({
-    api: { setWebhook: mocks.webhook, getWebhookInfo: mocks.info },
+    api: {
+      setWebhook: mocks.webhook,
+      getWebhookInfo: mocks.info,
+      setChatMenuButton: mocks.menu,
+    },
   }),
 }));
 import { maintain } from "../src/bot/cli";
@@ -34,6 +39,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("explicit maintenance", () => {
+  it("configures the Mini App menu explicitly after checking HTTPS page without touching webhook", async () => {
+    vi.spyOn(undici, "fetch").mockResolvedValue(
+      new undici.Response("Mini App", { status: 200 }),
+    );
+    await maintain(["configure-mini-app", "https://example.com"]);
+    expect(mocks.menu).toHaveBeenCalledWith({
+      menu_button: {
+        type: "web_app",
+        text: "Статистика",
+        web_app: { url: "https://example.com/mini-app" },
+      },
+    });
+    expect(mocks.webhook).not.toHaveBeenCalled();
+    await expect(
+      maintain(["configure-mini-app", "http://example.com"]),
+    ).rejects.toThrow("HTTPS");
+  });
+
   it("does not register a webhook during migration or import", async () => {
     await maintain(["migrate"]);
     await maintain(["import", "/readonly/backup.db"]);
