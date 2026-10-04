@@ -5,6 +5,7 @@ import type { Update } from "grammy/types";
 import * as db from "./db";
 import { weeklyDue } from "./schedule-time";
 import { executeSnapshot } from "./snapshots";
+import { isChatApproved, isOwnerInit } from "./services/chat-access";
 import {
   registerHandlers,
   runTeamstats,
@@ -119,6 +120,28 @@ interface Item {
   payload: Record<string, unknown>;
 }
 export async function executeItem(item: Item, bot: Bot): Promise<string> {
+  const approved =
+    item.chat_id !== null
+      ? await isChatApproved(item.chat_id)
+      : item.kind === "snapshot"
+        ? !!(
+            await raw(
+              "SELECT 1 FROM epic_links l JOIN approved_chats a ON a.chat_id=l.chat_id WHERE l.epic_account_id=$1 LIMIT 1",
+              [item.payload.account_id],
+            )
+          ).rows.length
+        : false;
+  const ownerInit =
+    item.kind === "update" && isOwnerInit(item.payload as unknown as Update);
+  if (!approved && !ownerInit) {
+    // Retire only unstarted work. Existing checkpoints/ambiguous outcomes remain for review.
+    const retired = await raw(
+      "UPDATE work_items w SET status='complete',error='chat not approved',updated_at=now() WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM work_steps s WHERE s.work_id=w.id) RETURNING id",
+      [item.id],
+    );
+    return retired.rows.length ? "complete" : "failed";
+  }
+
   await raw(
     "UPDATE work_items SET attempts=attempts+1,updated_at=now() WHERE id=$1",
     [item.id],
@@ -243,6 +266,12 @@ export async function processUpdate(
   const status = await invocation(
     null,
     async () => {
+      // Ignore unapproved messages before storing their text or entering the causal queue.
+      if (
+        chat === null ||
+        (!(await isChatApproved(chat)) && !isOwnerInit(payload))
+      )
+        return "complete";
       await enqueue(id, "update", chat, payload);
       return (await raw("SELECT status FROM work_items WHERE id=$1", [id]))
         .rows[0].status;
@@ -262,7 +291,7 @@ export async function processUpdate(
 async function recoverSnapshots(bot: Bot) {
   const rows = (
     await raw<Item>(
-      "SELECT * FROM work_items WHERE kind='snapshot' AND status IN ('pending','failed') ORDER BY updated_at,created_at,id LIMIT 20",
+      "SELECT * FROM work_items w WHERE kind='snapshot' AND status IN ('pending','failed') AND EXISTS (SELECT 1 FROM epic_links l JOIN approved_chats a ON a.chat_id=l.chat_id WHERE l.epic_account_id=w.payload->>'account_id') ORDER BY updated_at,created_at,id LIMIT 20",
     )
   ).rows;
   for (const item of rows) {
@@ -283,7 +312,7 @@ export async function recoverPending(bot: Bot) {
   const signal = current().signal;
   const rows = (
     await raw(
-      "SELECT chat_id FROM work_items WHERE kind NOT IN ('job','snapshot') AND status IN ('pending','failed') GROUP BY chat_id ORDER BY min(created_at) LIMIT 20",
+      "SELECT w.chat_id FROM work_items w WHERE kind NOT IN ('job','snapshot') AND status IN ('pending','failed') AND (EXISTS (SELECT 1 FROM approved_chats a WHERE a.chat_id=w.chat_id) OR (kind='update' AND w.payload->'message'->>'text' ~ '^/init(@[A-Za-z0-9_]+)?([[:space:]]|$)')) GROUP BY w.chat_id ORDER BY min(created_at) LIMIT 20",
     )
   ).rows;
   for (const row of rows) await drainChat(row.chat_id, bot, signal);

@@ -65,7 +65,7 @@ suite("read-only SQLite recovery", () => {
     await migrate();
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state,import_manifest,news_sent,fortnite_news_seen,job_http_requests CASCADE",
+        "TRUNCATE approved_chats,roast_profiles,sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state,import_manifest,news_sent,fortnite_news_seen,job_http_requests CASCADE",
       );
     });
     directory = await mkdtemp(join(tmpdir(), "fort-import-"));

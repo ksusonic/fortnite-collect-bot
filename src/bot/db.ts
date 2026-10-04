@@ -272,9 +272,10 @@ export async function get_afk_until(
 }
 export async function get_active_chat_ids(days = 14): Promise<number[]> {
   return (
-    await query("SELECT DISTINCT chat_id FROM sessions WHERE created_at>$1", [
-      timestamp((await now("active.chats.time")) - days * 86400),
-    ])
+    await query(
+      "SELECT DISTINCT s.chat_id FROM sessions s JOIN approved_chats a ON a.chat_id=s.chat_id WHERE s.created_at>$1",
+      [timestamp((await now("active.chats.time")) - days * 86400)],
+    )
   ).map((r) => r.chat_id);
 }
 export async function is_feature_enabled(
@@ -402,9 +403,11 @@ export async function get_chat_epic_links(chat: number): Promise<EpicLink[]> {
   );
 }
 export async function get_chats_with_epic_links(): Promise<number[]> {
-  return (await query("SELECT DISTINCT chat_id FROM epic_links")).map(
-    (r) => r.chat_id,
-  );
+  return (
+    await query(
+      "SELECT DISTINCT l.chat_id FROM epic_links l JOIN approved_chats a ON a.chat_id=l.chat_id",
+    )
+  ).map((r) => r.chat_id);
 }
 export async function resolve_user_by_username(
   chat: number,

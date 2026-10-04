@@ -1,7 +1,9 @@
-import type { Context } from "grammy";
-import * as db from "../db";
-import * as roast from "../roast";
 import { storeMemoryTurn } from "../memory";
+import type { Context } from "grammy";
+import * as roast from "../roast";
+import { getRoastPolicy } from "../flags";
+import { proactiveDue } from "../services/roast-policy";
+import { loadRoastProfile, saveRoastProfile } from "../services/roast-profile";
 import { getRoastState } from "../storage";
 import { externalCheckpoint, valueCheckpoint } from "../work";
 import { escapeHtml, isGroup, nowSeconds } from "./common";
@@ -31,7 +33,6 @@ export async function maybeRoast(ctx: Context): Promise<void> {
     message.message_id,
     replied?.message_id,
   );
-  if (!(await db.is_feature_enabled(chat, "roast"))) return;
   const me = ctx.me;
   const mentioned = (message.entities ?? []).some((entity) =>
     entity.type === "text_mention"
@@ -41,31 +42,52 @@ export async function maybeRoast(ctx: Context): Promise<void> {
           .text!.slice(entity.offset, entity.offset + entity.length)
           .toLowerCase() === `@${me.username.toLowerCase()}`,
   );
-  const forced =
-    mentioned ||
-    (replied?.from?.id === me.id &&
-      roast.isRoastMessage(chat, replied.message_id));
-  const probability = await db.get_feature_value(chat, "roast");
+  const addressed = mentioned || replied?.from?.id === me.id;
+  const profile = await loadRoastProfile(chat);
+  // Explicitly muted chats need no Flags request for unrelated conversation.
+  if (!addressed && profile.preferences.proactive === false) return;
+  const policy = await getRoastPolicy();
+  const preferences = { ...policy.defaults, ...profile.preferences };
   if (
-    !forced &&
-    !(await valueCheckpoint("roast-roll", () =>
-      roast.shouldRoast(chat, now, probability),
-    ))
+    !addressed &&
+    !proactiveDue(policy, preferences, profile.last_evaluated_at, now)
   )
     return;
-  await ctx.api.sendChatAction(chat, "typing");
-  const result = await externalCheckpoint("roast", () =>
-    roast.generateRoast(
+  // Persist the attempt even if the model skips or fails, bounding provider calls.
+  profile.last_evaluated_at = now;
+  await saveRoastProfile(chat, profile);
+  if (addressed) await ctx.api.sendChatAction(chat, "typing");
+  const decision = await externalCheckpoint("adaptive-roast-v1", () =>
+    roast.generateRoastDecision(
       chat,
       name,
       message.text!,
       now,
+      preferences,
+      addressed,
+      profile.pending_question,
       message.message_id,
       replied?.message_id,
+      replied?.text,
       ctx.from!.id,
     ),
   );
-  if (!result) return;
+  if (decision?.action === "skip") return;
+  if (!decision && !addressed) return;
+  if (decision?.action === "update" || decision?.action === "clarify") {
+    if (decision.action === "update")
+      Object.assign(profile.preferences, decision.patch);
+    profile.pending_question =
+      decision.action === "clarify" ? decision.text : null;
+    await saveRoastProfile(chat, profile, {
+      user: ctx.from.id,
+      message: message.message_id,
+      now,
+    });
+  }
+  const result =
+    decision?.text ??
+    "Не удалось обработать обращение. Настройки не изменены; попробуй ещё раз.";
   const sentAt = await valueCheckpoint("roast-time", nowSeconds);
   getRoastState(chat).last_roast = sentAt;
   let text = result;
@@ -76,14 +98,15 @@ export async function maybeRoast(ctx: Context): Promise<void> {
   });
   roast.rememberRoastMessage(chat, sent.message_id);
   roast.rememberBotMessage(chat, result, sentAt, sent.message_id);
-  // Append after existing checkpoints so incomplete older work keeps its order.
-  await externalCheckpoint("roast-memory-add", () =>
-    storeMemoryTurn(
-      chat,
-      ctx.from!.id,
-      message.text!,
-      text,
-      message.message_id,
-    ),
-  );
+  if (decision?.action === "reply") {
+    await externalCheckpoint("roast-memory-add", () =>
+      storeMemoryTurn(
+        chat,
+        ctx.from!.id,
+        message.text!,
+        text,
+        message.message_id,
+      ),
+    );
+  }
 }

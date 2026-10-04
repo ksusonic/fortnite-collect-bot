@@ -27,9 +27,18 @@ const url = process.env.TEST_DATABASE_URL;
     mocks.execute.mockReset();
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE sessions,responses,work_items,work_steps,roast_state,chat_features,epic_links,squad_snapshots,service_state CASCADE",
+        "TRUNCATE approved_chats,roast_profiles,sessions,responses,work_items,work_steps,roast_state,chat_features,epic_links,squad_snapshots,service_state CASCADE",
       );
     });
+    await invocation(null, () =>
+      raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1),(-11,1),(-12,1),(-13,1),(-20,1),(-100,1),(-200,1) ON CONFLICT DO NOTHING",
+      ),
+    );
+    await invocation(null, () =>
+      raw(`INSERT INTO epic_links(chat_id,user_id,user_name,epic_name,epic_account_id,linked_at)
+      SELECT -10,1000+n,'user','Epic',CASE WHEN n=21 THEN 'broken' WHEN n=22 THEN 'healthy' ELSE n::text END,now() FROM generate_series(0,22) n`),
+    );
   });
   it("snapshot failures cannot block chat updates or later accounts, and complete items stay complete", async () => {
     const bot = {

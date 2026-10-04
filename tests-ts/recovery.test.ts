@@ -42,9 +42,14 @@ suite("Postgres recovery and storage", () => {
   beforeEach(async () => {
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state,import_manifest CASCADE",
+        "TRUNCATE approved_chats,roast_profiles,sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state,import_manifest CASCADE",
       );
     });
+    await invocation(null, () =>
+      raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1),(-11,1),(-12,1),(-13,1),(-20,1),(-100,1),(-200,1) ON CONFLICT DO NOTHING",
+      ),
+    );
   });
   it("leaves queued work untouched when another invocation owns the chat", async () => {
     await invocation(null, () =>

@@ -1,3 +1,4 @@
+vi.mock("../src/bot/commands", () => ({ syncReleaseCommands: vi.fn() }));
 import {
   afterEach,
   beforeAll,
@@ -33,9 +34,14 @@ const url = process.env.TEST_DATABASE_URL;
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-04T14:00:00Z"));
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE sessions,responses,epic_links,work_items,work_steps,service_state,chat_features,import_manifest CASCADE",
+        "TRUNCATE approved_chats,roast_profiles,sessions,responses,epic_links,work_items,work_steps,service_state,chat_features,import_manifest CASCADE",
       );
     });
+    await invocation(null, () =>
+      raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1),(-11,1),(-12,1),(-13,1),(-20,1),(-100,1),(-200,1) ON CONFLICT DO NOTHING",
+      ),
+    );
   });
   afterEach(() => vi.restoreAllMocks());
   async function session(chat: number, age: number, players: number) {

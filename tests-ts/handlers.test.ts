@@ -1,3 +1,7 @@
+vi.mock("../src/bot/services/chat-access", async (original) => ({
+  ...(await original<typeof import("../src/bot/services/chat-access")>()),
+  isChatApproved: vi.fn().mockResolvedValue(true),
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Bot } from "grammy";
 import type { Update } from "grammy/types";

@@ -1,4 +1,5 @@
 import * as db from "./db";
+import { syncReleaseCommands } from "./commands";
 import { moscowDate, weeklyDue } from "./schedule-time";
 export { moscowDate, weeklyDue } from "./schedule-time";
 import * as status from "./status";
@@ -73,7 +74,8 @@ async function enqueueExpirations(now: number) {
       `SELECT s.chat_id,s.message_id,
        ($2 OR (s.created_at AT TIME ZONE 'Europe/Moscow')::date <
          (to_timestamp($1) AT TIME ZONE 'Europe/Moscow')::date) AS past_deadline FROM sessions s
-     WHERE NOT s.is_closed AND ($2 OR
+     WHERE EXISTS (SELECT 1 FROM approved_chats a WHERE a.chat_id=s.chat_id)
+     AND NOT s.is_closed AND ($2 OR
        (s.created_at AT TIME ZONE 'Europe/Moscow')::date <
          (to_timestamp($1) AT TIME ZONE 'Europe/Moscow')::date OR
        EXTRACT(EPOCH FROM s.created_at) < $1 - CASE WHEN
@@ -220,7 +222,9 @@ export async function runJob(
             await enqueueExpirations(now);
             await enqueueWeekly(now);
             await enqueueDailySnapshots(now);
-            await recoverPending(createBot());
+            const bot = createBot();
+            await syncReleaseCommands(bot);
+            await recoverPending(bot);
             await recoverJobs();
             return { ok: true as const };
           }

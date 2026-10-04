@@ -32,12 +32,15 @@ Use Supabase tools for production database changes/imports/scheduling/verificati
 
 ## Bot commands (group chats only)
 
+All chats require explicit owner approval via hidden `/init`; only the numeric
+`ADMIN_USER_ID` can approve a group. Existing/imported chats are not auto-approved.
+Enforce approval for handlers, callbacks, proactive sends, queued work and snapshots.
+Do not advertise `/init` in command menus; preserve approvals durably in private Postgres.
+
 - `/fort` — start a gathering session with **relative readiness** buttons (`⚡ Сейчас`, `🕐 +30м`, `🕐 +1ч`, `🕐 +2ч`; capped at +2 h, trimmed so the absolute target stays before 23:00 MSK). Each `go` press resolves its offer into an absolute `HH:MM` target at press time. The first four players form the squad; the next four enter a FIFO reserve and are promoted automatically when a confirmed player presses Pass. Optional `/fort <hour>` pins one absolute slot. A live session remains editable after filling and is closed when replaced, expired, or cancelled.
 - `/afk <Nd|Nw>` — suppress the caller's proactive `📣` mention in new `/fort` sessions for a per-chat duration such as `1d` or `2w`; `/afk off` clears it early. Normal Go/Pass rendering is unchanged.
 - `/rm` — cancel and delete current active session
-- `/fortemoji` — chat-admin setup: reply to four WideABC custom emoji spelling FORT to save the title for future gatherings; `/fortemoji off` restores the plain title. Requires Premium on the bot owner's account. Each session stores its title so edits and restarts preserve it.
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
-- `/roast on [0..1] | off` — toggle xAI Grok "Unhinged" replies; optional probability override (default `ROAST_PROBABILITY`)
 - `/linkepicfor @user <EpicName>` — admin-only (`ADMIN_USER_ID`); link `@user` to a public Epic Games account (requires `FORTNITE_API_KEY`). `@user` must have responded at least once to `/fort` in this chat (resolved via `responses` table). The Epic account must have Public Game Stats enabled.
 - `/teamstats` — **last-7-days** squad aggregates for everyone in this chat who has linked an Epic account; MVP-of-the-week block, weekly summary, and a leaders `<pre>` table (top-5 by weekly wins) with medal column. Weekly numbers are derived from `squad_snapshots` deltas, not the season totals (provider has no weekly window). Players without a ~7-day-old baseline snapshot, or who didn't play this week, are listed in a "Вне недельного зачёта" section with a reason and excluded from the ranking/analysis. If nobody has weekly data yet, the command replies that snapshots are still accumulating. Appends an optional LLM analysis block from Grok through the app-scoped Vercel Connect `grok/fortnite-collect-bot` connection. The bot also publishes `/teamstats` automatically every Friday at 21:00 MSK in chats with at least one linked Epic account (deduped via `chat_features.weekly_drop` with a 6-day window).
 
@@ -77,7 +80,7 @@ Use Supabase tools for production database changes/imports/scheduling/verificati
 - Routes are thin, Node runtime only; credentials and storage stay server-side.
 - Preserve existing webhook/job URLs. Mini App authentication is future work, not a public DB API.
 - Production requires BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, CRON_SECRET, PUBLIC_BASE_URL,
-  and DATABASE_URL or integration-provided POSTGRES_URL_NON_POOLING. Optional Fortnite/admin settings and the app-scoped Grok connector are documented in README. Deploy production from main only; previews are disabled.
+  ADMIN_USER_ID, and DATABASE_URL or integration-provided POSTGRES_URL_NON_POOLING. Optional Fortnite settings and the app-scoped Grok connector are documented in README. Deploy production from main only; previews are disabled.
 - Register stable production webhook explicitly only after verification, with secret_token,
   max_connections=1, router-used update types and drop_pending_updates=false.
 - Supabase Cron/pg_net call authenticated job routes; URL/secret live in Vault.
@@ -88,3 +91,5 @@ Use Supabase tools for production database changes/imports/scheduling/verificati
   outcomes separate when reporting completion.
 - Vercel Web Analytics needs dashboard activation and actual event verification after deploy.
 - Future Mini App work is recorded in `docs/MINI_APP.md`; implement it only when requested.
+
+Roast preferences use natural-language addressed requests, private roast_profiles and the read-only Vercel roast-policy flag. Maintenance verifies command menus per release; /init is hidden.
