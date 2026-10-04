@@ -30,3 +30,7 @@ coverage/
 
 # Sentry Config File
 .env.sentry-build-plugin
+.env*
+
+# Supabase CLI local project cache
+supabase/.temp/
