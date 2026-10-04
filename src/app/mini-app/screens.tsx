@@ -32,14 +32,14 @@ const duration = (seconds: number | null) =>
       : `${number(seconds / 60)} мин`;
 function Metrics({ items }: { items: [string, string][] }) {
   return (
-    <div className="metrics">
+    <dl className="metrics">
       {items.map(([title, value]) => (
         <div className="metric" key={title}>
-          <span>{title}</span>
-          <strong>{value}</strong>
+          <dt>{title}</dt>
+          <dd>{value}</dd>
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 function ErrorCard({ error, retry }: { error: string; retry: () => void }) {
@@ -142,10 +142,20 @@ export function TeamScreen({
           </span>
           <span className="eyebrow">MVP НЕДЕЛИ</span>
           <h2>{mvp.name || mvp.epicName}</h2>
-          <p>
-            {number(mvp.wins)} побед · {number(mvp.kills)} киллов ·{" "}
-            {number(mvp.kd, 2)} K/D
-          </p>
+          <dl className="mvp-stats">
+            <div>
+              <dt>Победы</dt>
+              <dd>{number(mvp.wins)}</dd>
+            </div>
+            <div>
+              <dt>Киллы</dt>
+              <dd>{number(mvp.kills)}</dd>
+            </div>
+            <div>
+              <dt>K/D</dt>
+              <dd>{number(mvp.kd, 2)}</dd>
+            </div>
+          </dl>
           <button onClick={() => onPlayer(mvp.userId)}>Профиль игрока →</button>
         </section>
       ) : (
