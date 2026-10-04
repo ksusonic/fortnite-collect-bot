@@ -199,7 +199,9 @@ export async function drainChat(
             }
             return "complete";
           },
-        )) ?? "failed"
+          // Another invocation owns this causal queue; leave its work untouched.
+          false,
+        )) ?? "busy"
       );
     },
     signal,

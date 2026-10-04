@@ -36,6 +36,48 @@ suite("Postgres recovery and storage", () => {
       );
     });
   });
+  it("leaves queued work untouched when another invocation owns the chat", async () => {
+    await invocation(null, () =>
+      enqueue("update:overlap", "update", -99, { update_id: 99 }),
+    );
+    let acquired!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const owner = invocation(-99, () =>
+      advisoryLock("chat:-99", async () => {
+        acquired();
+        await hold;
+      }),
+    );
+    await locked;
+    const bot = { init: vi.fn() } as unknown as Bot;
+    try {
+      expect(await drainChat(-99, bot)).toBe("busy");
+      expect(bot.init).not.toHaveBeenCalled();
+      await invocation(null, async () => {
+        expect(
+          (
+            await raw("SELECT status,attempts FROM work_items WHERE id=$1", [
+              "update:overlap",
+            ])
+          ).rows[0],
+        ).toMatchObject({ status: "pending", attempts: 0 });
+      });
+    } finally {
+      release();
+      await owner;
+    }
+    await invocation(-99, async () => {
+      expect(
+        await advisoryLock("chat:-99", async () => "available", false),
+      ).toBe("available");
+    });
+  });
   it("uses Python-compatible advisory lock keys", () => {
     expect(lockKey("chat:-100")).toBe("-2749151833718385421");
   });
