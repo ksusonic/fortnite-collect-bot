@@ -1,0 +1,72 @@
+.page {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 24px;
+  background: var(--tg-theme-secondary-bg-color, #f2f5f8);
+  color: var(--tg-theme-text-color, #17212b);
+  font-family: system-ui, sans-serif;
+}
+
+.card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+  padding: 36px 24px;
+  border-radius: 24px;
+  background: var(--tg-theme-section-bg-color, #fff);
+  text-align: center;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  border-radius: 50%;
+  background: var(--tg-theme-button-color, #2481cc);
+  color: var(--tg-theme-button-text-color, #fff);
+}
+
+.brand {
+  margin: 0 0 12px;
+  color: var(--tg-theme-hint-color, #617080);
+  font-size: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(24px, 5vw, 30px);
+  line-height: 1.2;
+}
+
+.description {
+  margin: 20px 0 28px;
+  color: var(--tg-theme-hint-color, #617080);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.description code {
+  color: var(--tg-theme-text-color, #17212b);
+}
+
+.link {
+  display: block;
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: var(--tg-theme-button-color, #2481cc);
+  color: var(--tg-theme-button-text-color, #fff);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:focus-visible {
+  outline: 3px solid var(--tg-theme-link-color, #2481cc);
+  outline-offset: 4px;
+}
