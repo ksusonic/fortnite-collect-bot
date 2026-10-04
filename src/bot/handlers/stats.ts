@@ -1,5 +1,5 @@
 import { statisticsKeyboard } from "../mini-app-link";
-import { GrammyError, type Bot, type Context } from "grammy";
+import type { Bot, Context } from "grammy";
 import * as db from "../db";
 import * as fortnite from "../fortnite";
 import * as messages from "../messages";
@@ -90,48 +90,6 @@ export async function cmdLinkepicfor(ctx: Context): Promise<void> {
     `✅ <a href="tg://user?id=${userId}">${escapeHtml(name)}</a> → Epic <b>${escapeHtml(epicName)}</b> (залинковал админ${empty ? ", у игрока ещё 0 матчей" : ""})`,
   );
 }
-export async function cmdMyfnstats(ctx: Context): Promise<void> {
-  if (!ctx.from || !ctx.chat) return;
-  if (!fortnite.isConfigured()) {
-    await reply(ctx, "Fortnite-статистика не настроена.");
-    return;
-  }
-  const link = await db.get_epic_link(ctx.chat.id, ctx.from.id);
-  if (!link) {
-    await reply(
-      ctx,
-      "Тебя ещё не залинковали. Попроси админа: /linkepicfor @твой_ник EpicName",
-    );
-    return;
-  }
-  await ctx.api.sendChatAction(ctx.chat.id, "typing");
-  let stats;
-  try {
-    stats = await fortnite.fetchStats({
-      account_id: link.epic_account_id,
-      with_image: true,
-    });
-  } catch (error) {
-    if (!(error instanceof fortnite.FortniteError)) throw error;
-    await reply(ctx, epicErrorText(error));
-    return;
-  }
-  if (stats.image_url) {
-    try {
-      await ctx.replyWithPhoto(stats.image_url, {
-        caption: messages.myFnCaption(link, stats),
-        reply_markup: statisticsKeyboard(ctx.chat.id),
-      });
-      return;
-    } catch (error) {
-      if (!(error instanceof GrammyError)) throw error;
-    }
-  }
-  await ctx.reply(messages.buildMyFnStatsText(link, stats), {
-    reply_markup: statisticsKeyboard(ctx.chat.id),
-  });
-}
-
 export async function runTeamstats(
   bot: Bot,
   chat: number,

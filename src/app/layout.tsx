@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Analytics } from "@vercel/analytics/next";
+import PrivateAnalytics from "@/mini-app/analytics";
 export const metadata: Metadata = {
   title: "Fortnite Collect",
   description: "Fortnite squad gatherings",
@@ -10,7 +10,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="ru">
       <body>
         {children}
-        <Analytics />
+        <PrivateAnalytics />
       </body>
     </html>
   );

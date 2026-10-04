@@ -114,6 +114,23 @@ describe("live membership authorization", () => {
       verifyMembership(mock as never, -100, 7),
     ).rejects.toMatchObject({ status: 503 });
   });
+  it("rechecks membership after a successful request and rejects a different chat", async () => {
+    const mock = api();
+    state.raw.mockResolvedValue({ rowCount: 1 });
+    await expect(authorizeChat(mock as never, -100, 7)).resolves.toMatchObject({
+      id: -100,
+    });
+    mock.getChatMember.mockImplementation(async (chat, user) => ({
+      status: user === 99 ? "administrator" : chat === -100 ? "left" : "kicked",
+    }));
+    for (const chat of [-100, -200])
+      await expect(authorizeChat(mock as never, chat, 7)).rejects.toMatchObject(
+        {
+          status: 403,
+        },
+      );
+    expect(mock.getMe).toHaveBeenCalledTimes(3);
+  });
   it("unknown chats never reach Telegram and known chats still require membership", async () => {
     const mock = api();
     state.raw.mockResolvedValue({ rowCount: 0 });

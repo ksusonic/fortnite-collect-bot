@@ -71,6 +71,32 @@ describe("Mini App API boundaries", () => {
     expect(mocks.weekly).not.toHaveBeenCalled();
     expect(response.headers.get("cache-control")).toBe("no-store, private");
   });
+  it("rejects a forged viewer or an expired session before authorization", async () => {
+    const valid = request("weekly");
+    const signed = valid.headers.get("x-telegram-init-data")!;
+    const expired = new URLSearchParams({ auth_date: "1", user: '{"id":7}' });
+    const secret = createHmac("sha256", "WebAppData")
+      .update("test-token")
+      .digest();
+    expired.set(
+      "hash",
+      createHmac("sha256", secret)
+        .update('auth_date=1\nuser={"id":7}')
+        .digest("hex"),
+    );
+    for (const data of [signed.replace("%3A7", "%3A8"), expired.toString()]) {
+      const response = await miniAppEndpoint(
+        new Request(valid.url, {
+          headers: { "x-telegram-init-data": data },
+        }),
+        "weekly",
+      );
+      expect(response.status).toBe(401);
+      expect(response.headers.get("cache-control")).toBe("no-store, private");
+      expect(mocks.authorize).not.toHaveBeenCalled();
+      expect(mocks.weekly).not.toHaveBeenCalled();
+    }
+  });
   for (const resource of [
     "weekly",
     "profile",

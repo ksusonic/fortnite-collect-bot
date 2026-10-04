@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Bot } from "grammy";
 import type { Update } from "grammy/types";
 import type { Session } from "../src/bot/db";
+import { GROUP_COMMANDS } from "../src/bot/commands";
 import {
   registerHandlers,
   buildWeeklyView,
@@ -139,6 +140,23 @@ beforeEach(() => {
   state.saveResponse.mockReset();
   state.saveResponse.mockResolvedValue(undefined);
   state.snapshot.mockReset();
+});
+it("does not advertise or process the retired personal statistics command", async () => {
+  expect(
+    GROUP_COMMANDS.some((command) => command.command === "myfnstats"),
+  ).toBe(false);
+  await bot().handleUpdate({
+    update_id: 1,
+    message: {
+      message_id: 10,
+      date: 1,
+      chat: { id: -100, type: "supergroup", title: "friends" },
+      from: { id: 1, is_bot: false, first_name: "user1" },
+      text: "/myfnstats",
+      entities: [{ type: "bot_command", offset: 0, length: 10 }],
+    },
+  });
+  expect(state.calls).toEqual([]);
 });
 it("deletes the command after saving the gathering and before pinning or Grok", async () => {
   await bot().handleUpdate({

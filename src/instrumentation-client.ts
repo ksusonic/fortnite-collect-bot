@@ -4,14 +4,9 @@ import { privacyOptions, SENTRY_DSN } from "./sentry-options";
 Sentry.init({
   dsn: SENTRY_DSN,
   ...privacyOptions,
-  integrations: [
-    Sentry.replayIntegration({
-      maskAllText: true,
-      blockAllMedia: true,
-      networkDetailAllowUrls: [],
-    }),
-  ],
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1,
+  // Telegram launch URLs contain signed session data. DOM masking does not
+  // scrub Replay navigation metadata, so do not install Session Replay.
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 0,
 });
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

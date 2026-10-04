@@ -5,10 +5,15 @@ import { importBackup } from "./importer";
 import { pathToFileURL } from "node:url";
 import { scopedFetch, httpSignal, withHttpClient } from "./transport";
 import { registerWebhook } from "./webhook";
+import { setupBotCommands } from "./commands";
 export { registerWebhook } from "./webhook";
 
 export async function maintain(args: string[]): Promise<void> {
   const [command, argument] = args;
+  if (command === "configure-commands") {
+    await withHttpClient(() => setupBotCommands(createBot()));
+    return;
+  }
   if (command === "migrate") {
     await migrate();
     return;
@@ -23,7 +28,7 @@ export async function maintain(args: string[]): Promise<void> {
     const base = new URL(argument);
     if (base.protocol !== "https:")
       throw new Error("production URL must use HTTPS");
-    const app = new URL("/mini-app", base);
+    const app = new URL("/", base);
     await withHttpClient(async () => {
       const response = await scopedFetch(app, {
         signal: httpSignal(20000),
@@ -43,7 +48,7 @@ export async function maintain(args: string[]): Promise<void> {
   }
   if (command !== "register-webhook" && command !== "webhook-info")
     throw new Error(
-      "usage: pnpm bot migrate|import <backup>|register-webhook <url>|webhook-info|configure-mini-app <url>",
+      "usage: pnpm bot migrate|import <backup>|register-webhook <url>|webhook-info|configure-mini-app <url>|configure-commands",
     );
   const info =
     command === "register-webhook"

@@ -13,7 +13,7 @@ import {
 } from "./handlers/common";
 import { closeSession, cmdFort, onCallback } from "./handlers/gatherings";
 import { cmdAfk, cmdFortemoji, cmdRoast } from "./handlers/settings";
-import { cmdLinkepicfor, cmdMyfnstats, runTeamstats } from "./handlers/stats";
+import { cmdLinkepicfor, runTeamstats } from "./handlers/stats";
 import { maybeRoast } from "./handlers/roast";
 
 // Keep the public entrypoint stable for runtime and callers during the feature split.
@@ -33,7 +33,6 @@ export function registerHandlers(bot: Bot): void {
     afk: cmdAfk,
     roast: cmdRoast,
     linkepicfor: cmdLinkepicfor,
-    myfnstats: cmdMyfnstats,
     stats: async (ctx) => {
       if (ctx.chat)
         await ctx.reply(
