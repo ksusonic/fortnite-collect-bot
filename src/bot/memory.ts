@@ -5,6 +5,31 @@ import { httpSignal, scopedFetch } from "./transport";
 const identity = (chat: number, user: number) =>
   `telegram:${chat}:user:${user}`;
 
+class Mem0HttpError extends Error {
+  constructor(readonly status: number) {
+    super("Mem0 request failed");
+  }
+}
+
+function logMemoryError(operation: "search" | "add", error: unknown) {
+  // Provider messages and response bodies can contain private conversation data.
+  const kind =
+    error instanceof Mem0HttpError
+      ? "http"
+      : error instanceof Error && error.name === "TimeoutError"
+        ? "timeout"
+        : error instanceof Error && error.name === "AbortError"
+          ? "aborted"
+          : error instanceof SyntaxError || error instanceof TypeError
+            ? "invalid-response-or-transport"
+            : "unknown";
+  console.error("Mem0 operation failed", {
+    operation,
+    kind,
+    ...(error instanceof Mem0HttpError ? { status: error.status } : {}),
+  });
+}
+
 async function client() {
   const apiKey = process.env.MEM0_API_KEY?.trim();
   if (!apiKey) return null;
@@ -23,7 +48,7 @@ async function client() {
         headers: { ...this.headers },
         signal: httpSignal(5000),
       });
-      if (!response.ok) throw new Error("Mem0 request failed");
+      if (!response.ok) throw new Mem0HttpError(response.status);
       return response.json();
     }
   }
@@ -46,7 +71,8 @@ export async function searchMemories(
       .filter((entry) => typeof entry.memory === "string")
       .slice(0, 5)
       .map((entry) => entry.memory!.slice(0, 500));
-  } catch {
+  } catch (error) {
+    logMemoryError("search", error);
     return [];
   }
 }
@@ -75,7 +101,8 @@ export async function storeMemoryTurn(
       },
     );
     return true;
-  } catch {
+  } catch (error) {
+    logMemoryError("add", error);
     return false;
   }
 }
