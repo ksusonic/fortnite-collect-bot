@@ -57,7 +57,7 @@ suite("Supabase migration compatibility", () => {
            $`,
         );
         await raw(
-          "INSERT INTO cron.job VALUES ('fortnite-cleanup','SELECT 1 FROM fortnite_bot.import_manifest')",
+          "INSERT INTO cron.job(jobname,command) VALUES ('fortnite-cleanup','SELECT 1 FROM fortnite_bot.import_manifest')",
         );
         await raw(
           "INSERT INTO chat_features(chat_id,feature,enabled) VALUES (-99901,'roast',true),(-99902,'roast',false)",
