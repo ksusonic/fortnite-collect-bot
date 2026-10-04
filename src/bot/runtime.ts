@@ -1,8 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
-import { scopedFetch } from "./transport";
+import { httpSignal, scopedFetch } from "./transport";
 import { Bot, BotError, type ApiClientOptions } from "grammy";
 import type { Update } from "grammy/types";
 import * as db from "./db";
+import { weeklyDue } from "./schedule-time";
+import { executeSnapshot } from "./snapshots";
 import {
   registerHandlers,
   runTeamstats,
@@ -40,6 +42,16 @@ export function createBot(): Bot {
   bot.api.config.use(telegramTransformer);
   registerHandlers(bot);
   return bot;
+}
+export async function initializeBot(bot: Bot): Promise<void> {
+  if (bot.isInited()) return;
+  // Bot.init retries network errors indefinitely. Serverless retries belong to
+  // the durable queue, so fetch metadata once with a bounded deadline instead.
+  // grammY types use its older AbortSignal shim; native signals expose the
+  // same add/removeEventListener interface used by its API client.
+  bot.botInfo = await bot.api.getMe(
+    httpSignal(20_000) as unknown as Parameters<Bot["api"]["getMe"]>[0],
+  );
 }
 export function updateChat(update: Update): number | null {
   if (update.message) return update.message.chat.id;
@@ -113,7 +125,7 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
   );
   try {
     await withWork(new Work(item.id), async () => {
-      await hydrate(item.chat_id);
+      if (item.kind !== "snapshot") await hydrate(item.chat_id);
       if (item.kind === "update")
         await bot.handleUpdate(item.payload as unknown as Update);
       else if (item.kind === "expiry")
@@ -131,7 +143,8 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
             Number(item.payload.now),
           );
         }
-      } else if (item.kind === "status")
+      } else if (item.kind === "snapshot") await executeSnapshot(item.payload);
+      else if (item.kind === "status")
         await bot.api.sendMessage(item.chat_id!, String(item.payload.text));
       else throw new Error("unknown work kind");
       if (item.chat_id !== null) {
@@ -185,21 +198,36 @@ export async function drainChat(
         (await advisoryLock(
           `chat:${chat === null ? "None" : chat}`,
           async () => {
-            await bot.init();
+            await initializeBot(bot);
             const rows = (
               await raw<Item>(
-                "SELECT * FROM work_items WHERE chat_id IS NOT DISTINCT FROM $1 AND kind<>'job' AND status<>'complete' ORDER BY created_at,id LIMIT 20",
+                "SELECT * FROM work_items WHERE chat_id IS NOT DISTINCT FROM $1 AND kind NOT IN ('job','snapshot') AND status<>'complete' ORDER BY created_at,id LIMIT 20",
                 [chat],
               )
             ).rows;
             for (const item of rows) {
               if (item.status === "ambiguous") return "ambiguous";
+              // Retire obsolete unstarted work under the chat lock. Started
+              // work must replay its original checkpoints, including sends.
+              const retired = await raw(
+                `UPDATE work_items w SET status='complete',error=NULL,updated_at=now()
+                 WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM work_steps s WHERE s.work_id=w.id)
+                 AND ((kind='weekly' AND (payload->>'now')::double precision < $2)
+                   OR (kind='expiry' AND NOT EXISTS (SELECT 1 FROM sessions s
+                     WHERE s.chat_id=w.chat_id AND NOT s.is_closed
+                     AND EXTRACT(EPOCH FROM s.created_at) <= (w.payload->>'now')::double precision)))
+                 RETURNING id`,
+                [item.id, weeklyDue(Date.now() / 1000).now],
+              );
+              if (retired.rows.length) continue;
               const result = await executeItem(item, bot);
               if (result !== "complete") return result;
             }
             return "complete";
           },
-        )) ?? "failed"
+          // Another invocation owns this causal queue; leave its work untouched.
+          false,
+        )) ?? "busy"
       );
     },
     signal,
@@ -231,12 +259,33 @@ export async function processUpdate(
     signal,
   );
 }
+async function recoverSnapshots(bot: Bot) {
+  const rows = (
+    await raw<Item>(
+      "SELECT * FROM work_items WHERE kind='snapshot' AND status IN ('pending','failed') ORDER BY updated_at,created_at,id LIMIT 20",
+    )
+  ).rows;
+  for (const item of rows) {
+    await advisoryLock(
+      `snapshot:${item.payload.account_id}`,
+      async () => {
+        const latest = (
+          await raw<Item>("SELECT * FROM work_items WHERE id=$1", [item.id])
+        ).rows[0];
+        if (latest && ["pending", "failed"].includes(latest.status))
+          await executeItem(latest, bot);
+      },
+      false,
+    );
+  }
+}
 export async function recoverPending(bot: Bot) {
   const signal = current().signal;
   const rows = (
     await raw(
-      "SELECT chat_id FROM work_items WHERE kind<>'job' AND status IN ('pending','failed') GROUP BY chat_id ORDER BY min(created_at) LIMIT 20",
+      "SELECT chat_id FROM work_items WHERE kind NOT IN ('job','snapshot') AND status IN ('pending','failed') GROUP BY chat_id ORDER BY min(created_at) LIMIT 20",
     )
   ).rows;
   for (const row of rows) await drainChat(row.chat_id, bot, signal);
+  await recoverSnapshots(bot);
 }

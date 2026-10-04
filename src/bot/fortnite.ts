@@ -78,7 +78,7 @@ export function toMode(raw?: RawModeStats | null): ModeStats | null {
     wins: raw.wins,
     kills: raw.kills,
     kd: raw.kd,
-    win_rate: raw.winRate,
+    win_rate: raw.wins / raw.matches,
     minutes_played: raw.minutesPlayed,
   };
 }
@@ -109,6 +109,7 @@ export interface FetchOptions {
   name?: string | null;
   account_id?: string | null;
   with_image?: boolean;
+  time_window?: "season" | "lifetime";
 }
 type FetchResult =
   | { stats: PlayerStats }
@@ -118,11 +119,11 @@ type FetchResult =
       epic_account_id?: string;
       epic_name?: string;
     };
-export async function callApi(
+export async function callProvider(
   options: FetchOptions,
   fetcher: typeof fetch = scopedFetch,
   invocationSignal = maybeCurrent()?.signal,
-): Promise<PlayerStats> {
+): Promise<RawPlayerStats> {
   const { name, account_id, with_image = false } = options;
   if ((name == null) === (account_id == null))
     throw new TypeError(
@@ -131,7 +132,7 @@ export async function callApi(
   const url = new URL(
     `https://fortnite-api.com/v2/stats/br/v2${account_id != null ? `/${encodeURIComponent(account_id)}` : ""}`,
   );
-  url.searchParams.set("timeWindow", "season");
+  url.searchParams.set("timeWindow", options.time_window ?? "season");
   url.searchParams.set("image", with_image ? "all" : "none");
   if (name != null) {
     url.searchParams.set("name", name);
@@ -172,13 +173,26 @@ export async function callApi(
   }
   try {
     const json = (await response.json()) as { data: RawPlayerStats };
-    return toPlayerStats(json.data, with_image);
+    return json.data;
   } catch (error) {
     if (error instanceof StatsEmpty) throw error;
     if (signal.aborted)
       throw new FortniteUnavailable(
         signal.reason?.name === "TimeoutError" ? "timeout" : "request aborted",
       );
+    throw new FortniteUnavailable("unexpected error");
+  }
+}
+export async function callApi(
+  options: FetchOptions,
+  fetcher: typeof fetch = scopedFetch,
+  invocationSignal = maybeCurrent()?.signal,
+): Promise<PlayerStats> {
+  const raw = await callProvider(options, fetcher, invocationSignal);
+  try {
+    return toPlayerStats(raw, options.with_image ?? false);
+  } catch (error) {
+    if (error instanceof StatsEmpty) throw error;
     throw new FortniteUnavailable("unexpected error");
   }
 }
@@ -192,9 +206,29 @@ function deathsEstimate(mode: ModeStats): number {
       : floor + 1
     : Math.round(n);
 }
+export async function saveSeasonSnapshot(stats: PlayerStats) {
+  const { save_squad_snapshot } = await import("./db");
+  const sq = stats.squad;
+  await save_squad_snapshot(
+    stats.epic_account_id,
+    stats.fetched_at,
+    sq?.matches ?? 0,
+    sq?.wins ?? 0,
+    sq?.kills ?? 0,
+    sq ? deathsEstimate(sq) : 0,
+    sq?.kd ?? 0,
+    stats.overall.matches,
+    stats.overall.wins,
+    stats.overall.kills,
+    deathsEstimate(stats.overall),
+    stats.overall.kd,
+  );
+}
 export async function fetchStats(
   options: FetchOptions = {},
 ): Promise<PlayerStats> {
+  if (options.time_window === "lifetime")
+    throw new TypeError("durable bot statistics require season window");
   const { name = null, account_id = null, with_image = false } = options;
   // No process-global cache: invocation replay is supplied by durable checkpoints.
   const result = await externalCheckpoint<FetchResult>(
@@ -203,22 +237,7 @@ export async function fetchStats(
       try {
         const stats = await callApi(options);
         try {
-          const { save_squad_snapshot } = await import("./db");
-          const sq = stats.squad;
-          await save_squad_snapshot(
-            stats.epic_account_id,
-            stats.fetched_at,
-            sq?.matches ?? 0,
-            sq?.wins ?? 0,
-            sq?.kills ?? 0,
-            sq ? deathsEstimate(sq) : 0,
-            sq?.kd ?? 0,
-            stats.overall.matches,
-            stats.overall.wins,
-            stats.overall.kills,
-            deathsEstimate(stats.overall),
-            stats.overall.kd,
-          );
+          await saveSeasonSnapshot(stats);
         } catch {
           console.warn("failed to save squad snapshot");
         }

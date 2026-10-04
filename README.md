@@ -24,6 +24,9 @@ Supabase Postgres. App Router также служит основой будущ�
 
 Node.js 24 LTS и pnpm. Пакеты устанавливаются
 напрямую с `registry.npmjs.org`, без proxy. `.nvmrc` фиксирует Node major.
+TypeScript 7 (`@typescript/native`) выполняет `pnpm typecheck`; alias `typescript`
+на `@typescript/typescript6` предоставляет compiler API для ESLint и Next.js.
+Типы Node.js остаются на major 24, как production runtime.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -48,6 +51,28 @@ pnpm build
 Без `TEST_DATABASE_URL` Postgres-тесты пропускаются; такой запуск не доказывает
 работу storage/recovery. CI запускает проверки с отдельной базой.
 
+## CI/CD
+
+GitHub Actions сохраняет обязательный check `ci`: lint, форматирование, типы,
+Postgres/Vitest (включая importer) и Next.js build. pnpm store и `.next/cache`
+кэшируются; новые commits отменяют устаревшие CI/CodeQL runs. CI не получает
+production secrets; Sentry release/upload включены только в Vercel build.
+Ruleset `gymrules` требует PR, `ci` и актуальный `main`
+(**Require branches to be up to date before merging**). Имя check менять нельзя
+без одновременного обновления ruleset.
+
+Vercel Git integration собирает и публикует только `main`. Workflow
+`Production smoke` использует native `vercel.deployment.success`
+[repository_dispatch](https://vercel.com/docs/git/vercel-for-github#repository-dispatch-events)
+для production и доступен вручную через Actions. Он проверяет `/health` и отказ
+неавторизованных webhook/job/admin requests, без secrets и отправки сообщений.
+Ответ 403 принимается только с Vercel `x-vercel-mitigated: deny` и отмечается
+отдельно: это отказ firewall, application auth в таком запросе не проверен.
+Это проверка после публикации, а не deployment gate; она не доказывает доступность
+базы, правильность webhook или успешность cron. При необходимости блокировать
+публикацию до live-проверок используйте отдельную
+[Vercel Checks integration](https://vercel.com/docs/checks).
+
 ## Supabase CI/CD
 
 SQL хранится в `supabase/migrations/`; новые файлы создаются командой
@@ -55,7 +80,7 @@ SQL хранится в `supabase/migrations/`; новые файлы созда
 `pnpm bot migrate` читает тот же каталог и использует общий журнал
 `supabase_migrations.schema_migrations`. В новых SQL используйте квалифицированные
 имена `fortnite_bot.*` или `SET LOCAL search_path = fortnite_bot`: CLI не задаёт
-search path приложения. Две исходные миграции проверяют старый
+search path приложения. Исходные миграции проверяют старый
 журнал `fortnite_bot.migrations`: уже применённый SQL не выполняется повторно,
 а пустая preview-база получает полную схему. Старый журнал остаётся для совместимости.
 
@@ -86,16 +111,35 @@ routes; production Vault secrets, cron и webhook в preview не копирую
 полностью awaited, без detached tasks. API paths сохранены:
 
 - `POST /api/telegram/webhook`
-- `POST /api/jobs/expiry`, `/status`, `/weekly`, `/cleanup`
+- `POST /api/jobs/maintenance`, `/status`
+- `POST /api/jobs/expiry`, `/weekly`, `/cleanup` — совместимые прежние URL
 - `GET /health`, `GET /api/admin/inspect`
 - `POST /api/admin/register-webhook` — только явная административная операция
 
 Нужны `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `CRON_SECRET`, `PUBLIC_BASE_URL`,
 `DATABASE_URL` либо `POSTGRES_URL_NON_POOLING`. Соединение с Supabase — SSL и session
 pooler 5432: transaction pooler 6543 несовместим с session advisory locks.
+Для Supabase pooler встроен официальный root CA; сертификат и hostname проверяются.
 Опционально: `FORTNITE_API_KEY`, `ADMIN_USER_ID` и настройки roast (модель,
 вероятность и cooldown). Grok получает app-scoped token через Vercel Connect
 `grok/fortnite-collect-bot`; отдельный ключ xAI в окружении не нужен. Секреты не должны иметь префикс `NEXT_PUBLIC_`.
+
+Опциональный `MEM0_API_KEY` включает долгую память для ответов `/roast`:
+перед генерацией бот ищет до пяти релевантных воспоминаний, после успешной отправки
+сохраняет реплику пользователя и ответ. Область памяти — Telegram user ID внутри
+конкретной группы; имена и клиентские ID для доступа не используются. В Mem0
+отправляются только реплики, на которые бот отвечает при включённом roast, а не весь
+чат. Настройка ключа разрешает передачу этих реплик в hosted Mem0; память можно
+просматривать и удалять в Mem0 dashboard. Без ключа или при ошибке/таймауте Mem0
+бот продолжает работать с локальной историей. SDK telemetry отключена; запросы
+awaited, с лимитом 5 секунд и общим deadline invocation.
+
+Генерация с поиском остаётся внутри существующего `roast` checkpoint; запись памяти
+добавлена после Telegram checkpoint, поэтому завершённая отправка не повторяется
+при retry. Успешная запись Mem0 replay-ится; сбой записи checkpoint-ится как `false`
+без автоматического resend. Если процесс оборвётся после принятия записи Mem0,
+но до сохранения checkpoint, replay может повторно добавить turn: атомарности между
+Mem0 и Postgres нет (message ID сохранён в metadata для диагностики).
 
 После проверки stable production явно зарегистрируйте webhook:
 
@@ -109,12 +153,36 @@ pnpm bot webhook-info
 URL и secret хранятся в Vault. Проверять нужно actual HTTP outcomes, а не только
 успешный запуск SQL cron.
 
+В [ops/schedules.sql](ops/schedules.sql) три расписания вместо четырёх:
+maintenance каждую минуту, Epic status каждые три минуты вечером и ежедневная
+очистка snapshots прямо в SQL. Maintenance ставит в очередь только просроченные
+сборы, публикацию за последний наступивший пятничный период и дневные snapshots,
+затем восстанавливает незавершённую работу. Время реакции recovery остаётся минутным;
+объединение расписаний само по себе почти не уменьшает число HTTP вызовов.
+
+Недельная публикация догоняет пропущенную пятницу до следующего периода; повторные
+тики используют тот же ID публикации. Snapshots собираются раз в день МСК для каждого
+уникального Epic-аккаунта, даже если в чате не вызывают `/teamstats`. Ошибки провайдера
+повторяются отдельно от очередей чатов; закрытые/пустые профили проверяются снова на
+следующий день. При первом запуске недельные данные всё ещё требуют накопления baseline.
+Каждый проход ограничивает число выбранных записей; оставшаяся работа ждёт следующего тика.
+
+После деплоя и проверки `/api/jobs/maintenance` примените SQL через Supabase tools.
+Он транзакционно заменяет расписания expiry/weekly и переводит cleanup в SQL;
+существующие job URL остаются доступны. SQL-only cleanup сохраняет проверку
+`import_manifest` перед удалением snapshots старше 30 дней.
+
 ## Recovery и переход с Python
 
 `storage.ts` держит один invocation-scoped Postgres client, `work.ts` — журнал действий,
 `runtime.ts` — очередь чата. SQL mutations коммитятся атомарно с checkpoints; reads,
 time/random и provider results replay исходных значений. Telegram sends с неизвестным
 результатом блокируют очередь до ручного разбора, вместо слепой повторной отправки.
+
+`handlers.ts` регистрирует команды; feature-модули в `handlers/` содержат сборы,
+настройки чата, roast и Fortnite-команды. `services/weekly-stats.ts` рассчитывает
+недельные дельты без зависимости от React или grammY. Перенос обработчиков сохраняет
+порядок и signatures checkpoints существующих work items.
 
 SQLite importer реализован на TypeScript и запускается локально. Эталонные сообщения
 сохранены в parity fixtures; предыдущий Python runtime доступен только в Git для rollback:
@@ -158,4 +226,4 @@ Vercel Web Analytics подключается через `@vercel/analytics` в 
 После деплоя нужно включить Web Analytics в dashboard проекта и проверить поступление
 событий. Browser analytics не подтверждает работу Telegram webhook и cron.
 
-Будущий Telegram Mini App: [docs/MINI_APP.md](docs/MINI_APP.md).
+Telegram Mini App со статистикой: [docs/MINI_APP.md](docs/MINI_APP.md).

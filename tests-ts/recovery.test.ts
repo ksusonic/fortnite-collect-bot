@@ -1,3 +1,8 @@
+import * as undici from "undici";
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return { ...actual, fetch: vi.fn(actual.fetch) };
+});
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Bot, BotError } from "grammy";
 import * as db from "../src/bot/db";
@@ -10,7 +15,12 @@ import {
   raw,
   withWork,
 } from "../src/bot/storage";
-import { AmbiguousOutcome, Work, valueCheckpoint } from "../src/bot/work";
+import {
+  AmbiguousOutcome,
+  Work,
+  valueCheckpoint,
+  externalCheckpoint,
+} from "../src/bot/work";
 import { createBot, drainChat, enqueue, executeItem } from "../src/bot/runtime";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -34,6 +44,48 @@ suite("Postgres recovery and storage", () => {
       await raw(
         "TRUNCATE sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state,import_manifest CASCADE",
       );
+    });
+  });
+  it("leaves queued work untouched when another invocation owns the chat", async () => {
+    await invocation(null, () =>
+      enqueue("update:overlap", "update", -99, { update_id: 99 }),
+    );
+    let acquired!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const owner = invocation(-99, () =>
+      advisoryLock("chat:-99", async () => {
+        acquired();
+        await hold;
+      }),
+    );
+    await locked;
+    const bot = { init: vi.fn() } as unknown as Bot;
+    try {
+      expect(await drainChat(-99, bot)).toBe("busy");
+      expect(bot.init).not.toHaveBeenCalled();
+      await invocation(null, async () => {
+        expect(
+          (
+            await raw("SELECT status,attempts FROM work_items WHERE id=$1", [
+              "update:overlap",
+            ])
+          ).rows[0],
+        ).toMatchObject({ status: "pending", attempts: 0 });
+      });
+    } finally {
+      release();
+      await owner;
+    }
+    await invocation(-99, async () => {
+      expect(
+        await advisoryLock("chat:-99", async () => "available", false),
+      ).toBe("available");
     });
   });
   it("uses Python-compatible advisory lock keys", () => {
@@ -125,6 +177,27 @@ suite("Postgres recovery and storage", () => {
       ).toBe(true);
     });
   });
+  it("replays generation and appended memory writes without changing older checkpoint order", async () => {
+    await invocation(-10, async () => {
+      await enqueue("memory-retry", "update", -10, {});
+      const generate = vi.fn().mockResolvedValue("reply");
+      const store = vi.fn().mockResolvedValue(true);
+      // An old invocation completed generation before this version was deployed.
+      await withWork(new Work("memory-retry"), () =>
+        externalCheckpoint("roast", generate),
+      );
+      const replay = () =>
+        withWork(new Work("memory-retry"), async () => {
+          const result = await externalCheckpoint("roast", generate);
+          const saved = await externalCheckpoint("roast-memory-add", store);
+          return { result, saved };
+        });
+      expect(await replay()).toEqual({ result: "reply", saved: true });
+      expect(await replay()).toEqual({ result: "reply", saved: true });
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(store).toHaveBeenCalledTimes(1);
+    });
+  });
   it("rolls SQL mutation back if checkpoint cannot commit", async () => {
     await invocation(-10, async () => {
       // Missing work parent violates the checkpoint FK after the SQL write.
@@ -168,14 +241,14 @@ suite("Postgres recovery and storage", () => {
     const originalToken = process.env.BOT_TOKEN;
     process.env.BOT_TOKEN = "123:fake-test-token";
     const fetcher = vi
-      .spyOn(globalThis, "fetch")
+      .spyOn(undici, "fetch")
       .mockImplementation(async (_input, init) => {
         expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(JSON.parse(String(init?.body))).toMatchObject({
           text: "<b>hello</b>",
           parse_mode: "HTML",
         });
-        return new Response(
+        return new undici.Response(
           JSON.stringify({
             ok: true,
             result: {
@@ -245,12 +318,12 @@ suite("Postgres recovery and storage", () => {
     process.env.BOT_TOKEN = "123:fake-test-token";
     let editAttempts = 0;
     const fetcher = vi
-      .spyOn(globalThis, "fetch")
+      .spyOn(undici, "fetch")
       .mockImplementation(async (input) => {
         const method = String(input).split("/").at(-1);
         if (method === "editMessageText" && ++editAttempts === 1)
           throw new Error("edit connection interrupted");
-        return new Response(
+        return new undici.Response(
           JSON.stringify({
             ok: true,
             result:
@@ -349,7 +422,7 @@ suite("Postgres recovery and storage", () => {
       ).toBe("ambiguous");
     });
     const bot = {
-      init: async () => {},
+      isInited: () => true,
       handleUpdate: async () => {
         throw new Error("later must not execute");
       },

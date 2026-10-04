@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  diagnosticCode,
   privacyOptions,
   sanitizeBreadcrumb,
   sanitizeEvent,
@@ -11,6 +12,28 @@ import { GET } from "../src/app/api/sentry-example-api/route";
 
 afterEach(() => vi.unstubAllEnvs());
 describe("Sentry privacy", () => {
+  it("reports only recognized infrastructure error codes", () => {
+    expect(
+      diagnosticCode(
+        Object.assign(new Error("private payload"), {
+          code: "SELF_SIGNED_CERT_IN_CHAIN",
+        }),
+      ),
+    ).toBe("SELF_SIGNED_CERT_IN_CHAIN");
+    expect(diagnosticCode({ code: "private-message" })).toBeUndefined();
+    expect(diagnosticCode(new Error("Query read timeout"))).toBe(
+      "PG_QUERY_READ_TIMEOUT",
+    );
+    expect(diagnosticCode({ code: "57014" })).toBe("57014");
+    expect(diagnosticCode({ code: "unknown" })).toBeUndefined();
+    expect(
+      diagnosticCode({ error: { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } } }),
+    ).toBe("UND_ERR_CONNECT_TIMEOUT");
+    const circular: { error?: unknown } = {};
+    circular.error = circular;
+    expect(diagnosticCode(circular)).toBeUndefined();
+    expect(diagnosticCode(new Error("private payload"))).toBeUndefined();
+  });
   it("keeps the selected project and disables private data collection", () => {
     expect(new URL(SENTRY_DSN).pathname).toBe("/4512190824513616");
     expect(privacyOptions.sendDefaultPii).toBe(false);

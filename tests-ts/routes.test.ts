@@ -12,7 +12,13 @@ vi.mock("../src/bot/runtime", () => ({
   },
 }));
 vi.mock("../src/bot/jobs", () => ({
-  JOB_PERIODS: { expiry: 60, status: 180, weekly: 300, cleanup: 86400 },
+  JOB_PERIODS: {
+    maintenance: 60,
+    expiry: 60,
+    status: 180,
+    weekly: 300,
+    cleanup: 86400,
+  },
   runJob: mock.runJob,
 }));
 vi.mock("../src/bot/webhook", () => ({
@@ -90,17 +96,25 @@ describe("authenticated Next.js routes", () => {
       ).status,
     ).toBe(404);
     mock.runJob.mockResolvedValue({ ok: true });
-    expect(
-      (
-        await job(
-          request("/api/jobs/weekly", "{}", {
-            authorization: "Bearer test-cron",
-          }),
-          { params },
-        )
-      ).status,
-    ).toBe(200);
-    expect(mock.runJob).toHaveBeenCalledWith("weekly", expect.any(AbortSignal));
+    for (const name of [
+      "maintenance",
+      "expiry",
+      "status",
+      "weekly",
+      "cleanup",
+    ]) {
+      expect(
+        (
+          await job(
+            request(`/api/jobs/${name}`, "{}", {
+              authorization: "Bearer test-cron",
+            }),
+            { params: Promise.resolve({ name }) },
+          )
+        ).status,
+      ).toBe(200);
+      expect(mock.runJob).toHaveBeenCalledWith(name, expect.any(AbortSignal));
+    }
   });
   it("registers a webhook only through an explicit authenticated operation", async () => {
     expect(

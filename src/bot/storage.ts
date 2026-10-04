@@ -1,3 +1,5 @@
+import { SUPABASE_ROOT_CA } from "./supabase-ca";
+import { rootCertificates } from "node:tls";
 import { withHttpClient } from "./transport";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
@@ -86,7 +88,14 @@ export function databaseConfig() {
   };
   return {
     connectionString: parsed.toString(),
-    ssl: local ? false : { rejectUnauthorized: true },
+    ssl: local
+      ? false
+      : {
+          rejectUnauthorized: true,
+          ...(parsed.hostname.endsWith(".pooler.supabase.com")
+            ? { ca: [...rootCertificates, SUPABASE_ROOT_CA] }
+            : {}),
+        },
     connectionTimeoutMillis: 10000,
     query_timeout: 20000,
     options: "-c search_path=fortnite_bot -c statement_timeout=20000",

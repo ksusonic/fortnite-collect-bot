@@ -1,4 +1,6 @@
 allowBuilds:
+  # Mem0 hosted client does not use its OSS SQLite backend.
+  better-sqlite3: false
   esbuild: true
   unrs-resolver: true
 minimumReleaseAgeExclude:

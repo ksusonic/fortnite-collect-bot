@@ -11,6 +11,47 @@ type TransactionEvent = Parameters<
 
 export const SENTRY_DSN =
   "https://a997a7108b8315cf576e410c980f856a@o4510234774929408.ingest.de.sentry.io/4512190824513616";
+const diagnosticCodes = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_HAS_EXPIRED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "57014", // query cancellation / statement timeout
+  "55P03", // lock unavailable
+  "40P01", // deadlock
+  "42P01", // missing table
+  "42703", // missing column
+  "42883", // missing function
+  "42501", // insufficient privilege
+  "28P01", // authentication failure
+  "25P02", // transaction aborted
+  "23505", // unique constraint
+]);
+export function diagnosticCode(error: unknown, depth = 0): string | undefined {
+  if (error instanceof Error && error.message === "Query read timeout")
+    return "PG_QUERY_READ_TIMEOUT";
+  if (!error || typeof error !== "object" || depth > 2) return;
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    diagnosticCodes.has(error.code)
+  )
+    return error.code;
+  const wrapped =
+    "error" in error ? error.error : "cause" in error ? error.cause : undefined;
+  return diagnosticCode(wrapped, depth + 1);
+}
 export function sanitizeText(text: string): string {
   return text
     .replace(/\b(?:https?|postgres(?:ql)?):\/\/[^\s"'<>]+/gi, (value) => {

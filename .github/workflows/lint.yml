@@ -5,18 +5,25 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       TEST_DATABASE_URL: postgresql://runner:test-only@127.0.0.1:5432/fortnite_test
+      NEXT_TELEMETRY_DISABLED: "1"
+      VERCEL: "0"
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
+          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm format:check
@@ -29,4 +36,11 @@ jobs:
       - name: Validate Supabase migrations on disposable Postgres
         run: pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 db push --db-url "${TEST_DATABASE_URL}?sslmode=disable" --yes
       - run: pnpm test
+      - name: Restore Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('.nvmrc', 'pnpm-lock.yaml') }}-${{ hashFiles('src/**', 'next.config.*', 'tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('.nvmrc', 'pnpm-lock.yaml') }}-
       - run: pnpm build

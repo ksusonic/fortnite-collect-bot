@@ -1,0 +1,29 @@
+name: Production smoke
+
+on:
+  repository_dispatch:
+    types: [vercel.deployment.success]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Production Vercel URL to verify
+        required: true
+        default: https://fortnite-collect-bot-daniils-projects-0e3d8509.vercel.app
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event.client_payload.environment == 'production' && github.event.client_payload.project.id == 'prj_VO7jqQWdL7EhASNUvWkBNfHWIuoA')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify health and authentication boundaries
+        run: node scripts/verify-deployment.mjs
+        env:
+          DEPLOYMENT_URL: ${{ inputs.url || github.event.client_payload.url }}

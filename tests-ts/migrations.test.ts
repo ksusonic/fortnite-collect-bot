@@ -40,13 +40,13 @@ suite("Supabase migration compatibility", () => {
         "INSERT INTO service_state(key,value) VALUES ('migration-test', '{\"preserved\":true}') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
       );
       const constraint = await raw(
-        "SELECT oid FROM pg_constraint WHERE conrelid='fortnite_bot.sessions'::regclass AND contype='p'",
+        "SELECT oid FROM pg_constraint WHERE conrelid IN ('fortnite_bot.sessions'::regclass, 'fortnite_bot.statistics_cache'::regclass) AND contype='p' ORDER BY oid",
       );
       const history = await raw(
         "SELECT version FROM supabase_migrations.schema_migrations ORDER BY version",
       );
       await raw(
-        "DELETE FROM supabase_migrations.schema_migrations WHERE version IN ('20261004123945', '20261004123946')",
+        "DELETE FROM supabase_migrations.schema_migrations WHERE version IN ('20261004123945', '20261004123946', '20261004125048')",
       );
       return { constraints: constraint.rows, history: history.rows };
     });
@@ -63,7 +63,7 @@ suite("Supabase migration compatibility", () => {
       expect(
         (
           await raw(
-            "SELECT oid FROM pg_constraint WHERE conrelid='fortnite_bot.sessions'::regclass AND contype='p'",
+            "SELECT oid FROM pg_constraint WHERE conrelid IN ('fortnite_bot.sessions'::regclass, 'fortnite_bot.statistics_cache'::regclass) AND contype='p' ORDER BY oid",
           )
         ).rows,
       ).toEqual(before.constraints);
