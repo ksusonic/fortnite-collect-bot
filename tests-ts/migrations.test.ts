@@ -50,10 +50,14 @@ suite("Supabase migration compatibility", () => {
           "CREATE TABLE import_manifest(id integer); CREATE TABLE news_sent(id integer); CREATE TABLE fortnite_news_seen(id integer)",
         );
         await raw(
-          "CREATE SCHEMA cron; CREATE TABLE cron.job(jobname text, command text)",
+          `CREATE SCHEMA cron;
+           CREATE TABLE cron.job(jobid bigint GENERATED ALWAYS AS IDENTITY, jobname text, command text);
+           CREATE FUNCTION cron.alter_job(job_id bigint, command text) RETURNS void LANGUAGE sql AS $body$
+             UPDATE cron.job SET command = $2 WHERE jobid = $1
+           $body$`,
         );
         await raw(
-          "INSERT INTO cron.job VALUES ('fortnite-cleanup','SELECT 1 FROM fortnite_bot.import_manifest')",
+          "INSERT INTO cron.job(jobname,command) VALUES ('fortnite-cleanup','SELECT 1 FROM fortnite_bot.import_manifest')",
         );
         await raw(
           "INSERT INTO chat_features(chat_id,feature,enabled) VALUES (-99901,'roast',true),(-99902,'roast',false)",
