@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { requestStats } from "@/mini-app/telegram";
 import type { ChatsDTO } from "@/mini-app/dto";
 import { TeamScreen, ProfileScreen, GatheringScreen } from "./screens";
+import { Icon } from "./icons";
 import "./mini-app.css";
 
 type Tab = "team" | "profile" | "gatherings";
@@ -100,7 +101,7 @@ export default function MiniApp() {
           <h1>Статистика</h1>
         </div>
         <span className="brand-mark" aria-hidden="true">
-          ✦
+          <Icon name="brand" />
         </span>
       </header>
       {error ? (
@@ -172,17 +173,19 @@ export default function MiniApp() {
           <nav className="bottom-nav" aria-label="Разделы">
             {(
               [
-                ["team", "🏆", "Команда"],
-                ["profile", "🎯", "Моя статистика"],
-                ["gatherings", "🎮", "Сборы"],
+                ["team", "Команда"],
+                ["profile", "Моя статистика"],
+                ["gatherings", "Сборы"],
               ] as const
-            ).map(([id, icon, label]) => (
+            ).map(([id, label]) => (
               <button
                 key={id}
                 aria-current={tab === id ? "page" : undefined}
                 onClick={() => navigate(id)}
               >
-                <span aria-hidden="true">{icon}</span>
+                <span aria-hidden="true">
+                  <Icon name={id} />
+                </span>
                 {label}
               </button>
             ))}
