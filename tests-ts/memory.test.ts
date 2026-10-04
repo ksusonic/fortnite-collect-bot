@@ -1,7 +1,8 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { searchMemories, storeMemoryTurn } from "../src/bot/memory";
 
 const request = vi.hoisted(() => vi.fn());
+let errorLog: ReturnType<typeof vi.spyOn>;
 vi.mock("../src/bot/transport", () => ({
   scopedFetch: request,
   httpSignal: () => AbortSignal.timeout(5000),
@@ -10,13 +11,17 @@ vi.mock("../src/bot/transport", () => ({
 beforeEach(() => {
   vi.unstubAllEnvs();
   request.mockReset();
+  errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 it("does not call Mem0 when the optional key is absent", async () => {
   vi.stubEnv("MEM0_API_KEY", "");
   expect(await searchMemories(-100, 7, "hi")).toEqual([]);
   expect(await storeMemoryTurn(-100, 7, "hi", "reply", 1)).toBe(false);
   expect(request).not.toHaveBeenCalled();
+  expect(errorLog).not.toHaveBeenCalled();
 });
 
 it("uses the SDK envelope and isolates chat and user identities", async () => {
@@ -74,6 +79,24 @@ it.each(["unavailable", "timeout", "invalid-response"])(
       expect(await storeMemoryTurn(-100, 7, "private text", "reply", 1)).toBe(
         false,
       );
+    expect(errorLog).toHaveBeenCalledWith("Mem0 operation failed", {
+      operation: "search",
+      kind:
+        failure === "unavailable"
+          ? "http"
+          : failure === "timeout"
+            ? "timeout"
+            : "invalid-response-or-transport",
+      ...(failure === "unavailable" ? { status: 503 } : {}),
+    });
+    if (failure !== "invalid-response")
+      expect(errorLog).toHaveBeenCalledWith(
+        "Mem0 operation failed",
+        expect.objectContaining({ operation: "add" }),
+      );
+    const logs = JSON.stringify(errorLog.mock.calls);
+    for (const sensitive of ["secret", "test-key", "private text", "reply"])
+      expect(logs).not.toContain(sensitive);
   },
 );
 
