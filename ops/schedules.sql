@@ -35,5 +35,9 @@ $job$);
 SELECT cron.schedule('fortnite-cleanup', '0 1 * * *', $job$
     DELETE FROM fortnite_bot.squad_snapshots
     WHERE fetched_at < now() - interval '30 days';
+    -- Preserve a day of stale fallback; remove old hash keys and failure markers.
+    DELETE FROM fortnite_bot.statistics_cache
+    WHERE expires_at < now() - interval '1 day'
+      AND (retry_after IS NULL OR retry_after < now());
 $job$);
 COMMIT;

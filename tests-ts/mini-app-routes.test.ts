@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   weekly: vi.fn(),
   gatherings: vi.fn(),
   analysis: vi.fn(),
+  lock: vi.fn(async (_chat: number, load: () => Promise<unknown>) => load()),
 }));
 vi.mock("../src/bot/storage", () => ({
   invocation: async (_chat: unknown, load: () => Promise<unknown>) => load(),
@@ -22,7 +23,7 @@ vi.mock("../src/statistics/service", () => ({
   weeklyReport: mocks.weekly,
   gatheringReport: mocks.gatherings,
   teamAnalysis: mocks.analysis,
-  lockedChat: async (_chat: number, load: () => Promise<unknown>) => load(),
+  lockedChat: mocks.lock,
   failureReason: () => "Unavailable",
   FortniteError: class extends Error {},
 }));
@@ -142,6 +143,17 @@ describe("Mini App API boundaries", () => {
     );
     expect(response.status).toBe(400);
     expect(mocks.profile).not.toHaveBeenCalled();
+  });
+  it("refreshes weekly profiles without acquiring the bot chat lock", async () => {
+    for (const resource of ["weekly", "refresh", "analysis"]) {
+      mocks.analysis.mockResolvedValue(null);
+      const response = await miniAppEndpoint(
+        request(resource, "chat=-100", resource === "refresh" ? "POST" : "GET"),
+        resource,
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(mocks.lock).not.toHaveBeenCalled();
   });
   it("analysis uses server facts instead of supplied navigation parameters", async () => {
     mocks.analysis.mockResolvedValue(null);

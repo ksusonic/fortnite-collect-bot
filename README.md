@@ -254,3 +254,6 @@ checkpointed на work item; ошибка/невалидная политика 
 порядок checkpoints обработчика текста изменился. Новую миграцию применяйте до
 деплоя runtime; не меняйте production schema при запуске бота. После релиза проверьте
 результат `/api/jobs/maintenance`, меню Telegram и сохранение разговорных предпочтений.
+
+После релиза примените `ops/schedules.sql` через Supabase tools: daily cleanup
+удаляет cache entries, истёкшие более суток назад, сохраняя stale fallback.

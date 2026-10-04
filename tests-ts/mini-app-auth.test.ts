@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { createHmac } from "node:crypto";
 import { validateInitData, chatHint } from "../src/mini-app/auth";
 import {
@@ -7,8 +7,12 @@ import {
   authorizeChat,
 } from "../src/mini-app/access";
 import { statisticsKeyboard } from "../src/bot/mini-app-link";
-const state = vi.hoisted(() => ({ raw: vi.fn() }));
+const state = vi.hoisted(() => ({ raw: vi.fn(), approved: vi.fn() }));
 vi.mock("../src/bot/storage", () => ({ raw: state.raw }));
+vi.mock("../src/bot/services/chat-access", () => ({
+  isChatApproved: state.approved,
+}));
+beforeEach(() => state.approved.mockResolvedValue(true));
 export function signedData(
   values: Record<string, string>,
   token = "test-token",
@@ -78,6 +82,15 @@ describe("Mini App authentication", () => {
   });
 });
 describe("live membership authorization", () => {
+  it("rejects unapproved historical chats before Telegram access", async () => {
+    state.raw.mockResolvedValue({ rowCount: 1 });
+    state.approved.mockResolvedValue(false);
+    const mock = api();
+    await expect(authorizeChat(mock as never, -100, 7)).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(mock.getMe).not.toHaveBeenCalled();
+  });
   it("requires bot administrator status before checking the viewer", async () => {
     const mock = api();
     mock.getChatMember.mockResolvedValue({ status: "member" });

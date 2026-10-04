@@ -2,6 +2,7 @@ import "server-only";
 import type { Api } from "grammy";
 import { HttpError } from "../bot/http";
 import { raw } from "../bot/storage";
+import { isChatApproved } from "../bot/services/chat-access";
 import type { Viewer } from "./auth";
 import { chatHint } from "./auth";
 
@@ -10,6 +11,8 @@ export async function verifyMembership(
   chat: number,
   viewer: number,
 ) {
+  if (!(await isChatApproved(chat)))
+    throw new HttpError(403, "Чат недоступен.");
   try {
     const me = await api.getMe();
     const bot = await api.getChatMember(chat, me.id);
@@ -59,9 +62,11 @@ export async function discoverChats(
 ) {
   const rows = (
     await raw<{ chat_id: number }>(
-      `SELECT chat_id FROM responses WHERE user_id=$1 AND NOT is_bot
+      `SELECT candidates.chat_id FROM (
+ SELECT chat_id FROM responses WHERE user_id=$1 AND NOT is_bot
  UNION SELECT chat_id FROM sessions WHERE initiator_id=$1
- UNION SELECT chat_id FROM epic_links WHERE user_id=$1`,
+ UNION SELECT chat_id FROM epic_links WHERE user_id=$1
+ ) candidates JOIN approved_chats a ON a.chat_id=candidates.chat_id`,
       [viewer.id],
     )
   ).rows;

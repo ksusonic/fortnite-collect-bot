@@ -100,7 +100,24 @@ suite("schedule SQL configuration and cleanup", () => {
           VALUES ('old',now()-interval '31 days',0,0,0,0,0),
                  ('boundary',now()-interval '30 days',0,0,0,0,0),
                  ('recent',now()-interval '29 days',0,0,0,0,0)`);
+        await raw("TRUNCATE statistics_cache");
+        await raw(`INSERT INTO statistics_cache(cache_key,version,result,fetched_at,expires_at,retry_after)
+          VALUES ('old',1,'{}',now(),now()-interval '2 days',NULL),
+                 ('boundary',1,'{}',now(),now()-interval '1 day',NULL),
+                 ('recent',1,'{}',now(),now()-interval '1 hour',NULL),
+                 ('retry',1,'null',now(),now()-interval '2 days',now()+interval '1 minute')`);
         await raw(cleanup);
+        expect(
+          (
+            await raw(
+              "SELECT cache_key FROM statistics_cache ORDER BY cache_key",
+            )
+          ).rows,
+        ).toEqual([
+          { cache_key: "boundary" },
+          { cache_key: "recent" },
+          { cache_key: "retry" },
+        ]);
         expect(
           (
             await raw(
