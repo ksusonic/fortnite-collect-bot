@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   events: [] as string[],
   generate: vi.fn(),
   store: vi.fn(),
+  confirm: vi.fn(),
 }));
 vi.mock("../src/bot/storage", () => ({ getRoastState: () => ({}) }));
 vi.mock("../src/bot/services/chat-access", () => ({
@@ -45,6 +46,7 @@ vi.mock("../src/bot/roast", () => ({
 }));
 vi.mock("../src/bot/memory", () => ({
   storeMemoryTurn: (...args: unknown[]) => state.store(...args),
+  confirmMemoryTurn: (...args: unknown[]) => state.confirm(...args),
 }));
 
 function bot() {
@@ -102,7 +104,8 @@ beforeEach(() => {
   state.generate
     .mockReset()
     .mockResolvedValue({ action: "reply", text: state.reply });
-  state.store.mockReset().mockResolvedValue(true);
+  state.store.mockReset().mockResolvedValue({ eventId: "event" });
+  state.confirm.mockReset().mockResolvedValue("empty");
 });
 
 it("passes Telegram identity to generation and stores only after a successful send", async () => {
@@ -121,11 +124,25 @@ it("passes Telegram identity to generation and stores only after a successful se
     7,
   );
   expect(state.store).toHaveBeenCalledWith(-100, 7, "play?", state.reply, 42);
+  expect(state.confirm).toHaveBeenCalledWith("event");
   expect(state.events).toEqual([
     "adaptive-roast-v1",
     "sendMessage",
     "roast-memory-add",
+    "roast-memory-confirm",
   ]);
+});
+
+it("replays old boolean checkpoints without confirming a missing event ID", async () => {
+  state.store.mockResolvedValue(true);
+  await bot().handleUpdate(update);
+  expect(state.confirm).not.toHaveBeenCalled();
+});
+
+it("skips confirmation when Mem0 did not accept the write", async () => {
+  state.store.mockResolvedValue(null);
+  await bot().handleUpdate(update);
+  expect(state.confirm).not.toHaveBeenCalled();
 });
 
 it("does not store turns when Telegram send fails", async () => {

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { searchMemories, storeMemoryTurn } from "../src/bot/memory";
+import {
+  confirmMemoryTurn,
+  searchMemories,
+  storeMemoryTurn,
+} from "../src/bot/memory";
+
+const eventId = "3c90c3cc-0d44-4b50-8888-8dd25736052a";
 
 const request = vi.hoisted(() => vi.fn());
 const sentryLog = vi.hoisted(() => ({
@@ -11,7 +17,7 @@ let errorLog: ReturnType<typeof vi.spyOn>;
 vi.mock("@sentry/nextjs", () => ({ logger: sentryLog }));
 vi.mock("../src/bot/transport", () => ({
   scopedFetch: request,
-  httpSignal: () => AbortSignal.timeout(5000),
+  httpSignal: () => new AbortController().signal,
 }));
 
 beforeEach(() => {
@@ -26,7 +32,7 @@ afterEach(() => vi.restoreAllMocks());
 it("does not call Mem0 when the optional key is absent", async () => {
   vi.stubEnv("MEM0_API_KEY", "");
   expect(await searchMemories(-100, 7, "hi")).toEqual([]);
-  expect(await storeMemoryTurn(-100, 7, "hi", "reply", 1)).toBe(false);
+  expect(await storeMemoryTurn(-100, 7, "hi", "reply", 1)).toBeNull();
   expect(request).not.toHaveBeenCalled();
   expect(errorLog).not.toHaveBeenCalled();
   expect(sentryLog.warn).toHaveBeenCalledWith(
@@ -60,8 +66,12 @@ it("uses the SDK envelope and isolates chat and user identities", async () => {
 
 it("stores both turns under the same scope with message metadata", async () => {
   vi.stubEnv("MEM0_API_KEY", "test-key");
-  request.mockResolvedValue(Response.json({ status: "queued", event_id: "e" }));
-  expect(await storeMemoryTurn(-100, 7, "play?", "yes", 42)).toBe(true);
+  request.mockResolvedValue(
+    Response.json({ status: "PENDING", event_id: eventId }),
+  );
+  expect(await storeMemoryTurn(-100, 7, "play?", "yes", 42)).toEqual({
+    eventId,
+  });
   expect(request.mock.calls[0][0]).toBe("https://api.mem0.ai/v3/memories/add/");
   expect(JSON.parse(request.mock.calls[0][1].body)).toMatchObject({
     user_id: "telegram:-100:user:7",
@@ -87,9 +97,9 @@ it.each(["unavailable", "timeout", "invalid-response"])(
       request.mockImplementation(async () => Response.json({ invalid: true }));
     expect(await searchMemories(-100, 7, "private text")).toEqual([]);
     if (failure !== "invalid-response")
-      expect(await storeMemoryTurn(-100, 7, "private text", "reply", 1)).toBe(
-        false,
-      );
+      expect(
+        await storeMemoryTurn(-100, 7, "private text", "reply", 1),
+      ).toBeNull();
     expect(errorLog).toHaveBeenCalledWith("Mem0 operation failed", {
       operation: "search",
       kind:
@@ -134,4 +144,47 @@ it("bounds memory context even if the provider ignores topK", async () => {
   const memories = await searchMemories(-100, 7, "hi");
   expect(memories).toHaveLength(5);
   expect(memories.every((memory) => memory.length === 500)).toBe(true);
+});
+
+it.each([
+  [{ status: "SUCCEEDED", results: [{ id: "one" }] }, "saved"],
+  [{ status: "SUCCEEDED", results: [] }, "empty"],
+  [{ status: "FAILED", results: [] }, "failed"],
+] as const)("confirms the actual Mem0 outcome", async (event, outcome) => {
+  vi.stubEnv("MEM0_API_KEY", "test-key");
+  request.mockResolvedValue(Response.json(event));
+  expect(await confirmMemoryTurn(eventId)).toBe(outcome);
+  expect(request.mock.calls[0][0]).toBe(
+    `https://api.mem0.ai/v1/event/${eventId}/`,
+  );
+  expect(request.mock.calls[0][1].headers.Authorization).toBe("Token test-key");
+});
+
+it("does not interpret an invalid add response as a completed write", async () => {
+  vi.stubEnv("MEM0_API_KEY", "test-key");
+  request.mockResolvedValue(Response.json({ status: "PENDING" }));
+  expect(await storeMemoryTurn(-100, 7, "private text", "reply", 1)).toBeNull();
+  expect(sentryLog.error).toHaveBeenCalledWith("Mem0 operation failed", {
+    operation: "add",
+    kind: "invalid-response-or-transport",
+  });
+});
+
+it("leaves a still-running event unconfirmed after bounded checks", async () => {
+  vi.stubEnv("MEM0_API_KEY", "test-key");
+  vi.useFakeTimers();
+  try {
+    request.mockImplementation(async () =>
+      Response.json({ status: "RUNNING" }),
+    );
+    const outcome = confirmMemoryTurn(eventId);
+    await vi.runAllTimersAsync();
+    expect(await outcome).toBe("pending");
+    expect(request).toHaveBeenCalledTimes(6);
+    expect(sentryLog.warn).toHaveBeenCalledWith("Mem0 write unconfirmed", {
+      operation: "confirm",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 });

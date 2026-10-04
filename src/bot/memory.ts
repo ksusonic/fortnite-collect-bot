@@ -12,7 +12,11 @@ class Mem0HttpError extends Error {
   }
 }
 
-function logMemoryError(operation: "search" | "add", error: unknown) {
+type MemoryOperation = "search" | "add" | "confirm";
+export type MemorySubmission = { eventId: string } | null;
+export type MemoryOutcome = "saved" | "empty" | "failed" | "pending";
+
+function logMemoryError(operation: MemoryOperation, error: unknown) {
   // Provider messages and response bodies can contain private conversation data.
   const kind =
     error instanceof Mem0HttpError
@@ -33,7 +37,7 @@ function logMemoryError(operation: "search" | "add", error: unknown) {
   Sentry.logger.error("Mem0 operation failed", details);
 }
 
-async function client(operation: "search" | "add") {
+async function client(operation: MemoryOperation) {
   const apiKey = process.env.MEM0_API_KEY?.trim();
   if (!apiKey) {
     Sentry.logger.warn("Mem0 disabled: missing API key", { operation });
@@ -90,12 +94,13 @@ export async function storeMemoryTurn(
   message: string,
   reply: string,
   messageId: number,
-): Promise<boolean> {
+): Promise<MemorySubmission> {
   try {
     Sentry.logger.info("Mem0 operation started", { operation: "add" });
     const memory = await client("add");
-    if (!memory) return false;
-    await memory.add(
+    if (!memory) return null;
+    // The SDK types this as Memory[], but the V3 API returns an async event receipt.
+    const receipt: unknown = await memory.add(
       [
         { role: "user", content: message.slice(0, 4096) },
         { role: "assistant", content: reply.slice(0, 4096) },
@@ -108,9 +113,72 @@ export async function storeMemoryTurn(
           "Do not treat jokes, insults, assistant claims or speculation about other people as facts.",
       },
     );
-    return true;
+    if (
+      !receipt ||
+      typeof receipt !== "object" ||
+      !("eventId" in receipt) ||
+      typeof receipt.eventId !== "string" ||
+      !/^[0-9a-f-]{36}$/i.test(receipt.eventId)
+    )
+      throw new TypeError("Invalid Mem0 event receipt");
+    Sentry.logger.info("Mem0 write accepted", { operation: "add" });
+    return { eventId: receipt.eventId };
   } catch (error) {
     logMemoryError("add", error);
-    return false;
+    return null;
   }
+}
+
+export async function confirmMemoryTurn(
+  eventId: string,
+): Promise<MemoryOutcome> {
+  const apiKey = process.env.MEM0_API_KEY?.trim();
+  if (!apiKey) {
+    Sentry.logger.warn("Mem0 disabled: missing API key", {
+      operation: "confirm",
+    });
+    return "pending";
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(eventId)) return "failed";
+  try {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const response = await scopedFetch(
+        `https://api.mem0.ai/v1/event/${eventId}/`,
+        {
+          headers: { Authorization: `Token ${apiKey}` },
+          signal: httpSignal(5000),
+        },
+      );
+      if (!response.ok) throw new Mem0HttpError(response.status);
+      const event: unknown = await response.json();
+      if (!event || typeof event !== "object" || !("status" in event))
+        throw new TypeError("Invalid Mem0 event");
+      if (event.status === "SUCCEEDED") {
+        if (!("results" in event) || !Array.isArray(event.results))
+          throw new TypeError("Invalid Mem0 event results");
+        const outcome = event.results.length > 0 ? "saved" : "empty";
+        Sentry.logger.info("Mem0 write completed", {
+          operation: "confirm",
+          outcome,
+          memory_count: event.results.length,
+        });
+        return outcome;
+      }
+      if (event.status === "FAILED") {
+        Sentry.logger.error("Mem0 write completed", {
+          operation: "confirm",
+          outcome: "failed",
+        });
+        return "failed";
+      }
+      if (event.status !== "PENDING" && event.status !== "RUNNING")
+        throw new TypeError("Invalid Mem0 event status");
+      if (attempt < 5)
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } catch (error) {
+    logMemoryError("confirm", error);
+  }
+  Sentry.logger.warn("Mem0 write unconfirmed", { operation: "confirm" });
+  return "pending";
 }

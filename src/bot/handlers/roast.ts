@@ -1,4 +1,4 @@
-import { storeMemoryTurn } from "../memory";
+import { confirmMemoryTurn, storeMemoryTurn } from "../memory";
 import type { Context } from "grammy";
 import * as roast from "../roast";
 import { getRoastPolicy } from "../flags";
@@ -99,7 +99,7 @@ export async function maybeRoast(ctx: Context): Promise<void> {
   roast.rememberRoastMessage(chat, sent.message_id);
   roast.rememberBotMessage(chat, result, sentAt, sent.message_id);
   if (decision?.action === "reply") {
-    await externalCheckpoint("roast-memory-add", () =>
+    const submission = await externalCheckpoint("roast-memory-add", () =>
       storeMemoryTurn(
         chat,
         ctx.from!.id,
@@ -108,5 +108,10 @@ export async function maybeRoast(ctx: Context): Promise<void> {
         message.message_id,
       ),
     );
+    // Older completed checkpoints contain a boolean. Leave their replay intact.
+    if (submission && typeof submission === "object" && "eventId" in submission)
+      await externalCheckpoint("roast-memory-confirm", () =>
+        confirmMemoryTurn(submission.eventId),
+      );
   }
 }
