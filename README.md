@@ -89,7 +89,8 @@ destructive tests принимают только disposable localhost `fortnite
 полностью awaited, без detached tasks. API paths сохранены:
 
 - `POST /api/telegram/webhook`
-- `POST /api/jobs/expiry`, `/status`, `/weekly`, `/cleanup`
+- `POST /api/jobs/maintenance`, `/status`
+- `POST /api/jobs/expiry`, `/weekly`, `/cleanup` — совместимые прежние URL
 - `GET /health`, `GET /api/admin/inspect`
 - `POST /api/admin/register-webhook` — только явная административная операция
 
@@ -113,12 +114,36 @@ pnpm bot webhook-info
 URL и secret хранятся в Vault. Проверять нужно actual HTTP outcomes, а не только
 успешный запуск SQL cron.
 
+В [ops/schedules.sql](ops/schedules.sql) три расписания вместо четырёх:
+maintenance каждую минуту, Epic status каждые три минуты вечером и ежедневная
+очистка snapshots прямо в SQL. Maintenance ставит в очередь только просроченные
+сборы, публикацию за последний наступивший пятничный период и дневные snapshots,
+затем восстанавливает незавершённую работу. Время реакции recovery остаётся минутным;
+объединение расписаний само по себе почти не уменьшает число HTTP вызовов.
+
+Недельная публикация догоняет пропущенную пятницу до следующего периода; повторные
+тики используют тот же ID публикации. Snapshots собираются раз в день МСК для каждого
+уникального Epic-аккаунта, даже если в чате не вызывают `/teamstats`. Ошибки провайдера
+повторяются отдельно от очередей чатов; закрытые/пустые профили проверяются снова на
+следующий день. При первом запуске недельные данные всё ещё требуют накопления baseline.
+Каждый проход ограничивает число выбранных записей; оставшаяся работа ждёт следующего тика.
+
+После деплоя и проверки `/api/jobs/maintenance` примените SQL через Supabase tools.
+Он транзакционно заменяет расписания expiry/weekly и переводит cleanup в SQL;
+существующие job URL остаются доступны. SQL-only cleanup сохраняет проверку
+`import_manifest` перед удалением snapshots старше 30 дней.
+
 ## Recovery и переход с Python
 
 `storage.ts` держит один invocation-scoped Postgres client, `work.ts` — журнал действий,
 `runtime.ts` — очередь чата. SQL mutations коммитятся атомарно с checkpoints; reads,
 time/random и provider results replay исходных значений. Telegram sends с неизвестным
 результатом блокируют очередь до ручного разбора, вместо слепой повторной отправки.
+
+`handlers.ts` регистрирует команды; feature-модули в `handlers/` содержат сборы,
+настройки чата, roast и Fortnite-команды. `services/weekly-stats.ts` рассчитывает
+недельные дельты без зависимости от React или grammY. Перенос обработчиков сохраняет
+порядок и signatures checkpoints существующих work items.
 
 SQLite importer реализован на TypeScript и запускается локально. Эталонные сообщения
 сохранены в parity fixtures; предыдущий Python runtime доступен только в Git для rollback:
