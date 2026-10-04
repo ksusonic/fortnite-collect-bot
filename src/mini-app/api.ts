@@ -40,7 +40,8 @@ export async function miniAppEndpoint(request: Request, resource: string) {
           const user = Number(url.searchParams.get("user") ?? viewer.id);
           if (!Number.isSafeInteger(user))
             throw new HttpError(400, "Некорректный игрок.");
-          const link = await db.get_epic_link(chat, user);
+          const links = await db.get_chat_epic_links(chat);
+          const link = links.find((candidate) => candidate.user_id === user);
           if (!link)
             return {
               linked: false,

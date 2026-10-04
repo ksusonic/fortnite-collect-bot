@@ -58,7 +58,6 @@ export interface ChatStats {
   best_hours: [number, number, number | null][];
 }
 export interface EpicLink {
-  chat_id: number;
   user_id: number;
   user_name: string;
   epic_name: string;
@@ -359,40 +358,33 @@ export async function load_all_roast_state(
   ]);
 }
 export async function save_epic_link(
-  chat: number,
   uid: number,
   name: string,
   epic: string,
   account: string,
 ) {
   await query(
-    "INSERT INTO epic_links(chat_id,user_id,user_name,epic_name,epic_account_id,linked_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(chat_id,user_id) DO UPDATE SET user_name=excluded.user_name,epic_name=excluded.epic_name,epic_account_id=excluded.epic_account_id,linked_at=excluded.linked_at",
-    [chat, uid, name, epic, account, timestamp(await now("epic.link.time"))],
+    "INSERT INTO epic_links(user_id,user_name,epic_name,epic_account_id,linked_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(user_id) DO UPDATE SET user_name=excluded.user_name,epic_name=excluded.epic_name,epic_account_id=excluded.epic_account_id,linked_at=excluded.linked_at",
+    [uid, name, epic, account, timestamp(await now("epic.link.time"))],
   );
 }
-export async function get_epic_link(
-  chat: number,
-  uid: number,
-): Promise<EpicLink | null> {
+export async function get_epic_link(uid: number): Promise<EpicLink | null> {
   return (
     (
-      await query<EpicLink>(
-        "SELECT * FROM epic_links WHERE chat_id=$1 AND user_id=$2",
-        [chat, uid],
-      )
+      await query<EpicLink>("SELECT * FROM epic_links WHERE user_id=$1", [uid])
     )[0] ?? null
   );
 }
 export async function get_chat_epic_links(chat: number): Promise<EpicLink[]> {
   return query<EpicLink>(
-    "SELECT * FROM epic_links WHERE chat_id=$1 ORDER BY linked_at",
+    "SELECT l.* FROM epic_links l WHERE EXISTS (SELECT 1 FROM responses r WHERE r.chat_id=$1 AND r.user_id=l.user_id AND NOT r.is_bot) ORDER BY l.linked_at,l.user_id",
     [chat],
   );
 }
 export async function get_chats_with_epic_links(): Promise<number[]> {
   return (
     await query(
-      "SELECT DISTINCT l.chat_id FROM epic_links l JOIN approved_chats a ON a.chat_id=l.chat_id",
+      "SELECT DISTINCT r.chat_id FROM responses r JOIN epic_links l ON l.user_id=r.user_id JOIN approved_chats a ON a.chat_id=r.chat_id WHERE NOT r.is_bot",
     )
   ).map((r) => r.chat_id);
 }

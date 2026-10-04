@@ -127,7 +127,7 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       : item.kind === "snapshot"
         ? !!(
             await raw(
-              "SELECT 1 FROM epic_links l JOIN approved_chats a ON a.chat_id=l.chat_id WHERE l.epic_account_id=$1 LIMIT 1",
+              "SELECT 1 FROM epic_links l JOIN responses r ON r.user_id=l.user_id AND NOT r.is_bot JOIN approved_chats a ON a.chat_id=r.chat_id WHERE l.epic_account_id=$1 LIMIT 1",
               [item.payload.account_id],
             )
           ).rows.length
@@ -296,7 +296,7 @@ export async function processUpdate(
 async function recoverSnapshots(bot: Bot) {
   const rows = (
     await raw<Item>(
-      "SELECT * FROM work_items w WHERE kind='snapshot' AND status IN ('pending','failed') AND EXISTS (SELECT 1 FROM epic_links l JOIN approved_chats a ON a.chat_id=l.chat_id WHERE l.epic_account_id=w.payload->>'account_id') ORDER BY updated_at,created_at,id LIMIT 20",
+      "SELECT * FROM work_items w WHERE kind='snapshot' AND status IN ('pending','failed') AND EXISTS (SELECT 1 FROM epic_links l JOIN responses r ON r.user_id=l.user_id AND NOT r.is_bot JOIN approved_chats a ON a.chat_id=r.chat_id WHERE l.epic_account_id=w.payload->>'account_id') ORDER BY updated_at,created_at,id LIMIT 20",
     )
   ).rows;
   for (const item of rows) {

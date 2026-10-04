@@ -137,8 +137,12 @@ const url = process.env.TEST_DATABASE_URL;
   it("catches up the current Friday once and never regresses cursor on legacy job recovery", async () => {
     await invocation(null, async () => {
       await raw(
-        "INSERT INTO epic_links VALUES (-10,1,'a','epic','account',now())",
+        "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-10,99999,1,'User',now()) ON CONFLICT DO NOTHING",
       );
+      await raw(
+        "INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at) SELECT -10,99999,n,'User','go',now() FROM generate_series(1,1) n ON CONFLICT DO NOTHING",
+      );
+      await raw("INSERT INTO epic_links VALUES (1,'a','epic','account',now())");
       await raw(
         "INSERT INTO work_items(id,kind,payload,status) VALUES ('job:weekly:1','job',$1,'failed')",
         [

@@ -161,7 +161,7 @@ const url = process.env.TEST_DATABASE_URL;
         "INSERT INTO chat_fort_titles(chat_id,title) VALUES (-10,'Saved FORT')",
       );
       await raw(
-        "INSERT INTO epic_links(chat_id,user_id,user_name,epic_name,epic_account_id,linked_at) VALUES (-10,7,'User','Epic','account',now())",
+        "INSERT INTO epic_links(user_id,user_name,epic_name,epic_account_id,linked_at) VALUES (7,'User','Epic','account',now())",
       );
       await raw(
         "INSERT INTO chat_features(chat_id,feature,enabled) VALUES (-10,'roast',true)",
@@ -179,7 +179,11 @@ const url = process.env.TEST_DATABASE_URL;
         Promise.all(
           tables.map(
             async (table) =>
-              (await raw(`SELECT * FROM ${table} WHERE chat_id=-10`)).rows,
+              (
+                await raw(
+                  `SELECT * FROM ${table} WHERE ${table === "epic_links" ? "user_id=7" : "chat_id=-10"}`,
+                )
+              ).rows,
           ),
         ),
       );

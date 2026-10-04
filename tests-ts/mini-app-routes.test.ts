@@ -16,7 +16,7 @@ vi.mock("../src/mini-app/access", () => ({
   authorizeChat: mocks.authorize,
   discoverChats: mocks.discover,
 }));
-vi.mock("../src/bot/db", () => ({ get_epic_link: mocks.link }));
+vi.mock("../src/bot/db", () => ({ get_chat_epic_links: mocks.link }));
 vi.mock("../src/statistics/service", () => ({
   accountProfile: mocks.profile,
   weeklyReport: mocks.weekly,
@@ -57,7 +57,7 @@ beforeEach(() => {
   vi.stubEnv("BOT_TOKEN", "test-token");
   mocks.authorize.mockResolvedValue({ id: -100 });
   mocks.weekly.mockResolvedValue({ facts: "facts" });
-  mocks.link.mockResolvedValue(null);
+  mocks.link.mockResolvedValue([]);
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("Mini App API boundaries", () => {
@@ -127,15 +127,27 @@ describe("Mini App API boundaries", () => {
       "profile",
     );
     expect(response.status).toBe(200);
-    expect(mocks.link).toHaveBeenCalledWith(-100, 88);
+    expect(mocks.link).toHaveBeenCalledWith(-100);
+    expect(await response.json()).toMatchObject({ linked: false });
+    expect(mocks.profile).not.toHaveBeenCalled();
+  });
+  it("does not resolve an unrelated user through global Epic links", async () => {
+    mocks.link.mockResolvedValue([{ user_id: 7, epic_account_id: "account" }]);
+    const response = await miniAppEndpoint(
+      request("profile", "chat=-100&user=88"),
+      "profile",
+    );
     expect(await response.json()).toMatchObject({ linked: false });
     expect(mocks.profile).not.toHaveBeenCalled();
   });
   it("passes only validated windows to account cache", async () => {
-    mocks.link.mockResolvedValue({
-      epic_account_id: "account",
-      user_name: "User",
-    });
+    mocks.link.mockResolvedValue([
+      {
+        user_id: 7,
+        epic_account_id: "account",
+        user_name: "User",
+      },
+    ]);
     const response = await miniAppEndpoint(
       request("profile", "chat=-100&window=weekly"),
       "profile",
