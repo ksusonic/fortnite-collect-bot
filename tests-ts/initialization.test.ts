@@ -1,7 +1,9 @@
-import { Bot, HttpError } from "grammy";
+import { createServer } from "node:http";
+import { Bot, HttpError, type ApiClientOptions } from "grammy";
 import { describe, expect, it, vi } from "vitest";
 import { initializeBot } from "../src/bot/runtime";
-import { withHttpClient } from "../src/bot/transport";
+import { scopedFetch, withHttpClient } from "../src/bot/transport";
+import { telegramTransformer } from "../src/bot/work";
 
 const info = {
   id: 123456,
@@ -19,6 +21,38 @@ const info = {
   supports_join_request_queries: false,
 };
 describe("bounded Telegram initialization", () => {
+  it("uses the real SDK transport with a compatible dispatcher", async () => {
+    const requests: string[] = [];
+    const server = createServer((request, response) => {
+      requests.push(request.url!);
+      request.resume();
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ ok: true, result: info }));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Missing port");
+      const bot = new Bot("123456:test", {
+        client: {
+          apiRoot: `http://127.0.0.1:${address.port}`,
+          fetch: scopedFetch as unknown as ApiClientOptions["fetch"],
+          timeoutSeconds: 2,
+        },
+      });
+      bot.api.config.use(telegramTransformer);
+      await withHttpClient(() => initializeBot(bot), AbortSignal.timeout(3000));
+      expect(bot.botInfo).toEqual(info);
+      expect(requests).toEqual(["/bot123456:test/getMe"]);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
   it("makes one attempt on retryable network failures", async () => {
     const bot = new Bot("123456:test");
     const error = new HttpError(

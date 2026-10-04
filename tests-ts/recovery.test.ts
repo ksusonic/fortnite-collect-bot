@@ -1,3 +1,8 @@
+import * as undici from "undici";
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return { ...actual, fetch: vi.fn(actual.fetch) };
+});
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Bot, BotError } from "grammy";
 import * as db from "../src/bot/db";
@@ -210,14 +215,14 @@ suite("Postgres recovery and storage", () => {
     const originalToken = process.env.BOT_TOKEN;
     process.env.BOT_TOKEN = "123:fake-test-token";
     const fetcher = vi
-      .spyOn(globalThis, "fetch")
+      .spyOn(undici, "fetch")
       .mockImplementation(async (_input, init) => {
         expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(JSON.parse(String(init?.body))).toMatchObject({
           text: "<b>hello</b>",
           parse_mode: "HTML",
         });
-        return new Response(
+        return new undici.Response(
           JSON.stringify({
             ok: true,
             result: {
@@ -287,12 +292,12 @@ suite("Postgres recovery and storage", () => {
     process.env.BOT_TOKEN = "123:fake-test-token";
     let editAttempts = 0;
     const fetcher = vi
-      .spyOn(globalThis, "fetch")
+      .spyOn(undici, "fetch")
       .mockImplementation(async (input) => {
         const method = String(input).split("/").at(-1);
         if (method === "editMessageText" && ++editAttempts === 1)
           throw new Error("edit connection interrupted");
-        return new Response(
+        return new undici.Response(
           JSON.stringify({
             ok: true,
             result:

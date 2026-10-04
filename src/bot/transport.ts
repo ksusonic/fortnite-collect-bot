@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 interface HttpScope {
   agent: Agent;
   signal?: AbortSignal;
@@ -46,7 +46,9 @@ export const scopedFetch: typeof fetch = (input, init) => {
     scope?.signal && incoming
       ? AbortSignal.any([scope.signal, incoming])
       : (incoming ?? scope?.signal);
-  return globalThis.fetch(input, {
+  // Keep fetch and its dispatcher on the same Undici protocol version.
+  const fetchWithDispatcher = undiciFetch as unknown as typeof fetch;
+  return fetchWithDispatcher(input, {
     ...init,
     signal,
     ...(scope ? { dispatcher: scope.agent } : {}),
