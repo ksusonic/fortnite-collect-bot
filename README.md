@@ -48,6 +48,37 @@ pnpm build
 Без `TEST_DATABASE_URL` Postgres-тесты пропускаются; такой запуск не доказывает
 работу storage/recovery. CI запускает проверки с отдельной базой.
 
+## Supabase CI/CD
+
+SQL хранится в `supabase/migrations/`; новые файлы создаются командой
+`pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 migration new <name>`.
+`pnpm bot migrate` читает тот же каталог и использует общий журнал
+`supabase_migrations.schema_migrations`. В новых SQL используйте квалифицированные
+имена `fortnite_bot.*` или `SET LOCAL search_path = fortnite_bot`: CLI не задаёт
+search path приложения. Две исходные миграции проверяют старый
+журнал `fortnite_bot.migrations`: уже применённый SQL не выполняется повторно,
+а пустая preview-база получает полную схему. Старый журнал остаётся для совместимости.
+
+GitHub CI сначала применяет SQL через Supabase CLI к disposable localhost Postgres,
+затем запускает тесты, включая recovery/importer. Production credentials в Actions
+не нужны. Docker и `supabase start` не используются.
+
+Для активации [Supabase GitHub integration](https://supabase.com/docs/guides/deployment/branching/github-integration)
+в настройках проекта `fort-collect-bot` (`yvwdmhwkjlchavaisjlk`) подключите
+`ksusonic/fortnite-collect-bot`: Working directory `.`; Production branch `main`;
+Automatic branching, Supabase changes only и Deploy to production — включены.
+После первого PR с SQL добавьте фактический check `Supabase Preview` в required
+checks ветки `main` вместе с `ci`. Branching создаёт отдельные базы без production
+данных; Vercel previews остаются отключены.
+
+Перед включением Deploy to production сохраните экспорт и проверьте старый журнал
+миграций и состояние production-схемы через Supabase tools. GitHub интеграция должна
+быть единственным автоматическим исполнителем production-миграций; ручной
+`pnpm bot migrate` нужен для локальной разработки и восстановления. Изменения SQL
+должны быть совместимы с текущим runtime: деплои Vercel и Supabase независимы.
+`ops/schedules.sql` применяется отдельно через Supabase tools после проверки job
+routes; production Vault secrets, cron и webhook в preview не копируются.
+
 ## Production
 
 Проект `fortnite-collect-bot`, Node.js 24, регион `fra1`; function duration 300 секунд.

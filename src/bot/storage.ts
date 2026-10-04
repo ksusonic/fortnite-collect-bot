@@ -204,21 +204,36 @@ export async function migrate() {
   await invocation(null, () =>
     transaction(async () => {
       await raw("SELECT pg_advisory_xact_lock($1)", [lockKey("migrations")]);
-      await raw("CREATE SCHEMA IF NOT EXISTS fortnite_bot");
+      await raw("CREATE SCHEMA IF NOT EXISTS supabase_migrations");
       await raw(
-        "CREATE TABLE IF NOT EXISTS fortnite_bot.migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())",
+        "CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text PRIMARY KEY)",
       );
-      const directory = path.join(process.cwd(), "migrations");
+      await raw(
+        "ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS name text",
+      );
+      await raw(
+        "ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS statements text[]",
+      );
+      const directory = path.join(process.cwd(), "supabase", "migrations");
       for (const file of (await readdir(directory))
-        .filter((file) => file.endsWith(".sql"))
+        .filter((file) => /^\d+_.+\.sql$/.test(file))
         .sort()) {
+        const [version, ...parts] = file.replace(/\.sql$/, "").split("_");
         if (
-          (await raw("SELECT 1 FROM migrations WHERE version=$1", [file]))
-            .rowCount
+          (
+            await raw(
+              "SELECT 1 FROM supabase_migrations.schema_migrations WHERE version=$1",
+              [version],
+            )
+          ).rowCount
         )
           continue;
-        await raw(await readFile(path.join(directory, file), "utf8"));
-        await raw("INSERT INTO migrations(version) VALUES ($1)", [file]);
+        const sql = await readFile(path.join(directory, file), "utf8");
+        await raw(sql);
+        await raw(
+          "INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES ($1, $2, $3)",
+          [version, parts.join("_"), [sql]],
+        );
       }
     }),
   );
