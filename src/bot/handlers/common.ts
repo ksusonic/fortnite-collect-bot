@@ -30,3 +30,23 @@ export async function ignoreTelegram(
 export async function reply(ctx: Context, text: string): Promise<void> {
   await ctx.reply(text);
 }
+export async function answerCallback(
+  ctx: Context,
+  text?: string,
+): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery(text);
+  } catch (error) {
+    // An expired acknowledgement cannot succeed on replay. Keep all other
+    // failures visible, and keep this API call in its original checkpoint order.
+    if (
+      error instanceof GrammyError &&
+      error.method === "answerCallbackQuery" &&
+      error.error_code === 400 &&
+      error.description ===
+        "Bad Request: query is too old and response timeout expired or query ID is invalid"
+    )
+      return;
+    throw error;
+  }
+}
