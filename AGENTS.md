@@ -18,6 +18,7 @@ pnpm bot migrate
 pnpm bot import /path/to/read-only-backup.db
 pnpm bot register-webhook https://production-domain
 pnpm bot webhook-info
+pnpm bot configure-commands
 pnpm lint
 pnpm format:check
 pnpm typecheck
@@ -38,7 +39,6 @@ Use Supabase tools for production database changes/imports/scheduling/verificati
 - `/stats` — chat statistics (top players, fill times, streaks, peak hours)
 - `/roast on [0..1] | off` — toggle xAI Grok "Unhinged" replies; optional probability override (default `ROAST_PROBABILITY`)
 - `/linkepicfor @user <EpicName>` — admin-only (`ADMIN_USER_ID`); link `@user` to a public Epic Games account (requires `FORTNITE_API_KEY`). `@user` must have responded at least once to `/fort` in this chat (resolved via `responses` table). The Epic account must have Public Game Stats enabled.
-- `/myfnstats` — sends a provider-rendered PNG card with caller's current-season BR stats (overall + per-input split); falls back to a text block if the image URL is absent or rejected by Telegram.
 - `/teamstats` — **last-7-days** squad aggregates for everyone in this chat who has linked an Epic account; MVP-of-the-week block, weekly summary, and a leaders `<pre>` table (top-5 by weekly wins) with medal column. Weekly numbers are derived from `squad_snapshots` deltas, not the season totals (provider has no weekly window). Players without a ~7-day-old baseline snapshot, or who didn't play this week, are listed in a "Вне недельного зачёта" section with a reason and excluded from the ranking/analysis. If nobody has weekly data yet, the command replies that snapshots are still accumulating. Appends an optional LLM analysis block from Grok through the app-scoped Vercel Connect `grok/fortnite-collect-bot` connection. The bot also publishes `/teamstats` automatically every Friday at 21:00 MSK in chats with at least one linked Epic account (deduped via `chat_features.weekly_drop` with a 6-day window).
 
 ## Runtime invariants

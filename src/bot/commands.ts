@@ -13,7 +13,6 @@ export const GROUP_COMMANDS = [
     command: "roast",
     description: "вкл/выкл язвительные ответы: on [0..1] | off",
   },
-  { command: "myfnstats", description: "моя статистика Fortnite" },
   { command: "teamstats", description: "командная статистика Fortnite" },
 ];
 

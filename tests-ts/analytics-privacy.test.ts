@@ -15,4 +15,15 @@ describe("Mini App analytics privacy", () => {
       analyticsEvent({ type: "pageview", url: "signed-secret" }),
     ).toBeNull();
   });
+  it("preserves performance metrics while stripping Speed Insights launch URLs", () => {
+    const event = {
+      url: "https://example.com/?tgWebAppData=secret#private",
+      name: "LCP",
+      value: 123,
+    };
+    expect(analyticsEvent(event)).toEqual({
+      ...event,
+      url: "https://example.com/",
+    });
+  });
 });

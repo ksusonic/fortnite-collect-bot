@@ -39,6 +39,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("explicit maintenance", () => {
+  it("updates the command menu without changing the webhook", async () => {
+    await maintain(["configure-commands"]);
+    expect(mocks.commands).toHaveBeenCalledOnce();
+    expect(mocks.webhook).not.toHaveBeenCalled();
+  });
   it("configures the Mini App menu explicitly after checking HTTPS page without touching webhook", async () => {
     vi.spyOn(undici, "fetch").mockResolvedValue(
       new undici.Response("Mini App", { status: 200 }),

@@ -1,7 +1,5 @@
-import type { BeforeSendEvent } from "@vercel/analytics/next";
-
 /** Keep page counts without transmitting Telegram launch data or chat hints. */
-export function analyticsEvent(event: BeforeSendEvent): BeforeSendEvent | null {
+export function analyticsEvent<T extends { url: string }>(event: T): T | null {
   try {
     const url = new URL(event.url);
     url.search = "";

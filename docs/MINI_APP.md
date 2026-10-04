@@ -36,7 +36,7 @@
   Используется app-scoped `grok/fortnite-collect-bot`. Ошибка не блокирует экран;
   анализ помечен временем исходного отчёта. Credentials остаются server-side.
 - Session Replay отключён: маскирование DOM не защищает данные Telegram в URL
-  запуска. Web Analytics удаляет query и hash перед отправкой событий. Sentry
+  запуска. Web Analytics и Speed Insights удаляют query и hash перед отправкой событий. Sentry
   диагностика исключает запросы, headers, payloads и пользовательские данные.
 - Ответы имеют `nosniff`, `Referrer-Policy: no-referrer` и запрещают доступ к
   camera/microphone/geolocation. Framing не запрещён, чтобы работал Telegram Web.
@@ -44,13 +44,16 @@
 ## Запуск и выпуск
 
 1. Проверить и доставить ветку через CI; production deploy допускается только из main.
-2. Через Supabase tools применить `migrations/003_mini_app_cache.sql` в приватной
+2. Через Supabase tools применить `supabase/migrations/20261004125048_mini_app_cache.sql` в приватной
    схеме. Не менять webhook/job URLs и расписания. Проверить RLS и отсутствие grants
    для `PUBLIC`, `anon`, `authenticated`. Startup миграции не выполняет.
 3. В BotFather включить Main Mini App с URL `https://<production>/`.
    Задать `MINI_APP_DIRECT_URL=https://t.me/<bot>/<app-short-name>` (или URL Main
    Mini App `https://t.me/<bot>`). Эта server-side настройка добавляет обычную URL
-   кнопку к ответам `/stats`, `/myfnstats`, `/teamstats`, включая пятничные отчёты.
+   кнопку к ответам `/stats`, `/teamstats`, включая пятничные отчёты.
+   Личная Fortnite-статистика доступна в Mini App; `/myfnstats` удалена.
+   После deploy выполнить `pnpm bot configure-commands` с production BOT_TOKEN,
+   чтобы убрать старую команду из Telegram меню без изменения webhook.
 4. После проверки страницы выполнить явно
    `pnpm bot configure-mini-app https://<production>` для menu button.
    Команда проверяет HTTPS и доступность страницы; webhook она не меняет.
@@ -63,9 +66,12 @@
    payloads; live provider verification требуется перед выпуском.
 7. В Telegram iOS, Android и desktop проверить light/dark, safe areas, узкий экран,
    Back из профиля, фильтры, пустые состояния, ошибки и частичную недоступность API.
-8. Отдельно проверить неизменность `/fort`, `/stats`, `/myfnstats`, `/teamstats`,
+8. Отдельно проверить неизменность `/fort`, `/stats`, `/teamstats`,
    webhook status и фактический HTTP-исход следующего Friday report. CI и локальные
    тесты не заменяют эти проверки. Web Analytics dashboard activation отдельно.
+9. Speed Insights подключён через Next.js компонент в корневом layout. В Vercel
+   включить Speed Insights для проекта и после production deploy подтвердить приём
+   метрик; локальная сборка не доказывает dashboard activation или ingestion.
 
 ## Локальная проверка
 
