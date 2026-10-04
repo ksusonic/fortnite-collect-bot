@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { scopedFetch } from "./transport";
+import { httpSignal, scopedFetch } from "./transport";
 import { Bot, BotError, type ApiClientOptions } from "grammy";
 import type { Update } from "grammy/types";
 import * as db from "./db";
@@ -40,6 +40,16 @@ export function createBot(): Bot {
   bot.api.config.use(telegramTransformer);
   registerHandlers(bot);
   return bot;
+}
+export async function initializeBot(bot: Bot): Promise<void> {
+  if (bot.isInited()) return;
+  // Bot.init retries network errors indefinitely. Serverless retries belong to
+  // the durable queue, so fetch metadata once with a bounded deadline instead.
+  // grammY types use its older AbortSignal shim; native signals expose the
+  // same add/removeEventListener interface used by its API client.
+  bot.botInfo = await bot.api.getMe(
+    httpSignal(20_000) as unknown as Parameters<Bot["api"]["getMe"]>[0],
+  );
 }
 export function updateChat(update: Update): number | null {
   if (update.message) return update.message.chat.id;
@@ -185,7 +195,7 @@ export async function drainChat(
         (await advisoryLock(
           `chat:${chat === null ? "None" : chat}`,
           async () => {
-            await bot.init();
+            await initializeBot(bot);
             const rows = (
               await raw<Item>(
                 "SELECT * FROM work_items WHERE chat_id IS NOT DISTINCT FROM $1 AND kind<>'job' AND status<>'complete' ORDER BY created_at,id LIMIT 20",

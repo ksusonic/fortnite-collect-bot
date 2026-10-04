@@ -391,7 +391,7 @@ suite("Postgres recovery and storage", () => {
       ).toBe("ambiguous");
     });
     const bot = {
-      init: async () => {},
+      isInited: () => true,
       handleUpdate: async () => {
         throw new Error("later must not execute");
       },
