@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import * as db from "../db";
 import * as roast from "../roast";
+import { storeMemoryTurn } from "../memory";
 import { getRoastState } from "../storage";
 import { externalCheckpoint, valueCheckpoint } from "../work";
 import { escapeHtml, isGroup, nowSeconds } from "./common";
@@ -61,6 +62,7 @@ export async function maybeRoast(ctx: Context): Promise<void> {
       now,
       message.message_id,
       replied?.message_id,
+      ctx.from!.id,
     ),
   );
   if (!result) return;
@@ -74,4 +76,14 @@ export async function maybeRoast(ctx: Context): Promise<void> {
   });
   roast.rememberRoastMessage(chat, sent.message_id);
   roast.rememberBotMessage(chat, result, sentAt, sent.message_id);
+  // Append after existing checkpoints so incomplete older work keeps its order.
+  await externalCheckpoint("roast-memory-add", () =>
+    storeMemoryTurn(
+      chat,
+      ctx.from!.id,
+      message.text!,
+      text,
+      message.message_id,
+    ),
+  );
 }

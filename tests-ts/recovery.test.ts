@@ -15,7 +15,12 @@ import {
   raw,
   withWork,
 } from "../src/bot/storage";
-import { AmbiguousOutcome, Work, valueCheckpoint } from "../src/bot/work";
+import {
+  AmbiguousOutcome,
+  Work,
+  valueCheckpoint,
+  externalCheckpoint,
+} from "../src/bot/work";
 import { createBot, drainChat, enqueue, executeItem } from "../src/bot/runtime";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -170,6 +175,27 @@ suite("Postgres recovery and storage", () => {
       expect(
         (await raw("SELECT enabled FROM chat_features")).rows[0].enabled,
       ).toBe(true);
+    });
+  });
+  it("replays generation and appended memory writes without changing older checkpoint order", async () => {
+    await invocation(-10, async () => {
+      await enqueue("memory-retry", "update", -10, {});
+      const generate = vi.fn().mockResolvedValue("reply");
+      const store = vi.fn().mockResolvedValue(true);
+      // An old invocation completed generation before this version was deployed.
+      await withWork(new Work("memory-retry"), () =>
+        externalCheckpoint("roast", generate),
+      );
+      const replay = () =>
+        withWork(new Work("memory-retry"), async () => {
+          const result = await externalCheckpoint("roast", generate);
+          const saved = await externalCheckpoint("roast-memory-add", store);
+          return { result, saved };
+        });
+      expect(await replay()).toEqual({ result: "reply", saved: true });
+      expect(await replay()).toEqual({ result: "reply", saved: true });
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(store).toHaveBeenCalledTimes(1);
     });
   });
   it("rolls SQL mutation back if checkpoint cannot commit", async () => {

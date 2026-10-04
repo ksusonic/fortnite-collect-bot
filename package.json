@@ -23,6 +23,7 @@
     "@vercel/analytics": "^2.0.1",
     "@vercel/connect": "^2.4.0",
     "grammy": "^1.38.0",
+    "mem0ai": "3.3.1",
     "next": "^16.0.0",
     "pg": "^8.16.0",
     "react": "^19.2.0",
