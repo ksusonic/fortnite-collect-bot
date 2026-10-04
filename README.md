@@ -168,6 +168,13 @@ pnpm bot webhook-info
 URL и secret хранятся в Vault. Проверять нужно actual HTTP outcomes, а не только
 успешный запуск SQL cron.
 
+В production каждый Node.js cold start проверяет webhook URL и параметры в Telegram
+и исправляет расхождение с `PUBLIC_BASE_URL`. Первый authenticated maintenance tick
+после релиза повторно устанавливает webhook (включая secret token) и сохраняет
+маркер только после Telegram readback. Ошибка проверки логируется; следующий cold
+start или maintenance tick повторяет попытку. Это не заменяет расписание:
+`fortnite-maintenance` должен быть активен в Supabase Cron.
+
 В [ops/schedules.sql](ops/schedules.sql) три расписания вместо четырёх:
 maintenance каждую минуту, Epic status каждые три минуты вечером и ежедневная
 очистка snapshots прямо в SQL. Maintenance ставит в очередь только просроченные
