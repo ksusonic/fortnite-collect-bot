@@ -64,6 +64,8 @@ describe("Sentry privacy", () => {
     expect(new URL(SENTRY_DSN).pathname).toBe("/4512190824513616");
     expect(privacyOptions.sendDefaultPii).toBe(false);
     expect(privacyOptions.tracesSampleRate).toBe(0.1);
+    expect(privacyOptions.enableLogs).toBe(true);
+    expect(privacyOptions.logsFlushIntervalMs).toBe(0);
     expect(privacyOptions.dataCollection).toMatchObject({
       httpBodies: [],
       httpHeaders: false,

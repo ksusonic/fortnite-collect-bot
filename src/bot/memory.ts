@@ -1,4 +1,5 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import { httpSignal, scopedFetch } from "./transport";
 
 // Both IDs are server-derived: a user's memories never cross group boundaries.
@@ -23,16 +24,21 @@ function logMemoryError(operation: "search" | "add", error: unknown) {
           : error instanceof SyntaxError || error instanceof TypeError
             ? "invalid-response-or-transport"
             : "unknown";
-  console.error("Mem0 operation failed", {
+  const details = {
     operation,
     kind,
     ...(error instanceof Mem0HttpError ? { status: error.status } : {}),
-  });
+  };
+  console.error("Mem0 operation failed", details);
+  Sentry.logger.error("Mem0 operation failed", details);
 }
 
-async function client() {
+async function client(operation: "search" | "add") {
   const apiKey = process.env.MEM0_API_KEY?.trim();
-  if (!apiKey) return null;
+  if (!apiKey) {
+    Sentry.logger.warn("Mem0 disabled: missing API key", { operation });
+    return null;
+  }
   // The SDK otherwise starts detached telemetry fetches during construction.
   process.env.MEM0_TELEMETRY = "false";
   const { default: MemoryClient } = await import("mem0ai");
@@ -61,7 +67,8 @@ export async function searchMemories(
   query: string,
 ): Promise<string[]> {
   try {
-    const memory = await client();
+    Sentry.logger.info("Mem0 operation started", { operation: "search" });
+    const memory = await client("search");
     if (!memory) return [];
     const result = await memory.search(query.slice(0, 4096), {
       filters: { user_id: identity(chat, user) },
@@ -85,7 +92,8 @@ export async function storeMemoryTurn(
   messageId: number,
 ): Promise<boolean> {
   try {
-    const memory = await client();
+    Sentry.logger.info("Mem0 operation started", { operation: "add" });
+    const memory = await client("add");
     if (!memory) return false;
     await memory.add(
       [

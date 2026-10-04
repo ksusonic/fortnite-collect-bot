@@ -208,7 +208,8 @@ export function sanitizeEvent(
 export const privacyOptions = {
   sendDefaultPii: false,
   tracesSampleRate: 0.1,
-  enableLogs: false,
+  enableLogs: true,
+  logsFlushIntervalMs: 0,
   dataCollection: {
     userInfo: false,
     graphQL: { document: false, variables: false },
