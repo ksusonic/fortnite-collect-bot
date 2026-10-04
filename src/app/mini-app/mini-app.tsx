@@ -5,11 +5,13 @@ import { requestStats } from "@/mini-app/telegram";
 import type { ChatsDTO } from "@/mini-app/dto";
 import { TeamScreen, ProfileScreen, GatheringScreen } from "./screens";
 import { Icon } from "./icons";
+import BrowserPlaceholder from "./browser-placeholder";
 import "./mini-app.css";
 
 type Tab = "team" | "profile" | "gatherings";
 export default function MiniApp() {
   const [ready, setReady] = useState(false);
+  const [outsideTelegram, setOutsideTelegram] = useState(false);
   const [chats, setChats] = useState<ChatsDTO | null>(null);
   const [chat, setChat] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +20,10 @@ export default function MiniApp() {
   const [revision, setRevision] = useState(0);
   const initialize = useCallback(() => {
     const tg = window.Telegram?.WebApp;
+    if (!tg?.initData) {
+      setOutsideTelegram(true);
+      return;
+    }
     if (tg) {
       tg.ready();
       tg.expand();
@@ -84,6 +90,7 @@ export default function MiniApp() {
     setPlayer(null);
     setTab(next);
   };
+  if (outsideTelegram) return <BrowserPlaceholder />;
   return (
     <main className="mini-app">
       <Script
@@ -91,6 +98,15 @@ export default function MiniApp() {
         strategy="afterInteractive"
         onReady={initialize}
         onError={() => {
+          if (
+            !window.Telegram?.WebApp.initData &&
+            !new URLSearchParams(window.location.hash.slice(1)).has(
+              "tgWebAppData",
+            )
+          ) {
+            setOutsideTelegram(true);
+            return;
+          }
           setReady(true);
           setError("Не удалось загрузить Telegram. Открой приложение заново.");
         }}
