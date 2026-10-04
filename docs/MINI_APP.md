@@ -1,7 +1,9 @@
 # Telegram Mini App — статистика
 
-`/mini-app` показывает результаты команды за последние 7 дней, Fortnite-профили
+Главная страница `/` показывает результаты команды за последние 7 дней, Fortnite-профили
 и статистику сборов. Сборы, связывание Epic и настройки остаются в групповом чате.
+`/mini-app` остаётся совместимым адресом для ранее настроенных Telegram кнопок;
+обе страницы показывают одно приложение без перенаправления данных запуска.
 
 ## Архитектура
 
@@ -33,6 +35,11 @@
 - Grok загружается отдельно от фактов и кешируется на час по chat + facts hash.
   Используется app-scoped `grok/fortnite-collect-bot`. Ошибка не блокирует экран;
   анализ помечен временем исходного отчёта. Credentials остаются server-side.
+- Session Replay отключён: маскирование DOM не защищает данные Telegram в URL
+  запуска. Web Analytics удаляет query и hash перед отправкой событий. Sentry
+  диагностика исключает запросы, headers, payloads и пользовательские данные.
+- Ответы имеют `nosniff`, `Referrer-Policy: no-referrer` и запрещают доступ к
+  camera/microphone/geolocation. Framing не запрещён, чтобы работал Telegram Web.
 
 ## Запуск и выпуск
 
@@ -40,7 +47,7 @@
 2. Через Supabase tools применить `migrations/003_mini_app_cache.sql` в приватной
    схеме. Не менять webhook/job URLs и расписания. Проверить RLS и отсутствие grants
    для `PUBLIC`, `anon`, `authenticated`. Startup миграции не выполняет.
-3. В BotFather включить Main Mini App с URL `https://<production>/mini-app`.
+3. В BotFather включить Main Mini App с URL `https://<production>/`.
    Задать `MINI_APP_DIRECT_URL=https://t.me/<bot>/<app-short-name>` (или URL Main
    Mini App `https://t.me/<bot>`). Эта server-side настройка добавляет обычную URL
    кнопку к ответам `/stats`, `/myfnstats`, `/teamstats`, включая пятничные отчёты.
@@ -68,3 +75,21 @@
 Mini App не содержит browser auth bypass: вне Telegram показывает приглашение
 открыть приложение в Telegram. Для визуальной проверки используются browser mocks,
 не production credentials и не публичный тестовый API.
+
+## Проверка безопасности 2026-10-04
+
+- Source и локальные тесты: HMAC и срок сессии, отсутствие browser auth bypass,
+  отказ при выходе из группы/пересланной ссылке/ошибке Telegram, повторная проверка
+  членства перед кешем, ограничение профилей Epic links выбранной группы.
+- Disposable Postgres: RLS включён, grants для `PUBLIC`, `anon`, `authenticated`
+  на `statistics_cache` отсутствуют. Production права и Data API settings требуют
+  отдельного read-only подтверждения через Supabase tools; здесь оно не выполнено.
+- Production HTTP: `/weekly` без initData вернул 401; поддельная подпись на
+  `/weekly`, `/gatherings`, `/refresh` вернула 401. Все проверенные ответы имели
+  `Cache-Control: no-store, private`. Проверки `/chats`, `/profile`, `/analysis`
+  остановились на сетевых timeout, поэтому их live исход не подтверждён.
+- Локальная production сборка: `/` и `/mini-app` возвращают приложение и защитные
+  headers; браузер без Telegram показывает приглашение открыть приложение в Telegram.
+  Авторизованный live вход и реальные права групп этим не проверены.
+- Replay отключён и analytics URL очищается в этом изменении; production получит
+  исправления после merge/deploy. Это проверка перечисленных границ, не pentest.

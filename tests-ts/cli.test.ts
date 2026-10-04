@@ -48,7 +48,7 @@ describe("explicit maintenance", () => {
       menu_button: {
         type: "web_app",
         text: "Статистика",
-        web_app: { url: "https://example.com/mini-app" },
+        web_app: { url: "https://example.com/" },
       },
     });
     expect(mocks.webhook).not.toHaveBeenCalled();

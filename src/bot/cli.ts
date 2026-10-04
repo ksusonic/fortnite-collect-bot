@@ -23,7 +23,7 @@ export async function maintain(args: string[]): Promise<void> {
     const base = new URL(argument);
     if (base.protocol !== "https:")
       throw new Error("production URL must use HTTPS");
-    const app = new URL("/mini-app", base);
+    const app = new URL("/", base);
     await withHttpClient(async () => {
       const response = await scopedFetch(app, {
         signal: httpSignal(20000),
