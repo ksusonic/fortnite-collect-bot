@@ -161,10 +161,6 @@ export function TeamScreen({
       ) : (
         <section className="card">
           <h2>Неделя ещё впереди</h2>
-          <p>
-            Пока нет недельных результатов — копим снапшоты. Если аккаунт ещё не
-            связан, попроси админа: /linkepicfor @user EpicName.
-          </p>
         </section>
       )}
       <Metrics
