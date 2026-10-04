@@ -174,7 +174,9 @@ it("leaves a still-running event unconfirmed after bounded checks", async () => 
   vi.stubEnv("MEM0_API_KEY", "test-key");
   vi.useFakeTimers();
   try {
-    request.mockImplementation(async () => Response.json({ status: "RUNNING" }));
+    request.mockImplementation(async () =>
+      Response.json({ status: "RUNNING" }),
+    );
     const outcome = confirmMemoryTurn(eventId);
     await vi.runAllTimersAsync();
     expect(await outcome).toBe("pending");
