@@ -262,3 +262,6 @@ pause job ingress and drain incomplete bot work: affected SQL checkpoint
 signatures change. Apply the Supabase migration and deploy the matching main
 release together while ingress is paused; the previous release requires the
 removed column. Resume jobs and webhook ingress after verifying the release.
+
+После релиза примените `ops/schedules.sql` через Supabase tools: daily cleanup
+удаляет cache entries, истёкшие более суток назад, сохраняя stale fallback.
