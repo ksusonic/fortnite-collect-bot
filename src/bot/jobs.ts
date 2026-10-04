@@ -1,5 +1,6 @@
 import * as db from "./db";
 import { syncReleaseCommands } from "./commands";
+import { syncReleaseWebhook } from "./webhook";
 import { moscowDate, weeklyDue } from "./schedule-time";
 export { moscowDate, weeklyDue } from "./schedule-time";
 import * as status from "./status";
@@ -220,6 +221,7 @@ export async function runJob(
             await enqueueDailySnapshots(now);
             const bot = createBot();
             await syncReleaseCommands(bot);
+            await syncReleaseWebhook(bot);
             await recoverPending(bot);
             await recoverJobs();
             return { ok: true as const };
