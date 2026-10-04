@@ -1,3 +1,8 @@
+import * as undici from "undici";
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return { ...actual, fetch: vi.fn(actual.fetch) };
+});
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   migrate: vi.fn(),
@@ -37,9 +42,8 @@ describe("explicit maintenance", () => {
     expect(mocks.webhook).not.toHaveBeenCalled();
   });
   it("requires health success before changing menus or webhook", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(Response.json({ ok: false })),
+    vi.spyOn(undici, "fetch").mockResolvedValue(
+      undici.Response.json({ ok: false }),
     );
     await expect(
       maintain(["register-webhook", "https://example.com"]),
@@ -48,9 +52,8 @@ describe("explicit maintenance", () => {
     expect(mocks.webhook).not.toHaveBeenCalled();
   });
   it("registers a stable secret webhook without dropping pending updates", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(Response.json({ ok: true })),
+    vi.spyOn(undici, "fetch").mockResolvedValue(
+      undici.Response.json({ ok: true }),
     );
     await maintain(["register-webhook", "https://example.com/"]);
     expect(mocks.commands).toHaveBeenCalledOnce();
