@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { invocation, raw, connection } from "./storage";
 import { schemaContract } from "./schema-contract";
 
@@ -6,10 +8,25 @@ export class DatabaseReadinessError extends Error {
 }
 
 /** Resolves the same names as runtime queries, without reading application rows. */
-export async function checkSchema() {
+export async function checkSchema(requiredVersions: string[] = []) {
   await raw("BEGIN READ ONLY");
   try {
     await raw("SET LOCAL statement_timeout = '5000'");
+    if (requiredVersions.length) {
+      const pending = await raw<{ version: string }>(
+        `SELECT version FROM unnest($1::text[]) AS required(version)
+         WHERE NOT EXISTS (
+           SELECT 1 FROM supabase_migrations.schema_migrations AS applied
+           WHERE applied.version = required.version
+         ) ORDER BY version`,
+        [requiredVersions],
+      );
+      if (pending.rows.length)
+        throw new DatabaseReadinessError(
+          "database migrations are not applied: " +
+            pending.rows.map(({ version }) => version).join(", "),
+        );
+    }
     const result = await raw<{ ready: boolean }>(
       `SELECT current_schema() = 'fortnite_bot' AND NOT EXISTS (
         SELECT 1 FROM unnest($1::text[]) AS required(name)
@@ -43,11 +60,24 @@ export async function checkSchema() {
   }
 }
 
-export function checkDatabase() {
-  return invocation(null, checkSchema, AbortSignal.timeout(20_000));
+export function checkDatabase(requiredVersions: string[] = []) {
+  return invocation(
+    null,
+    () => checkSchema(requiredVersions),
+    AbortSignal.timeout(20_000),
+  );
 }
 
 export async function checkProductionDatabase() {
   if (process.env.VERCEL_ENV !== "production") return;
-  await checkDatabase();
+  const files = await readdir(
+    path.join(process.cwd(), "supabase", "migrations"),
+  );
+  const versions = files
+    .filter((file) => /^\d+_.+\.sql$/.test(file))
+    .map((file) => file.split("_")[0])
+    .sort();
+  if (!versions.length || new Set(versions).size !== versions.length)
+    throw new DatabaseReadinessError("invalid release migration manifest");
+  await checkDatabase(versions);
 }
