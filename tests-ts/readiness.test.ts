@@ -62,6 +62,37 @@ suite("database readiness on disposable Postgres", () => {
     });
   });
 
+  it("rejects an unapplied migration even when the schema is compatible", async () => {
+    await expect(checkDatabase(["29990101000000"])).rejects.toMatchObject({
+      code: "DATABASE_SCHEMA_NOT_READY",
+    });
+    await expect(checkDatabase()).resolves.toBeUndefined();
+  });
+
+  it("checks every migration bundled in a production release", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    await expect(checkProductionDatabase()).resolves.toBeUndefined();
+    const removed = await invocation(null, () =>
+      raw(
+        "DELETE FROM supabase_migrations.schema_migrations WHERE version='20261004125309' RETURNING version,name,statements",
+      ),
+    );
+    try {
+      await expect(checkDatabase()).resolves.toBeUndefined();
+      await expect(checkProductionDatabase()).rejects.toMatchObject({
+        code: "DATABASE_SCHEMA_NOT_READY",
+      });
+    } finally {
+      const row = removed.rows[0];
+      await invocation(null, () =>
+        raw(
+          "INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES ($1,$2,$3)",
+          [row.version, row.name, row.statements],
+        ),
+      );
+    }
+  });
+
   it("requires the contract to cover every migrated application table and column", async () => {
     await invocation(null, async () => {
       const actual = (
