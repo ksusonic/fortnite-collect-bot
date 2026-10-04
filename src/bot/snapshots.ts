@@ -24,7 +24,7 @@ export async function enqueueDailySnapshots(nowSeconds: number): Promise<void> {
        jsonb_build_object('account_id', account_id, 'day', $1::text)
      FROM (
        SELECT DISTINCT epic_account_id AS account_id FROM epic_links l
-       WHERE EXISTS (SELECT 1 FROM approved_chats a WHERE a.chat_id=l.chat_id)
+       WHERE EXISTS (SELECT 1 FROM responses r JOIN approved_chats a ON a.chat_id=r.chat_id WHERE r.user_id=l.user_id AND NOT r.is_bot)
        AND NOT EXISTS (
          SELECT 1 FROM work_items
          WHERE id = 'snapshot:' || $1 || ':' || l.epic_account_id

@@ -65,7 +65,6 @@ function success(
   );
   return [
     {
-      chat_id: -100,
       user_id: id,
       user_name: `Player ${id}`,
       epic_name: profile.epicName,

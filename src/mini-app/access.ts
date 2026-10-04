@@ -41,10 +41,7 @@ export async function verifyMembership(
 }
 export async function knownChat(chat: number) {
   return !!(
-    await raw(
-      "SELECT 1 FROM sessions WHERE chat_id=$1 UNION ALL SELECT 1 FROM epic_links WHERE chat_id=$1 LIMIT 1",
-      [chat],
-    )
+    await raw("SELECT 1 FROM sessions WHERE chat_id=$1 LIMIT 1", [chat])
   ).rowCount;
 }
 export async function authorizeChat(
@@ -65,7 +62,6 @@ export async function discoverChats(
       `SELECT candidates.chat_id FROM (
  SELECT chat_id FROM responses WHERE user_id=$1 AND NOT is_bot
  UNION SELECT chat_id FROM sessions WHERE initiator_id=$1
- UNION SELECT chat_id FROM epic_links WHERE user_id=$1
  ) candidates JOIN approved_chats a ON a.chat_id=candidates.chat_id`,
       [viewer.id],
     )

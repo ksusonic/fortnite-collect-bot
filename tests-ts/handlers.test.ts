@@ -283,7 +283,6 @@ it("excludes missing and inactive weekly baselines from rankings", () => {
     (id) =>
       [
         {
-          chat_id: -100,
           user_id: id,
           user_name: String(id),
           linked_at: 1,
@@ -333,7 +332,6 @@ it("bounds daily and weekly baselines and skips counters that rolled back", asyn
   const successes: Parameters<typeof computeTeamDeltas>[0] = [
     [
       {
-        chat_id: -100,
         user_id: 1,
         user_name: "one",
         linked_at: 1,

@@ -8,7 +8,7 @@ export const schemaContract = {
   afk_mutes: "chat_id user_id muted_until",
   chat_fort_titles: "chat_id title",
   roast_state: "chat_id history_json roast_msgs_json last_roast",
-  epic_links: "chat_id user_id user_name epic_name epic_account_id linked_at",
+  epic_links: "user_id user_name epic_name epic_account_id linked_at",
   squad_snapshots:
     "epic_account_id fetched_at matches wins kills deaths_est kd overall_matches overall_wins overall_kills overall_deaths_est overall_kd",
   fort_cooldowns: "chat_id user_id attempted_at",

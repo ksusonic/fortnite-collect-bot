@@ -35,10 +35,16 @@ const url = process.env.TEST_DATABASE_URL;
         "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1),(-11,1),(-12,1),(-13,1),(-20,1),(-100,1),(-200,1) ON CONFLICT DO NOTHING",
       ),
     );
-    await invocation(null, () =>
-      raw(`INSERT INTO epic_links(chat_id,user_id,user_name,epic_name,epic_account_id,linked_at)
-      SELECT -10,1000+n,'user','Epic',CASE WHEN n=21 THEN 'broken' WHEN n=22 THEN 'healthy' ELSE n::text END,now() FROM generate_series(0,22) n`),
-    );
+    await invocation(null, async () => {
+      await raw(
+        "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-10,99999,1,'User',now()) ON CONFLICT DO NOTHING",
+      );
+      await raw(
+        "INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at) SELECT -10,99999,n,'User','go',now() FROM generate_series(1000,1022) n ON CONFLICT DO NOTHING",
+      );
+      await raw(`INSERT INTO epic_links(user_id,user_name,epic_name,epic_account_id,linked_at)
+      SELECT 1000+n,'user','Epic',CASE WHEN n=21 THEN 'broken' WHEN n=22 THEN 'healthy' ELSE n::text END,now() FROM generate_series(0,22) n`);
+    });
   });
   it("snapshot failures cannot block chat updates or later accounts, and complete items stay complete", async () => {
     const bot = {

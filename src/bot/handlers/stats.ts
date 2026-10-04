@@ -87,7 +87,7 @@ export async function cmdLinkepicfor(ctx: Context): Promise<void> {
       return;
     } else throw error;
   }
-  await db.save_epic_link(ctx.chat.id, userId, name, epicName, epicId);
+  await db.save_epic_link(userId, name, epicName, epicId);
   await reply(
     ctx,
     `✅ <a href="tg://user?id=${userId}">${escapeHtml(name)}</a> → Epic <b>${escapeHtml(epicName)}</b> (залинковал админ${empty ? ", у игрока ещё 0 матчей" : ""})`,

@@ -10,7 +10,7 @@ Supabase Postgres. App Router также служит основой будущ�
 - `/rm` — отменить и удалить текущий сбор.
 - `/afk 1d`, `/afk 2w`, `/afk off` — временно отключить приглашения в новые сборы.
 - `/stats` — статистика сборов в чате.
-- `/linkepicfor @user EpicName` — администратору бота: привязать публичный Epic-аккаунт участника.
+- `/linkepicfor @user EpicName` — администратору бота: привязать публичный Epic-аккаунт участника. Привязка общая для пользователя во всех чатах; состав команды определяется историей ответов на `/fort` в выбранном чате.
 - `/teamstats` — недельные дельты, MVP и лидеры; автоматическая публикация по пятницам в 21:00 МСК.
 
 Бот работает в группах. Для pin/delete нужны соответствующие права.
@@ -254,6 +254,14 @@ checkpointed на work item; ошибка/невалидная политика 
 порядок checkpoints обработчика текста изменился. Новую миграцию применяйте до
 деплоя runtime; не меняйте production schema при запуске бота. После релиза проверьте
 результат `/api/jobs/maintenance`, меню Telegram и сохранение разговорных предпочтений.
+
+Global Epic links migration: `20261004172914_global_epic_links.sql` removes
+`epic_links.chat_id` and keys links by `user_id`. For duplicate users it keeps
+the latest `linked_at` (largest `chat_id` breaks ties). Before production rollout,
+pause job ingress and drain incomplete bot work: affected SQL checkpoint
+signatures change. Apply the Supabase migration and deploy the matching main
+release together while ingress is paused; the previous release requires the
+removed column. Resume jobs and webhook ingress after verifying the release.
 
 После релиза примените `ops/schedules.sql` через Supabase tools: daily cleanup
 удаляет cache entries, истёкшие более суток назад, сохраняя stale fallback.

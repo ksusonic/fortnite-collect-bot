@@ -246,8 +246,14 @@ suite("private statistics cache and snapshot integration", () => {
         ),
     );
     await invocation(-100, async () => {
-      await db.save_epic_link(-100, 1, "Player", "Sanitized", "test");
-      await db.save_epic_link(-100, 2, "Private", "Private", "private");
+      await raw(
+        "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-100,99999,1,'User',now()) ON CONFLICT DO NOTHING",
+      );
+      await raw(
+        "INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at) SELECT -100,99999,n,'User','go',now() FROM generate_series(1,2) n ON CONFLICT DO NOTHING",
+      );
+      await db.save_epic_link(1, "Player", "Sanitized", "test");
+      await db.save_epic_link(2, "Private", "Private", "private");
       const baseline = Date.now() / 1000 - 7 * 86400 - 60;
       await db.save_squad_snapshot(
         "test",

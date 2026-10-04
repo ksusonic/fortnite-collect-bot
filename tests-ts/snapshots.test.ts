@@ -65,10 +65,22 @@ suite("daily durable snapshots", () => {
     vi.stubEnv("FORTNITE_API_KEY", "test-key");
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE approved_chats,roast_profiles,work_steps,work_items,epic_links,squad_snapshots CASCADE",
+        "TRUNCATE sessions,responses,approved_chats,roast_profiles,work_steps,work_items,epic_links,squad_snapshots CASCADE",
       );
-      await db.save_epic_link(-10, 1, "one", "Shared", "shared");
-      await db.save_epic_link(-20, 2, "two", "Shared", "shared");
+      await raw(
+        "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-10,99999,1,'User',now()) ON CONFLICT DO NOTHING",
+      );
+      await raw(
+        "INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at) SELECT -10,99999,n,'User','go',now() FROM generate_series(1,1) n ON CONFLICT DO NOTHING",
+      );
+      await raw(
+        "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-20,99999,1,'User',now()) ON CONFLICT DO NOTHING",
+      );
+      await raw(
+        "INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at) SELECT -20,99999,n,'User','go',now() FROM generate_series(2,2) n ON CONFLICT DO NOTHING",
+      );
+      await db.save_epic_link(1, "one", "Shared", "shared");
+      await db.save_epic_link(2, "two", "Shared", "shared");
       await raw(
         "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1) ON CONFLICT DO NOTHING",
       );
@@ -145,10 +157,16 @@ suite("daily durable snapshots", () => {
   it("bounds each enqueue batch while later ticks continue with other accounts", async () => {
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE approved_chats,roast_profiles,work_steps,work_items,epic_links CASCADE",
+        "TRUNCATE sessions,responses,approved_chats,roast_profiles,work_steps,work_items,epic_links CASCADE",
       );
-      await raw(`INSERT INTO epic_links(chat_id,user_id,user_name,epic_name,epic_account_id,linked_at)
-        SELECT -10,n,'user','Epic','account:' || n,now() FROM generate_series(1,105) n`);
+      await raw(
+        "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-10,99999,1,'User',now()) ON CONFLICT DO NOTHING",
+      );
+      await raw(
+        "INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at) SELECT -10,99999,n,'User','go',now() FROM generate_series(1,105) n ON CONFLICT DO NOTHING",
+      );
+      await raw(`INSERT INTO epic_links(user_id,user_name,epic_name,epic_account_id,linked_at)
+        SELECT n,'user','Epic','account:' || n,now() FROM generate_series(1,105) n`);
       await raw(
         "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1) ON CONFLICT DO NOTHING",
       );
