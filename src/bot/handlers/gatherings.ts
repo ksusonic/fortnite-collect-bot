@@ -5,6 +5,7 @@ import * as roast from "../roast";
 import { externalCheckpoint, valueCheckpoint } from "../work";
 import {
   type ApiBot,
+  answerCallback,
   displayName,
   ignoreTelegram,
   key,
@@ -136,7 +137,7 @@ export async function cmdFort(ctx: Context): Promise<void> {
 export async function onCallback(ctx: Context): Promise<void> {
   const callback = ctx.callbackQuery;
   if (!callback?.message || !ctx.from) {
-    await ctx.answerCallbackQuery();
+    await answerCallback(ctx);
     return;
   }
   const chat = callback.message.chat.id,
@@ -148,11 +149,11 @@ export async function onCallback(ctx: Context): Promise<void> {
     if (session) db.getSessions().set(sessionKey, session);
   }
   if (!session) {
-    await ctx.answerCallbackQuery("Сбор устарел");
+    await answerCallback(ctx, "Сбор устарел");
     return;
   }
   if (session.is_closed) {
-    await ctx.answerCallbackQuery("Сбор завершён.");
+    await answerCallback(ctx, "Сбор завершён.");
     return;
   }
   const now = await valueCheckpoint("callback-time", nowSeconds);
@@ -165,7 +166,7 @@ export async function onCallback(ctx: Context): Promise<void> {
     action = "go";
     const offer = raw.slice(5);
     if (!session.time_slots.includes(offer)) {
-      await ctx.answerCallbackQuery("Слот недоступен.");
+      await answerCallback(ctx, "Слот недоступен.");
       return;
     }
     slot =
@@ -179,11 +180,11 @@ export async function onCallback(ctx: Context): Promise<void> {
   }
   const alreadyGo = session.go_players.has(id);
   if (action === "go" && !slot && alreadyGo) {
-    await ctx.answerCallbackQuery("Ты уже в деле!");
+    await answerCallback(ctx, "Ты уже в деле!");
     return;
   }
   if (action === "pass" && session.pass_players.has(id)) {
-    await ctx.answerCallbackQuery("Ты уже в списке пасующих.");
+    await answerCallback(ctx, "Ты уже в списке пасующих.");
     return;
   }
   if (
@@ -191,7 +192,7 @@ export async function onCallback(ctx: Context): Promise<void> {
     !alreadyGo &&
     session.go_players.size >= messages.SQUAD_SIZE + messages.RESERVE_SIZE
   ) {
-    await ctx.answerCallbackQuery("Резерв заполнен.");
+    await answerCallback(ctx, "Резерв заполнен.");
     return;
   }
   const oldGo = new Map(session.go_players),
@@ -235,10 +236,11 @@ export async function onCallback(ctx: Context): Promise<void> {
     ),
   );
   if (action === "go" && reserve.has(id))
-    await ctx.answerCallbackQuery(
+    await answerCallback(
+      ctx,
       `Сквад полон — ты в резерве №${[...reserve.keys()].indexOf(id) + 1}.`,
     );
-  else await ctx.answerCallbackQuery();
+  else await answerCallback(ctx);
 }
 export async function sweep_expired_sessions(
   bot: Bot,

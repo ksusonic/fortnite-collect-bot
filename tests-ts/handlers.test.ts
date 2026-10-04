@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   sessions: new Map<string, Session>(),
   saveResponse: vi.fn(),
   snapshot: vi.fn(),
+  callbackError: null as { error_code: number; description: string } | null,
   calls: [] as { method: string; payload: Record<string, unknown> }[],
 }));
 vi.mock("../src/bot/db", () => ({
@@ -98,6 +99,8 @@ function bot(): Bot {
   });
   instance.api.config.use(async (_prev, method, payload) => {
     state.calls.push({ method, payload: payload as Record<string, unknown> });
+    if (method === "answerCallbackQuery" && state.callbackError)
+      return { ok: false, ...state.callbackError } as never;
     if (method === "sendMessage")
       return {
         ok: true,
@@ -132,6 +135,7 @@ function callback(id: number, data: string): Update {
 beforeEach(() => {
   state.sessions.clear();
   state.calls = [];
+  state.callbackError = null;
   state.saveResponse.mockReset();
   state.saveResponse.mockResolvedValue(undefined);
   state.snapshot.mockReset();
@@ -156,6 +160,41 @@ it("deletes the command after saving the gathering and before pinning or Grok", 
   ]);
 });
 describe("gathering callbacks", () => {
+  it("finishes a persisted response when Telegram rejects an expired acknowledgement", async () => {
+    const current = session();
+    state.sessions.set("-100:20", current);
+    state.callbackError = {
+      error_code: 400,
+      description:
+        "Bad Request: query is too old and response timeout expired or query ID is invalid",
+    };
+    await bot().handleUpdate(callback(2, "pass"));
+    expect(current.pass_players.get(2)).toBe("user2");
+    expect([...current.go_players.keys()]).toEqual([1, 3, 4, 5]);
+    expect(state.saveResponse).toHaveBeenCalledTimes(1);
+    expect(state.calls.map((call) => call.method)).toEqual([
+      "editMessageText",
+      "answerCallbackQuery",
+    ]);
+    // The same terminal rejection is harmless on an early-return branch too.
+    await bot().handleUpdate(callback(2, "pass"));
+    expect(state.saveResponse).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    [400, "Bad Request: message is too long"],
+    [403, "Forbidden"],
+    [429, "Too Many Requests: retry after 1"],
+    [500, "Internal Server Error"],
+  ])(
+    "propagates other acknowledgement failures (%s)",
+    async (error_code, description) => {
+      state.sessions.set("-100:20", session());
+      state.callbackError = { error_code, description };
+      await expect(bot().handleUpdate(callback(2, "pass"))).rejects.toThrow(
+        description,
+      );
+    },
+  );
   it("promotes the earliest reserve when a squad member passes", async () => {
     const current = session();
     state.sessions.set("-100:20", current);
