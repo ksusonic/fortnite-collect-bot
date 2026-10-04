@@ -180,9 +180,9 @@ const DIVIDER = "─────────────────────
 const TEAM_DIVIDER = "─".repeat(20);
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-// Python's round uses ties to even; preserve persisted-stat arithmetic parity.
+// Keep ties-to-even rounding consistent with stored statistics.
 export { roundEven } from "../statistics/summary";
-// Decimal formatting uses Python's ties-to-even rule on the exact IEEE value.
+// Format the exact IEEE value using ties-to-even rounding.
 export { formatFixed } from "../statistics/summary";
 export function escapeHtml(text: string): string {
   return text

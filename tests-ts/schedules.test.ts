@@ -23,7 +23,7 @@ suite("schedule SQL configuration and cleanup", () => {
     await migrate();
   });
 
-  it("replaces legacy schedules idempotently and gates SQL retention on verified import", async () => {
+  it("updates schedules idempotently and retains the last 30 days", async () => {
     const schedules = await readFile(
       new URL("../ops/schedules.sql", import.meta.url),
       "utf8",
@@ -93,28 +93,13 @@ suite("schedule SQL configuration and cleanup", () => {
           (job) => job.jobname === "fortnite-cleanup",
         )!.command;
         // Keep now() fixed for the exact 30-day boundary. Roll back all fixture
-        // data afterwards so this test does not leave a verified import behind.
+        // data afterwards.
         await raw("BEGIN");
-        await raw("TRUNCATE squad_snapshots,import_manifest");
+        await raw("TRUNCATE squad_snapshots");
         await raw(`INSERT INTO squad_snapshots(epic_account_id,fetched_at,matches,wins,kills,deaths_est,kd)
           VALUES ('old',now()-interval '31 days',0,0,0,0,0),
                  ('boundary',now()-interval '30 days',0,0,0,0,0),
                  ('recent',now()-interval '29 days',0,0,0,0,0)`);
-        await raw(cleanup);
-        expect(
-          (
-            await raw(
-              "SELECT epic_account_id FROM squad_snapshots ORDER BY epic_account_id",
-            )
-          ).rows,
-        ).toEqual([
-          { epic_account_id: "boundary" },
-          { epic_account_id: "old" },
-          { epic_account_id: "recent" },
-        ]);
-        await raw(
-          "INSERT INTO import_manifest(source_sha256,report) VALUES ('verified-test','{}'::jsonb)",
-        );
         await raw(cleanup);
         expect(
           (

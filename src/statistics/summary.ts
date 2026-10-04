@@ -101,7 +101,7 @@ export function teamFacts(
     `MVP недели: ${mvpLink.user_name || mvpStats.epic_name} — ${mm}M, ${mw}W, ${mk}K, K/D ${formatFixed(mkd, 2)}`,
     "Топ недели:",
   ];
-  // Legacy fact ranking reads overall, which is the weekly mode in callers.
+  // Fact ranking reads overall, which is the weekly mode in callers.
   [...successes]
     .sort(
       (a, b) =>

@@ -32,7 +32,7 @@ function hydrate(raw: (typeof fixture.sessions)[number]["session"]): Session {
     tagged_users: new Map(raw.tagged_users as [number, string][]),
   } as Session;
 }
-describe("Python message rendering parity", () => {
+describe("message rendering fixtures", () => {
   for (const example of fixture.sessions)
     it(`preserves stored style ${example.session.style}, roster, escaping and lifecycle text`, () => {
       const session = hydrate(example.session);
@@ -82,7 +82,7 @@ describe("Python message rendering parity", () => {
     expect([...session.go_players.keys()]).toEqual([20, 2, 90, 3, 1, 4]);
   });
 });
-describe("Python numeric rendering", () => {
+describe("numeric rendering", () => {
   it("preserves half-even ties and binary float behavior", () => {
     expect(formatFixed(2.625, 2)).toBe("2.62");
     expect(formatFixed(2.675, 2)).toBe("2.67");
@@ -114,7 +114,7 @@ describe("relative readiness offers", () => {
     expect(generateTimeSlots(null, at("22:30:00"))).toEqual(["now", "30"]);
     expect(generateTimeSlots(null, at("22:30:01"))).toEqual(["now"]);
   });
-  it("keeps pinned absolute slots and legacy callback shapes", () => {
+  it("keeps pinned absolute slots and callback shapes", () => {
     expect(generateTimeSlots(20, at("22:30:01"))).toEqual(["20:00"]);
     expect(
       buildKeyboard(4, ["now", "30", "60", "120", "20:00"]).inline_keyboard[0],

@@ -81,12 +81,9 @@ describe("durable job orchestration", () => {
     expect(await runJob("cleanup")).toEqual({ ok: true, skipped: "duplicate" });
     expect(mocks.cleanup).not.toHaveBeenCalled();
   });
-  it("gates cleanup on a verified import and completes skipped ticks", async () => {
-    expect(await runJob("cleanup")).toEqual({
-      ok: true,
-      skipped: "import not verified",
-    });
-    expect(mocks.cleanup).not.toHaveBeenCalled();
+  it("cleans snapshots older than 30 days and completes the tick", async () => {
+    expect(await runJob("cleanup")).toEqual({ ok: true });
+    expect(mocks.cleanup).toHaveBeenCalledWith(30);
     expect(mocks.raw).toHaveBeenCalledWith(
       expect.stringContaining("status='complete'"),
       expect.anything(),

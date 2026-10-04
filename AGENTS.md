@@ -5,8 +5,7 @@
 TypeScript / Next.js App Router / grammY Telegram bot for Fortnite gatherings. Production
 is Node.js 24 on Vercel plus Supabase Postgres, via Telegram webhooks. Keep bot logic
 independent of React so the future Mini App can share services. Use pnpm directly from
-registry.npmjs.org without proxies. Python source is historical Git only; runtime and
-read-only SQLite recovery importer are TypeScript.
+registry.npmjs.org without proxies.
 Do not use Docker or restore polling/SSH deployment. Preserve unrelated local files.
 
 ## Commands
@@ -15,7 +14,6 @@ Do not use Docker or restore polling/SSH deployment. Preserve unrelated local fi
 pnpm install --frozen-lockfile
 pnpm dev
 pnpm bot migrate
-pnpm bot import /path/to/read-only-backup.db
 pnpm bot register-webhook https://production-domain
 pnpm bot webhook-info
 pnpm bot configure-commands
@@ -28,12 +26,12 @@ pnpm build
 
 Tests require disposable Postgres and clear bot tables. Never use production URLs for tests.
 All `.env` variants are ignored; Never commit credentials.
-Use Supabase tools for production database changes/imports/scheduling/verification.
+Use Supabase tools for production database changes/scheduling/verification.
 
 ## Bot commands (group chats only)
 
 All chats require explicit owner approval via hidden `/init`; only the numeric
-`ADMIN_USER_ID` can approve a group. Existing/imported chats are not auto-approved.
+`ADMIN_USER_ID` can approve a group. Existing chats are not auto-approved.
 Enforce approval for handlers, callbacks, proactive sends, queued work and snapshots.
 Do not advertise `/init` in command menus; preserve approvals durably in private Postgres.
 
@@ -63,15 +61,10 @@ Do not advertise `/init` in command menus; preserve approvals durably in private
 - Keep HTML escaping of names and LLM replies, stored gathering styles/custom titles,
   Go/Pass rendering, relative offers and reserve promotion behavior.
 
-## Storage and recovery
+## Storage
 
 - `migrations/*.sql` are versioned; no schema changes or webhook registration at startup.
-- `src/bot/importer.ts` opens SQLite read-only, refuses nonempty targets, imports transactionally
-  and verifies counts, all normalized contents/keys and foreign keys. Preserve original backup.
-- Legacy terminal sessions close; joined_at backfills from responded_at. Missing AFK/titles
-  remain empty. Old news tables remain archives. Cleanup waits for verified import_manifest.
 - Never expose bot tables through the Data API. Keep schema privileges private and RLS enabled.
-- Preserve pre-launch export. Weekly stats need fresh baseline snapshots after recovery.
 
 ## Deployment and verification
 
@@ -85,7 +78,7 @@ Do not advertise `/init` in command menus; preserve approvals durably in private
   max_connections=1, router-used update types and drop_pending_updates=false.
 - Supabase Cron/pg_net call authenticated job routes; URL/secret live in Vault.
   See ops/schedules.sql. Verify actual HTTP outcomes, not only cron SQL success.
-- CI runs ESLint, Prettier, TypeScript, Next.js build and Postgres-backed Vitest tests, including importer checks. Check group membership, pin/delete
+- CI runs ESLint, Prettier, TypeScript, Next.js build and Postgres-backed Vitest tests. Check group membership, pin/delete
   permissions, command menus and privacy mode separately from automated unit tests.
 - Keep source checks, CI, deployed behavior, Telegram webhook status and actual scheduled
   outcomes separate when reporting completion.

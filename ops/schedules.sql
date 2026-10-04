@@ -31,11 +31,9 @@ SELECT cron.schedule('fortnite-status', '*/3 15-20 * * *', $job$
         body := '{}'::jsonb, timeout_milliseconds := 250000
     );
 $job$);
--- SQL-only retention: preserve the recovery import gate and eliminate a daily
--- serverless invocation. The compatibility /api/jobs/cleanup route remains.
+-- SQL retention avoids a daily serverless invocation.
 SELECT cron.schedule('fortnite-cleanup', '0 1 * * *', $job$
     DELETE FROM fortnite_bot.squad_snapshots
-    WHERE fetched_at < now() - interval '30 days'
-      AND EXISTS (SELECT 1 FROM fortnite_bot.import_manifest);
+    WHERE fetched_at < now() - interval '30 days';
 $job$);
 COMMIT;

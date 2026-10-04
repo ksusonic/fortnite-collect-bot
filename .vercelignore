@@ -1,10 +1,6 @@
 .codex
-.venv
 .env
 .env.*
 *.env
 *.env.*
 *.db
-tests
-.pytest_cache
-.ruff_cache

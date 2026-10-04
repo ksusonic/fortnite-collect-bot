@@ -161,19 +161,6 @@ const url = process.env.TEST_DATABASE_URL;
       });
       return { item, bot, result };
     }
-    it("retains enabled and disabled legacy preferences after a late import", async () => {
-      await invocation(null, async () => {
-        await raw(
-          "INSERT INTO chat_features(chat_id,feature,enabled) VALUES (-10,'roast',true),(-11,'roast',false)",
-        );
-      });
-      expect(await invocation(-10, () => loadRoastProfile(-10))).toMatchObject({
-        preferences: { proactive: true },
-      });
-      expect(await invocation(-11, () => loadRoastProfile(-11))).toMatchObject({
-        preferences: { proactive: false },
-      });
-    });
     it("persists a request before confirming and replays without new Flags, model, or sends", async () => {
       mocks.decision.mockResolvedValue({
         action: "update",
@@ -254,7 +241,7 @@ const url = process.env.TEST_DATABASE_URL;
     it("limits evaluation attempts even when the model chooses silence or fails", async () => {
       await invocation(-10, () =>
         raw(
-          "INSERT INTO chat_features(chat_id,feature,enabled) VALUES (-10,'roast',true)",
+          `INSERT INTO roast_profiles(chat_id,preferences) VALUES (-10,'{"proactive":true}')`,
         ),
       );
       mocks.decision.mockResolvedValue({ action: "skip" });

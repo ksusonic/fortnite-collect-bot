@@ -46,12 +46,12 @@ pnpm build
 
 Тесты очищают таблицы **только disposable localhost базы `fortnite_test`**.
 Без `TEST_DATABASE_URL` Postgres-тесты пропускаются; такой запуск не доказывает
-работу storage/recovery. CI запускает проверки с отдельной базой.
+работу хранилища и очередей. CI запускает проверки с отдельной базой.
 
 ## CI/CD
 
 GitHub Actions сохраняет обязательный check `ci`: lint, форматирование, типы,
-Postgres/Vitest (включая importer) и Next.js build. pnpm store и `.next/cache`
+Postgres/Vitest и Next.js build. pnpm store и `.next/cache`
 кэшируются; новые commits отменяют устаревшие CI/CodeQL runs. CI не получает
 production secrets; Sentry release/upload включены только в Vercel build.
 Ruleset `gymrules` требует PR, `ci` и актуальный `main`
@@ -82,7 +82,7 @@ search path приложения. Исходные миграции провер
 а пустая preview-база получает полную схему. Старый журнал остаётся для совместимости.
 
 GitHub CI сначала применяет SQL через Supabase CLI к disposable localhost Postgres,
-затем запускает тесты, включая recovery/importer. Production credentials в Actions
+затем запускает тесты хранилища и очередей. Production credentials в Actions
 не нужны. Docker и `supabase start` не используются.
 
 Для активации [Supabase GitHub integration](https://supabase.com/docs/guides/deployment/branching/github-integration)
@@ -96,7 +96,7 @@ checks ветки `main` вместе с `ci`. Branching создаёт отде
 Перед включением Deploy to production сохраните экспорт и проверьте старый журнал
 миграций и состояние production-схемы через Supabase tools. GitHub интеграция должна
 быть единственным автоматическим исполнителем production-миграций; ручной
-`pnpm bot migrate` нужен для локальной разработки и восстановления. Изменения SQL
+`pnpm bot migrate` нужен для локальной разработки. Изменения SQL
 должны быть совместимы с текущим runtime: деплои Vercel и Supabase независимы.
 `ops/schedules.sql` применяется отдельно через Supabase tools после проверки job
 routes; production Vault secrets, cron и webhook в preview не копируются.
@@ -153,7 +153,7 @@ URL и secret хранятся в Vault. Проверять нужно actual HT
 maintenance каждую минуту, Epic status каждые три минуты вечером и ежедневная
 очистка snapshots прямо в SQL. Maintenance ставит в очередь только просроченные
 сборы, публикацию за последний наступивший пятничный период и дневные snapshots,
-затем восстанавливает незавершённую работу. Время реакции recovery остаётся минутным;
+затем восстанавливает незавершённую работу. Повторная обработка запускается каждую минуту;
 объединение расписаний само по себе почти не уменьшает число HTTP вызовов.
 
 Недельная публикация догоняет пропущенную пятницу до следующего периода; повторные
@@ -165,41 +165,8 @@ maintenance каждую минуту, Epic status каждые три мину�
 
 После деплоя и проверки `/api/jobs/maintenance` примените SQL через Supabase tools.
 Он транзакционно заменяет расписания expiry/weekly и переводит cleanup в SQL;
-существующие job URL остаются доступны. SQL-only cleanup сохраняет проверку
-`import_manifest` перед удалением snapshots старше 30 дней.
-
-## Recovery и переход с Python
-
-`storage.ts` держит один invocation-scoped Postgres client, `work.ts` — журнал действий,
-`runtime.ts` — очередь чата. SQL mutations коммитятся атомарно с checkpoints; reads,
-time/random и provider results replay исходных значений. Telegram sends с неизвестным
-результатом блокируют очередь до ручного разбора, вместо слепой повторной отправки.
-
-`handlers.ts` регистрирует команды; feature-модули в `handlers/` содержат сборы,
-настройки чата, roast и Fortnite-команды. `services/weekly-stats.ts` рассчитывает
-недельные дельты без зависимости от React или grammY. Перенос обработчиков сохраняет
-порядок и signatures checkpoints существующих work items.
-
-SQLite importer реализован на TypeScript и запускается локально. Эталонные сообщения
-сохранены в parity fixtures; предыдущий Python runtime доступен только в Git для rollback:
-
-```bash
-pnpm bot import /path/to/read-only-backup.db
-```
-
-Он отказывается импортировать в непустую базу, выполняет импорт транзакционно и
-проверяет данные/ключи/FK. Сохраните оригинальный backup и pre-launch export.
-
-**Перед переходом runtime:** экспортировать базу; приостановить webhook delivery и
-cron; завершить или вручную reconcile все pending/failed/ambiguous work. Порядок и
-SQL signatures checkpoints изменились: незавершённые Python items нельзя продолжать
-новым кодом без явной миграции. Сохранить queue/steps и согласовать их состояние,
-затем deploy из main, проверить production health и меню/права, явно восстановить
-stable webhook и cron. Не запускать два runtime одновременно.
-
-Проверить `/fort`, относительные кнопки, reserve promotion, AFK, custom title,
-`/stats`, карточки и недельные snapshots отдельно от CI. При rollback снова drain
-новые work до возврата Python; post-cutover записи остаются в общей Postgres базе.
+существующие job URL остаются доступны. SQL-only cleanup удаляет snapshots старше
+30 дней.
 
 ## Sentry
 
@@ -231,8 +198,7 @@ Telegram Mini App со статистикой: [docs/MINI_APP.md](docs/MINI_APP.
 `ADMIN_USER_ID`. Команда скрыта из меню; права администратора группы сами по себе
 не дают права активации. Чужие, анонимные и private `/init` игнорируются.
 Повторная `/init` безопасна. Одобрение в приватной таблице `approved_chats`
-переживает рестарты; другие чаты остаются выключенными. Существующие и
-восстановленные из SQLite чаты также требуют `/init`, автоматически они не одобряются.
+переживает рестарты; другие чаты остаются выключенными. Существующие чаты также требуют `/init`, автоматически они не одобряются.
 
 Проверка действует на команды, сообщения, callbacks, приветствия, scheduled
 публикации и восстановление очередей. Неодобренные сообщения не сохраняются в

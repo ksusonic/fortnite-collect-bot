@@ -9,22 +9,14 @@ export interface RoastProfile {
 export async function loadRoastProfile(chat: number): Promise<RoastProfile> {
   const row = (
     await query(
-      `SELECT p.preferences,p.pending_question,p.last_evaluated_at,f.enabled AS legacy_enabled
-     FROM (SELECT $1::bigint AS chat_id) c
-     LEFT JOIN roast_profiles p ON p.chat_id=c.chat_id
-     LEFT JOIN chat_features f ON f.chat_id=c.chat_id AND f.feature='roast'`,
+      `SELECT preferences,pending_question,last_evaluated_at FROM roast_profiles WHERE chat_id=$1`,
       [chat],
     )
-  )[0]!;
+  )[0];
   return {
-    // Also handles a historical SQLite import performed after this migration.
-    preferences:
-      parsePreferences(row.preferences) ??
-      (typeof row.legacy_enabled === "boolean"
-        ? { proactive: row.legacy_enabled }
-        : {}),
-    pending_question: row.pending_question ?? null,
-    last_evaluated_at: row.last_evaluated_at ?? null,
+    preferences: parsePreferences(row?.preferences) ?? {},
+    pending_question: row?.pending_question ?? null,
+    last_evaluated_at: row?.last_evaluated_at ?? null,
   };
 }
 export async function saveRoastProfile(

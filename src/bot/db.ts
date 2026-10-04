@@ -278,19 +278,6 @@ export async function get_active_chat_ids(days = 14): Promise<number[]> {
     )
   ).map((r) => r.chat_id);
 }
-export async function is_feature_enabled(
-  chat: number,
-  feature: string,
-): Promise<boolean> {
-  return (
-    (
-      await query(
-        "SELECT enabled FROM chat_features WHERE chat_id=$1 AND feature=$2",
-        [chat, feature],
-      )
-    )[0]?.enabled ?? false
-  );
-}
 export async function set_feature(
   chat: number,
   feature: string,

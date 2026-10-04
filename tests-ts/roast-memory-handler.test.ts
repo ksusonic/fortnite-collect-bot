@@ -13,10 +13,6 @@ const state = vi.hoisted(() => ({
   store: vi.fn(),
 }));
 vi.mock("../src/bot/storage", () => ({ getRoastState: () => ({}) }));
-vi.mock("../src/bot/db", () => ({
-  is_feature_enabled: async () => state.enabled,
-  get_feature_value: async () => 1,
-}));
 vi.mock("../src/bot/services/chat-access", () => ({
   isChatApproved: async () => true,
 }));
