@@ -3,7 +3,7 @@ import { createBot } from "./runtime";
 import { migrate } from "./storage";
 import { importBackup } from "./importer";
 import { pathToFileURL } from "node:url";
-import { withHttpClient } from "./transport";
+import { scopedFetch, httpSignal, withHttpClient } from "./transport";
 import { registerWebhook } from "./webhook";
 export { registerWebhook } from "./webhook";
 
@@ -18,9 +18,32 @@ export async function maintain(args: string[]): Promise<void> {
     console.log(JSON.stringify(await importBackup(argument), null, 2));
     return;
   }
+  if (command === "configure-mini-app") {
+    if (!argument) throw new Error("production URL required");
+    const base = new URL(argument);
+    if (base.protocol !== "https:")
+      throw new Error("production URL must use HTTPS");
+    const app = new URL("/mini-app", base);
+    await withHttpClient(async () => {
+      const response = await scopedFetch(app, {
+        signal: httpSignal(20000),
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("mini app health check failed");
+      await response.body?.cancel();
+      await createBot().api.setChatMenuButton({
+        menu_button: {
+          type: "web_app",
+          text: "Статистика",
+          web_app: { url: app.toString() },
+        },
+      });
+    });
+    return;
+  }
   if (command !== "register-webhook" && command !== "webhook-info")
     throw new Error(
-      "usage: pnpm bot migrate|import <backup>|register-webhook <url>|webhook-info",
+      "usage: pnpm bot migrate|import <backup>|register-webhook <url>|webhook-info|configure-mini-app <url>",
     );
   const info =
     command === "register-webhook"

@@ -64,7 +64,18 @@ const raw: RawPlayerStats = {
   },
 };
 describe("Fortnite API parity", () => {
-  it("maps overall stats and optional modes/image without changing SDK winRate units", () => {
+  it("normalizes provider percentages and prevents lifetime from entering durable season fetches", async () => {
+    const withPercent = {
+      ...raw,
+      stats: { all: { overall: { ...raw.stats!.all!.overall!, winRate: 20 } } },
+    };
+    expect(toPlayerStats(withPercent, false).overall.win_rate).toBe(0.2);
+    await expect(
+      fetchStats({ account_id: "account", time_window: "lifetime" }),
+    ).rejects.toThrow("require season window");
+  });
+
+  it("maps overall stats and optional modes/image with normalized win-rate ratios", () => {
     expect(toPlayerStats(raw, true, 100)).toEqual({
       epic_account_id: "account",
       epic_name: "Epic",

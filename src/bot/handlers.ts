@@ -1,3 +1,4 @@
+import { statisticsKeyboard } from "./mini-app-link";
 import type { Bot, Context } from "grammy";
 import * as db from "./db";
 import * as messages from "./messages";
@@ -35,12 +36,12 @@ export function registerHandlers(bot: Bot): void {
     myfnstats: cmdMyfnstats,
     stats: async (ctx) => {
       if (ctx.chat)
-        await reply(
-          ctx,
+        await ctx.reply(
           messages.buildStatsText(
             await db.get_chat_stats(ctx.chat.id),
             await valueCheckpoint("stats-style", messages.randomStatsStyle),
           ),
+          { reply_markup: statisticsKeyboard(ctx.chat.id) },
         );
     },
     teamstats: async (ctx) => {

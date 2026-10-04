@@ -1,3 +1,4 @@
+import { statisticsKeyboard } from "../mini-app-link";
 import { GrammyError, type Bot, type Context } from "grammy";
 import * as db from "../db";
 import * as fortnite from "../fortnite";
@@ -119,13 +120,16 @@ export async function cmdMyfnstats(ctx: Context): Promise<void> {
     try {
       await ctx.replyWithPhoto(stats.image_url, {
         caption: messages.myFnCaption(link, stats),
+        reply_markup: statisticsKeyboard(ctx.chat.id),
       });
       return;
     } catch (error) {
       if (!(error instanceof GrammyError)) throw error;
     }
   }
-  await reply(ctx, messages.buildMyFnStatsText(link, stats));
+  await ctx.reply(messages.buildMyFnStatsText(link, stats), {
+    reply_markup: statisticsKeyboard(ctx.chat.id),
+  });
 }
 
 export async function runTeamstats(
@@ -186,5 +190,7 @@ export async function runTeamstats(
     );
     if (analysis) html = appendTeamAnalysis(html, analysis);
   }
-  await bot.api.sendMessage(chat, html);
+  await bot.api.sendMessage(chat, html, {
+    reply_markup: statisticsKeyboard(chat),
+  });
 }
