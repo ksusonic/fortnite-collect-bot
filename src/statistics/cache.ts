@@ -1,4 +1,5 @@
 import "server-only";
+import { FortniteUnavailable } from "../bot/fortnite";
 import { advisoryLock, raw, transaction } from "../bot/storage";
 export interface Cached<T> {
   data: T;
@@ -17,7 +18,7 @@ export const CACHE_VERSION = 1;
 export async function readCache<T>(key: string): Promise<Cached<T> | null> {
   const row = (
     await raw<CacheRow<T>>(
-      "SELECT * FROM statistics_cache WHERE cache_key=$1 AND version=$2",
+      "SELECT * FROM statistics_cache WHERE cache_key=$1 AND version=$2 AND result <> 'null'::jsonb",
       [key, CACHE_VERSION],
     )
   ).rows[0];
@@ -44,8 +45,10 @@ export async function cached<T>(
       key,
     ])
   ).rows[0]?.retry_after as Date | undefined;
-  if (previous && backoff && backoff.getTime() > Date.now())
+  if (backoff && backoff.getTime() > Date.now()) {
+    if (!previous) throw new FortniteUnavailable("cache cooldown");
     return { ...previous, error: "Обновление временно недоступно." };
+  }
   // Session advisory lock coalesces refreshes across Vercel processes.
   return (await advisoryLock(`statistics:${key}`, async () => {
     const recent = await readCache<T>(key);
@@ -55,8 +58,10 @@ export async function cached<T>(
         key,
       ])
     ).rows[0]?.retry_after as Date | undefined;
-    if (recent && retry && retry.getTime() > Date.now())
+    if (retry && retry.getTime() > Date.now()) {
+      if (!recent) throw new FortniteUnavailable("cache cooldown");
       return { ...recent, error: "Обновление временно недоступно." };
+    }
     try {
       const data = await load();
       const now = Date.now() / 1000;
@@ -76,19 +81,20 @@ export async function cached<T>(
         error: null,
       };
     } catch (error) {
-      // Private/deleted accounts must not expose a formerly public cached profile.
-      if (
+      // JSON null is a failure marker, never a successful cached result.
+      const invalidate =
         error instanceof Error &&
-        ["StatsPrivate", "EpicNameNotFound"].includes(error.name)
-      ) {
-        await raw("DELETE FROM statistics_cache WHERE cache_key=$1", [key]);
-        throw error;
-      }
-      if (!recent) throw error;
+        ["StatsPrivate", "EpicNameNotFound"].includes(error.name);
       await raw(
-        "UPDATE statistics_cache SET retry_after=now()+interval '60 seconds' WHERE cache_key=$1",
-        [key],
+        `INSERT INTO statistics_cache(cache_key,version,result,fetched_at,expires_at,retry_after)
+         VALUES($1,$2,'null'::jsonb,now(),now(),now()+interval '60 seconds')
+         ON CONFLICT(cache_key) DO UPDATE SET
+           result=CASE WHEN $3 THEN 'null'::jsonb ELSE statistics_cache.result END,
+           expires_at=CASE WHEN $3 THEN now() ELSE statistics_cache.expires_at END,
+           retry_after=now()+interval '60 seconds'`,
+        [key, CACHE_VERSION, invalidate],
       );
+      if (invalidate || !recent) throw error;
       return { ...recent, stale: true, error: "Не удалось обновить данные." };
     }
   }))!;

@@ -32,6 +32,7 @@ describe("authenticated Next.js routes", () => {
     vi.clearAllMocks();
     vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "test-webhook");
     vi.stubEnv("CRON_SECRET", "test-cron");
+    vi.stubEnv("ADMIN_API_SECRET", "test-admin");
     vi.stubEnv("PUBLIC_BASE_URL", "https://bot.example");
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -121,6 +122,16 @@ describe("authenticated Next.js routes", () => {
       (await register(request("/api/admin/register-webhook"))).status,
     ).toBe(401);
     expect(mock.registerWebhook).not.toHaveBeenCalled();
+    expect(
+      (
+        await register(
+          request("/api/admin/register-webhook", "{}", {
+            authorization: "Bearer test-cron",
+          }),
+        )
+      ).status,
+    ).toBe(401);
+    expect(mock.registerWebhook).not.toHaveBeenCalled();
     mock.registerWebhook.mockResolvedValue({
       url: "https://bot.example/api/telegram/webhook",
     });
@@ -128,7 +139,7 @@ describe("authenticated Next.js routes", () => {
       (
         await register(
           request("/api/admin/register-webhook", "{}", {
-            authorization: "Bearer test-cron",
+            authorization: "Bearer test-admin",
           }),
         )
       ).status,

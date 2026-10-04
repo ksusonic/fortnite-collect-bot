@@ -172,6 +172,27 @@ suite("private statistics cache and snapshot integration", () => {
       expect(await readCache("test")).toBeNull();
     });
   });
+  it("backs off failures without a previous successful result", async () => {
+    const load = vi.fn(async () => {
+      throw new Error("rate limited");
+    });
+    await expect(
+      invocation(null, () => cached("cold", 900, load)),
+    ).rejects.toThrow("rate limited");
+    await expect(
+      invocation(null, () => cached("cold", 900, load)),
+    ).rejects.toThrow("cache cooldown");
+    expect(load).toHaveBeenCalledTimes(1);
+    await invocation(null, async () => {
+      expect(await readCache("cold")).toBeNull();
+      await raw(
+        "UPDATE statistics_cache SET retry_after=now()-interval '1 second' WHERE cache_key='cold'",
+      );
+      expect(
+        (await cached("cold", 900, async () => ({ value: 1 }))).data,
+      ).toEqual({ value: 1 });
+    });
+  });
   it("permits no more than two concurrent provider calls across sessions", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));

@@ -132,7 +132,7 @@ routes; production Vault secrets, cron и webhook в preview не копирую
 - `GET /health`, `GET /api/admin/inspect`
 - `POST /api/admin/register-webhook` — только явная административная операция
 
-Нужны `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `CRON_SECRET`, `PUBLIC_BASE_URL`, `ADMIN_USER_ID`,
+Нужны `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `CRON_SECRET`, `ADMIN_API_SECRET`, `PUBLIC_BASE_URL`, `ADMIN_USER_ID`,
 `DATABASE_URL` либо `POSTGRES_URL_NON_POOLING`. Соединение с Supabase — SSL и session
 pooler 5432: transaction pooler 6543 несовместим с session advisory locks.
 Для Supabase pooler встроен официальный root CA; сертификат и hostname проверяются.
@@ -254,3 +254,8 @@ checkpointed на work item; ошибка/невалидная политика 
 порядок checkpoints обработчика текста изменился. Новую миграцию применяйте до
 деплоя runtime; не меняйте production schema при запуске бота. После релиза проверьте
 результат `/api/jobs/maintenance`, меню Telegram и сохранение разговорных предпочтений.
+
+`ADMIN_API_SECRET` — отдельный Bearer secret для `/api/admin/*`. Задайте его в
+Vercel перед релизом; `CRON_SECRET` разрешает только `/api/jobs/*` и остаётся в Vault.
+После релиза примените `ops/schedules.sql` через Supabase tools: daily cleanup
+удаляет cache entries, истёкшие более суток назад, сохраняя stale fallback.

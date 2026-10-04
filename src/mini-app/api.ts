@@ -75,11 +75,10 @@ export async function miniAppEndpoint(request: Request, resource: string) {
           (resource === "weekly" && request.method === "GET") ||
           (resource === "refresh" && request.method === "POST")
         )
-          return lockedChat(chat, () => weeklyReport(chat));
+          return weeklyReport(chat);
         if (resource === "analysis" && request.method === "GET") {
-          // Server facts remain independent of client hints; release the chat lock
-          // before optional LLM work so it cannot hold up gathering actions.
-          const report = await lockedChat(chat, () => weeklyReport(chat));
+          // Provider refresh and optional analysis do not hold the bot chat lock.
+          const report = await weeklyReport(chat);
           try {
             return { analysis: await teamAnalysis(chat, report) };
           } catch {

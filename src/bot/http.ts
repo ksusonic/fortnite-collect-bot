@@ -17,10 +17,16 @@ export function authenticate(provided: string | null, variable: string) {
   if (left.length !== right.length || !timingSafeEqual(left, right))
     throw new HttpError(401, "unauthorized");
 }
-export function adminAuth(request: Request) {
+function bearerAuth(request: Request, variable: string) {
   const value = request.headers.get("authorization");
   if (!value?.startsWith("Bearer ")) throw new HttpError(401, "unauthorized");
-  authenticate(value.slice(7), "CRON_SECRET");
+  authenticate(value.slice(7), variable);
+}
+export function adminAuth(request: Request) {
+  bearerAuth(request, "ADMIN_API_SECRET");
+}
+export function cronAuth(request: Request) {
+  bearerAuth(request, "CRON_SECRET");
 }
 export async function endpoint(
   factory: () => Promise<unknown>,
