@@ -1,3 +1,4 @@
+vi.mock("../src/bot/commands", () => ({ syncReleaseCommands: vi.fn() }));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   raw: vi.fn(),

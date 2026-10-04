@@ -65,12 +65,20 @@ suite("daily durable snapshots", () => {
     vi.stubEnv("FORTNITE_API_KEY", "test-key");
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE work_steps,work_items,epic_links,squad_snapshots CASCADE",
+        "TRUNCATE approved_chats,roast_profiles,work_steps,work_items,epic_links,squad_snapshots CASCADE",
       );
       await db.save_epic_link(-10, 1, "one", "Shared", "shared");
       await db.save_epic_link(-20, 2, "two", "Shared", "shared");
+      await raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1) ON CONFLICT DO NOTHING",
+      );
       await enqueueDailySnapshots(now);
     });
+    await invocation(null, () =>
+      raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1),(-11,1),(-12,1),(-13,1),(-20,1),(-100,1),(-200,1) ON CONFLICT DO NOTHING",
+      ),
+    );
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -136,13 +144,21 @@ suite("daily durable snapshots", () => {
   });
   it("bounds each enqueue batch while later ticks continue with other accounts", async () => {
     await invocation(null, async () => {
-      await raw("TRUNCATE work_steps,work_items,epic_links CASCADE");
+      await raw(
+        "TRUNCATE approved_chats,roast_profiles,work_steps,work_items,epic_links CASCADE",
+      );
       await raw(`INSERT INTO epic_links(chat_id,user_id,user_name,epic_name,epic_account_id,linked_at)
         SELECT -10,n,'user','Epic','account:' || n,now() FROM generate_series(1,105) n`);
+      await raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1) ON CONFLICT DO NOTHING",
+      );
       await enqueueDailySnapshots(now);
       expect(
         (await raw("SELECT count(*) AS count FROM work_items")).rows[0].count,
       ).toBe(100);
+      await raw(
+        "INSERT INTO approved_chats(chat_id,approved_by) VALUES (-10,1) ON CONFLICT DO NOTHING",
+      );
       await enqueueDailySnapshots(now);
       expect(
         (await raw("SELECT count(*) AS count FROM work_items")).rows[0].count,

@@ -12,7 +12,7 @@ import {
 } from "../services/weekly-stats";
 import { escapeHtml, nowSeconds, reply } from "./common";
 
-const ADMIN_USER_ID = Number(process.env.ADMIN_USER_ID ?? "0");
+import { isGeneralAdmin } from "../services/chat-access";
 
 export function appendTeamAnalysis(html: string, text: string): string {
   const header = "\n────────────────────\n🤖 <b>Анализ Grok</b>\n";
@@ -40,11 +40,14 @@ function epicErrorText(error: fortnite.FortniteError): string {
 }
 export async function cmdLinkepicfor(ctx: Context): Promise<void> {
   if (!ctx.from || !ctx.chat) return;
-  if (!ADMIN_USER_ID) {
+  if (
+    !Number.isSafeInteger(Number(process.env.ADMIN_USER_ID)) ||
+    Number(process.env.ADMIN_USER_ID) <= 0
+  ) {
     await reply(ctx, "Админ-линковка не настроена.");
     return;
   }
-  if (ctx.from.id !== ADMIN_USER_ID) {
+  if (!isGeneralAdmin(ctx.from.id)) {
     await reply(ctx, "Команда только для админа бота.");
     return;
   }

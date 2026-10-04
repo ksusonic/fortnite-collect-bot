@@ -1,3 +1,8 @@
+import {
+  approveChat,
+  isChatApproved,
+  isGeneralAdmin,
+} from "./services/chat-access";
 import { statisticsKeyboard } from "./mini-app-link";
 import type { Bot, Context } from "grammy";
 import * as db from "./db";
@@ -12,7 +17,7 @@ import {
   reply,
 } from "./handlers/common";
 import { closeSession, cmdFort, onCallback } from "./handlers/gatherings";
-import { cmdAfk, cmdFortemoji, cmdRoast } from "./handlers/settings";
+import { cmdAfk } from "./handlers/settings";
 import { cmdLinkepicfor, runTeamstats } from "./handlers/stats";
 import { maybeRoast } from "./handlers/roast";
 
@@ -27,11 +32,27 @@ export {
 } from "./services/weekly-stats";
 
 export function registerHandlers(bot: Bot): void {
+  // Deliberately absent from all public command menus.
+  bot.command("init", async (ctx) => {
+    if (
+      !isGroup(ctx) ||
+      ctx.message?.sender_chat ||
+      ctx.from?.is_bot ||
+      !isGeneralAdmin(ctx.from?.id)
+    )
+      return;
+    await approveChat(ctx.chat!.id, ctx.from!.id);
+    await reply(ctx, "✅ Бот включён в этом чате.");
+  });
+  bot.use(async (ctx, next) => {
+    if (!isGroup(ctx) || !ctx.chat || !(await isChatApproved(ctx.chat.id)))
+      return;
+    await next();
+  });
+
   const commands: Record<string, (ctx: Context) => Promise<void>> = {
     fort: cmdFort,
-    fortemoji: cmdFortemoji,
     afk: cmdAfk,
-    roast: cmdRoast,
     linkepicfor: cmdLinkepicfor,
     stats: async (ctx) => {
       if (ctx.chat)

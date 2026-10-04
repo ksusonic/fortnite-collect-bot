@@ -1,3 +1,4 @@
+import { DEFAULT_ROAST_POLICY } from "../src/bot/services/roast-policy";
 import { Bot } from "grammy";
 import type { Update } from "grammy/types";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -16,6 +17,20 @@ vi.mock("../src/bot/db", () => ({
   is_feature_enabled: async () => state.enabled,
   get_feature_value: async () => 1,
 }));
+vi.mock("../src/bot/services/chat-access", () => ({
+  isChatApproved: async () => true,
+}));
+vi.mock("../src/bot/services/roast-profile", () => ({
+  loadRoastProfile: async () => ({
+    preferences: { proactive: state.enabled },
+    pending_question: null,
+    last_evaluated_at: null,
+  }),
+  saveRoastProfile: vi.fn(),
+}));
+vi.mock("../src/bot/flags", () => ({
+  getRoastPolicy: async () => DEFAULT_ROAST_POLICY,
+}));
 vi.mock("../src/bot/work", () => ({
   valueCheckpoint: async (_name: string, factory: () => unknown) => factory(),
   externalCheckpoint: async (name: string, factory: () => Promise<unknown>) => {
@@ -30,7 +45,7 @@ vi.mock("../src/bot/roast", () => ({
   isRoastMessage: () => false,
   shouldRoast: () => true,
   TELEGRAM_MAX_MESSAGE_LEN: 4096,
-  generateRoast: (...args: unknown[]) => state.generate(...args),
+  generateRoastDecision: (...args: unknown[]) => state.generate(...args),
 }));
 vi.mock("../src/bot/memory", () => ({
   storeMemoryTurn: (...args: unknown[]) => state.store(...args),
@@ -88,7 +103,9 @@ beforeEach(() => {
   state.enabled = true;
   state.failSend = false;
   state.events = [];
-  state.generate.mockReset().mockResolvedValue(state.reply);
+  state.generate
+    .mockReset()
+    .mockResolvedValue({ action: "reply", text: state.reply });
   state.store.mockReset().mockResolvedValue(true);
 });
 
@@ -99,14 +116,17 @@ it("passes Telegram identity to generation and stores only after a successful se
     "one",
     "play?",
     expect.any(Number),
+    expect.objectContaining({ proactive: true }),
+    false,
+    null,
     42,
+    undefined,
     undefined,
     7,
   );
   expect(state.store).toHaveBeenCalledWith(-100, 7, "play?", state.reply, 42);
   expect(state.events).toEqual([
-    "sendChatAction",
-    "roast",
+    "adaptive-roast-v1",
     "sendMessage",
     "roast-memory-add",
   ]);
