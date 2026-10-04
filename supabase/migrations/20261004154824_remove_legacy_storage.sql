@@ -10,11 +10,11 @@ DELETE FROM fortnite_bot.chat_features WHERE feature='roast';
 
 -- Update an existing cleanup schedule before removing its import marker table.
 DO $$ BEGIN
-    IF to_regclass('cron.job') IS NOT NULL THEN
-        UPDATE cron.job SET command = $cleanup$
+    IF to_regclass('cron.job') IS NOT NULL AND EXISTS (SELECT 1 FROM cron.job WHERE jobname='fortnite-cleanup') THEN
+        PERFORM cron.alter_job((SELECT jobid FROM cron.job WHERE jobname='fortnite-cleanup'), command := $cleanup$
             DELETE FROM fortnite_bot.squad_snapshots
             WHERE fetched_at < now() - interval '30 days';
-        $cleanup$ WHERE jobname='fortnite-cleanup';
+        $cleanup$);
     END IF;
 END $$;
 DROP TABLE IF EXISTS fortnite_bot.import_manifest;
