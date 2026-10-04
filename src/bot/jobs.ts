@@ -143,20 +143,16 @@ async function executeJob(
     "UPDATE work_items SET attempts=attempts+1,updated_at=now() WHERE id=$1",
     [item.id],
   );
-  let skipped: string | undefined;
   try {
-    if (name === "cleanup") {
-      if ((await raw("SELECT 1 FROM import_manifest LIMIT 1")).rows.length)
-        await db.cleanup_old_snapshots(30);
-      else skipped = "import not verified";
-    } else if (name === "status") await statusCheck(Date.now());
+    if (name === "cleanup") await db.cleanup_old_snapshots(30);
+    else if (name === "status") await statusCheck(Date.now());
     else if (name === "expiry") await enqueueExpirations(Date.now() / 1000);
     else await enqueueWeekly(Date.now() / 1000);
     await raw(
       "UPDATE work_items SET status='complete',error=NULL,updated_at=now() WHERE id=$1",
       [item.id],
     );
-    return skipped ? { ok: true, skipped } : { ok: true };
+    return { ok: true };
   } catch (error) {
     await raw(
       "UPDATE work_items SET status='failed',error=$1,updated_at=now() WHERE id=$2",

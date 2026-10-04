@@ -42,7 +42,7 @@ suite("Postgres recovery and storage", () => {
   beforeEach(async () => {
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE approved_chats,roast_profiles,sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state,import_manifest CASCADE",
+        "TRUNCATE approved_chats,roast_profiles,sessions,responses,chat_features,afk_mutes,roast_state,chat_fort_titles,epic_links,squad_snapshots,fort_cooldowns,work_steps,work_items,service_state CASCADE",
       );
     });
     await invocation(null, () =>
@@ -93,7 +93,7 @@ suite("Postgres recovery and storage", () => {
       ).toBe("available");
     });
   });
-  it("uses Python-compatible advisory lock keys", () => {
+  it("uses stable advisory lock keys", () => {
     expect(lockKey("chat:-100")).toBe("-2749151833718385421");
   });
   it("preserves composite IDs, FIFO readiness changes and reserve promotion after reload", async () => {
@@ -171,12 +171,12 @@ suite("Postgres recovery and storage", () => {
       const replay = () =>
         withWork(new Work("retry"), async () => {
           const time = await valueCheckpoint("time", () => 123);
-          const prior = await db.is_feature_enabled(-10, "roast");
-          await db.set_feature(-10, "roast", true);
+          const prior = await db.get_last_weekly_drop(-10);
+          await db.set_last_weekly_drop(-10, 123);
           return { time, prior };
         });
-      expect(await replay()).toEqual({ time: 123, prior: false });
-      expect(await replay()).toEqual({ time: 123, prior: false });
+      expect(await replay()).toEqual({ time: 123, prior: null });
+      expect(await replay()).toEqual({ time: 123, prior: null });
       expect(
         (await raw("SELECT enabled FROM chat_features")).rows[0].enabled,
       ).toBe(true);
@@ -207,7 +207,7 @@ suite("Postgres recovery and storage", () => {
     await invocation(-10, async () => {
       // Missing work parent violates the checkpoint FK after the SQL write.
       await expect(
-        withWork(new Work("missing"), () => db.set_feature(-10, "roast", true)),
+        withWork(new Work("missing"), () => db.set_last_weekly_drop(-10, 123)),
       ).rejects.toMatchObject({ code: "23503" });
       expect((await raw("SELECT * FROM chat_features")).rows).toEqual([]);
     });

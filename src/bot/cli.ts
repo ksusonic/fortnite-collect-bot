@@ -1,7 +1,6 @@
 /** Explicit maintenance only: startup never changes schemas or webhooks. */
 import { createBot } from "./runtime";
 import { migrate } from "./storage";
-import { importBackup } from "./importer";
 import { pathToFileURL } from "node:url";
 import { scopedFetch, httpSignal, withHttpClient } from "./transport";
 import { registerWebhook } from "./webhook";
@@ -16,11 +15,6 @@ export async function maintain(args: string[]): Promise<void> {
   }
   if (command === "migrate") {
     await migrate();
-    return;
-  }
-  if (command === "import") {
-    if (!argument) throw new Error("backup path required");
-    console.log(JSON.stringify(await importBackup(argument), null, 2));
     return;
   }
   if (command === "configure-mini-app") {
@@ -48,7 +42,7 @@ export async function maintain(args: string[]): Promise<void> {
   }
   if (command !== "register-webhook" && command !== "webhook-info")
     throw new Error(
-      "usage: pnpm bot migrate|import <backup>|register-webhook <url>|webhook-info|configure-mini-app <url>|configure-commands",
+      "usage: pnpm bot migrate|register-webhook <url>|webhook-info|configure-mini-app <url>|configure-commands",
     );
   const info =
     command === "register-webhook"

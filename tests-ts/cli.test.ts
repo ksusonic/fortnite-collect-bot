@@ -6,14 +6,12 @@ vi.mock("undici", async (importOriginal) => {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   migrate: vi.fn(),
-  importer: vi.fn(),
   commands: vi.fn(),
   webhook: vi.fn(),
   info: vi.fn(),
   menu: vi.fn(),
 }));
 vi.mock("../src/bot/storage", () => ({ migrate: mocks.migrate }));
-vi.mock("../src/bot/importer", () => ({ importBackup: mocks.importer }));
 vi.mock("../src/bot/commands", () => ({ setupBotCommands: mocks.commands }));
 vi.mock("../src/bot/runtime", () => ({
   createBot: () => ({
@@ -62,11 +60,9 @@ describe("explicit maintenance", () => {
     ).rejects.toThrow("HTTPS");
   });
 
-  it("does not register a webhook during migration or import", async () => {
+  it("does not register a webhook during migration", async () => {
     await maintain(["migrate"]);
-    await maintain(["import", "/readonly/backup.db"]);
     expect(mocks.migrate).toHaveBeenCalledOnce();
-    expect(mocks.importer).toHaveBeenCalledWith("/readonly/backup.db");
     expect(mocks.webhook).not.toHaveBeenCalled();
   });
   it("requires health success before changing menus or webhook", async () => {
