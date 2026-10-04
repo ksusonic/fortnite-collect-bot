@@ -65,10 +65,19 @@ Vercel Git integration собирает и публикует только `main
 неавторизованных webhook/job/admin requests, без secrets и отправки сообщений.
 Ответ 403 принимается только с Vercel `x-vercel-mitigated: deny` и отмечается
 отдельно: это отказ firewall, application auth в таком запросе не проверен.
-Это проверка после публикации, а не deployment gate; она не доказывает доступность
-базы, правильность webhook или успешность cron. При необходимости блокировать
-публикацию до live-проверок используйте отдельную
-[Vercel Checks integration](https://vercel.com/docs/checks).
+`/health` проверяет БД через тот же SSL/session-pooler connection, что runtime:
+search path, требуемые таблицы/колонки, RLS и права чтения/записи. Проверка
+выполняется в read-only транзакции без чтения пользовательских строк и возвращает
+503 при несовместимой схеме. Ответы не кэшируются; детали БД наружу не выдаются.
+
+`pnpm build` в Vercel production (`VERCEL_ENV=production`) выполняет такую же
+проверку **до** Next.js build. При неприменённых миграциях публикация останавливается,
+предыдущий deployment остаётся активным. Production DB переменные должны быть
+доступны на этапе build. Миграции при build/startup не запускаются. После успешного
+применения SQL в Supabase повторите Vercel deployment из `main`.
+Локальная ручная проверка: `pnpm bot check-db`. CI/local build не обращается к production.
+Smoke после публикации подтверждает доступность БД и auth boundaries, но правильность
+webhook и фактические результаты cron проверяются отдельно.
 
 ## Supabase CI/CD
 
@@ -80,6 +89,11 @@ SQL хранится в `supabase/migrations/`; новые файлы созда
 search path приложения. Исходные миграции проверяют старый
 журнал `fortnite_bot.migrations`: уже применённый SQL не выполняется повторно,
 а пустая preview-база получает полную схему. Старый журнал остаётся для совместимости.
+Три файла с версиями 2–3 октября — записи совместимости с ранее применёнными
+production-миграциями, не повторный запуск их SQL. Не удаляйте эти версии:
+Supabase блокирует `db push`, если remote history содержит отсутствующие локально
+версии. Новые базы получают storage/receipts из миграций 4 октября; production
+cron и Vault остаются в отдельно применяемом `ops/schedules.sql`.
 
 GitHub CI сначала применяет SQL через Supabase CLI к disposable localhost Postgres,
 затем запускает тесты хранилища и очередей. Production credentials в Actions

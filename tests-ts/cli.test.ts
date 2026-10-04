@@ -6,12 +6,14 @@ vi.mock("undici", async (importOriginal) => {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   migrate: vi.fn(),
+  checkDatabase: vi.fn(),
   commands: vi.fn(),
   webhook: vi.fn(),
   info: vi.fn(),
   menu: vi.fn(),
 }));
 vi.mock("../src/bot/storage", () => ({ migrate: mocks.migrate }));
+vi.mock("../src/bot/readiness", () => ({ checkDatabase: mocks.checkDatabase }));
 vi.mock("../src/bot/commands", () => ({ setupBotCommands: mocks.commands }));
 vi.mock("../src/bot/runtime", () => ({
   createBot: () => ({
@@ -37,6 +39,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("explicit maintenance", () => {
+  it("checks database readiness without changing schema, menus or webhook", async () => {
+    await maintain(["check-db"]);
+    expect(mocks.checkDatabase).toHaveBeenCalledOnce();
+    expect(mocks.migrate).not.toHaveBeenCalled();
+    expect(mocks.commands).not.toHaveBeenCalled();
+    expect(mocks.webhook).not.toHaveBeenCalled();
+  });
   it("updates the command menu without changing the webhook", async () => {
     await maintain(["configure-commands"]);
     expect(mocks.commands).toHaveBeenCalledOnce();

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { diagnosticTags } from "../sentry-options";
 import { httpSignal, scopedFetch } from "./transport";
 import { Bot, BotError, type ApiClientOptions } from "grammy";
 import type { Update } from "grammy/types";
@@ -195,7 +196,11 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       return "ambiguous";
     }
     Sentry.captureException(error, {
-      tags: { component: "bot", work_kind: item.kind },
+      tags: {
+        component: "bot",
+        work_kind: item.kind,
+        ...diagnosticTags(error),
+      },
     });
     console.error(
       "work failed",

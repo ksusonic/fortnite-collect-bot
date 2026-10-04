@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   diagnosticCode,
+  diagnosticTags,
   privacyOptions,
   sanitizeBreadcrumb,
   sanitizeEvent,
@@ -12,6 +13,31 @@ import { GET } from "../src/app/api/sentry-example-api/route";
 
 afterEach(() => vi.unstubAllEnvs());
 describe("Sentry privacy", () => {
+  it("identifies only allowlisted database relations without exposing the error text", () => {
+    const error = Object.assign(
+      new Error('relation "fortnite_bot.approved_chats" does not exist'),
+      { code: "42P01" },
+    );
+    expect(diagnosticTags(error)).toEqual({
+      error_code: "42P01",
+      database_relation: "approved_chats",
+    });
+    expect(
+      diagnosticTags(
+        Object.assign(
+          new Error('relation "private_user_data" does not exist'),
+          { code: "42P01" },
+        ),
+      ),
+    ).toEqual({ error_code: "42P01" });
+    expect(
+      diagnosticTags(
+        Object.assign(new Error("private SQL"), {
+          code: "DATABASE_SCHEMA_NOT_READY",
+        }),
+      ),
+    ).toEqual({ error_code: "DATABASE_SCHEMA_NOT_READY" });
+  });
   it("reports only recognized infrastructure error codes", () => {
     expect(
       diagnosticCode(
