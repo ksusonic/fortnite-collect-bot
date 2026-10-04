@@ -26,6 +26,12 @@ describe("Sentry privacy", () => {
     );
     expect(diagnosticCode({ code: "57014" })).toBe("57014");
     expect(diagnosticCode({ code: "unknown" })).toBeUndefined();
+    expect(
+      diagnosticCode({ error: { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } } }),
+    ).toBe("UND_ERR_CONNECT_TIMEOUT");
+    const circular: { error?: unknown } = {};
+    circular.error = circular;
+    expect(diagnosticCode(circular)).toBeUndefined();
     expect(diagnosticCode(new Error("private payload"))).toBeUndefined();
   });
   it("keeps the selected project and disables private data collection", () => {

@@ -23,6 +23,10 @@ const diagnosticCodes = new Set([
   "ETIMEDOUT",
   "ENOTFOUND",
   "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
   "57014", // query cancellation / statement timeout
   "55P03", // lock unavailable
   "40P01", // deadlock
@@ -34,14 +38,19 @@ const diagnosticCodes = new Set([
   "25P02", // transaction aborted
   "23505", // unique constraint
 ]);
-export function diagnosticCode(error: unknown): string | undefined {
+export function diagnosticCode(error: unknown, depth = 0): string | undefined {
   if (error instanceof Error && error.message === "Query read timeout")
     return "PG_QUERY_READ_TIMEOUT";
-  if (!error || typeof error !== "object" || !("code" in error)) return;
-  const code = error.code;
-  return typeof code === "string" && diagnosticCodes.has(code)
-    ? code
-    : undefined;
+  if (!error || typeof error !== "object" || depth > 2) return;
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    diagnosticCodes.has(error.code)
+  )
+    return error.code;
+  const wrapped =
+    "error" in error ? error.error : "cause" in error ? error.cause : undefined;
+  return diagnosticCode(wrapped, depth + 1);
 }
 export function sanitizeText(text: string): string {
   return text
