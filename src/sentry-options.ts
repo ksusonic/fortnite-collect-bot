@@ -1,4 +1,5 @@
 import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
+import { schemaContract } from "./bot/schema-contract";
 type SentryOptions = NonNullable<
   Parameters<typeof import("@sentry/nextjs").init>[0]
 >;
@@ -37,6 +38,7 @@ const diagnosticCodes = new Set([
   "28P01", // authentication failure
   "25P02", // transaction aborted
   "23505", // unique constraint
+  "DATABASE_SCHEMA_NOT_READY",
 ]);
 export function diagnosticCode(error: unknown, depth = 0): string | undefined {
   if (error instanceof Error && error.message === "Query read timeout")
@@ -51,6 +53,18 @@ export function diagnosticCode(error: unknown, depth = 0): string | undefined {
   const wrapped =
     "error" in error ? error.error : "cause" in error ? error.cause : undefined;
   return diagnosticCode(wrapped, depth + 1);
+}
+export function diagnosticTags(error: unknown): Record<string, string> {
+  const code = diagnosticCode(error);
+  const tags: Record<string, string> = code ? { error_code: code } : {};
+  if (code === "42P01" && error instanceof Error) {
+    const relation = error.message.match(
+      /relation "(?:fortnite_bot\.)?([a-z_]+)" does not exist/,
+    )?.[1];
+    if (relation && Object.hasOwn(schemaContract, relation))
+      tags.database_relation = relation;
+  }
+  return tags;
 }
 export function sanitizeText(text: string): string {
   return text

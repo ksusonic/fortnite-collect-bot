@@ -1,0 +1,6 @@
+-- Historical production version retained to keep Supabase migration history compatible.
+-- This is an adoption marker, not a replay of the original manual migration.
+-- Fresh databases get storage/receipts from the guarded 20261004 migrations.
+-- Scheduler extensions and authenticated schedules remain explicit ops/schedules.sql
+-- maintenance; preview databases must not receive production cron or Vault secrets.
+-- Do not remove this version or mark the production history reverted.

@@ -1,4 +1,4 @@
-import { diagnosticCode } from "../sentry-options";
+import { diagnosticCode, diagnosticTags } from "../sentry-options";
 import * as Sentry from "@sentry/nextjs";
 import { timingSafeEqual } from "node:crypto";
 export class HttpError extends Error {
@@ -34,7 +34,7 @@ export async function endpoint(
       return Response.json({ detail: error.message }, { status: error.status });
     const code = diagnosticCode(error);
     Sentry.captureException(error, {
-      tags: { component: "http", ...(code ? { error_code: code } : {}) },
+      tags: { component: "http", ...diagnosticTags(error) },
     });
     console.error(
       "endpoint failed",
