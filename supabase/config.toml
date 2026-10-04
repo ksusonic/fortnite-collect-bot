@@ -1,0 +1,20 @@
+# Supabase GitHub integration: working directory '.', production branch 'main'.
+project_id = "fortnite-collect-bot"
+
+# The bot uses SQL connections; its private schema must never be exposed.
+[api]
+enabled = false
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+major_version = 17
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+# Preview branches receive schema only, without production data or cron secrets.
+[db.seed]
+enabled = false
+sql_paths = []

@@ -28,12 +28,14 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
-      - name: Postgres-backed tests
+      - name: Start disposable Postgres
         run: |
           sudo systemctl start postgresql
           sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE runner WITH LOGIN SUPERUSER PASSWORD 'test-only';"
           sudo -u postgres createdb -O runner fortnite_test
-          pnpm test
+      - name: Validate Supabase migrations on disposable Postgres
+        run: pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 db push --db-url "${TEST_DATABASE_URL}?sslmode=disable" --yes
+      - run: pnpm test
       - name: Restore Next.js build cache
         uses: actions/cache@v6
         with:

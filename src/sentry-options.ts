@@ -208,7 +208,6 @@ export const privacyOptions = {
     stackFrameVariables: false,
   },
   beforeSend: sanitizeEvent,
-  beforeSendTransaction: sanitizeEvent,
   beforeSendSpan: sanitizeSpan,
   beforeBreadcrumb: sanitizeBreadcrumb,
 };
