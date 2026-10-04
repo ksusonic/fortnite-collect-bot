@@ -52,9 +52,63 @@ suite("Supabase migration compatibility", () => {
         await raw(
           `CREATE SCHEMA cron;
            CREATE TABLE cron.job(jobid bigint GENERATED ALWAYS AS IDENTITY, jobname text, command text);
-           CREATE FUNCTION cron.alter_job(job_id bigint, command text) RETURNS void LANGUAGE sql AS $
+           CREATE FUNCTION cron.alter_job(job_id bigint, command text) RETURNS void LANGUAGE sql AS $body$
              UPDATE cron.job SET command = $2 WHERE jobid = $1
-           $`,
+           $bodyimport { readFile } from "node:fs/promises";
+import { beforeAll, describe, expect, it } from "vitest";
+import { invocation, migrate, raw } from "../src/bot/storage";
+
+const url = process.env.TEST_DATABASE_URL;
+const suite = url ? describe : describe.skip;
+
+suite("Supabase migration compatibility", () => {
+  beforeAll(async () => {
+    const target = new URL(url!);
+    if (
+      !["127.0.0.1", "localhost"].includes(target.hostname) ||
+      target.pathname !== "/fortnite_test"
+    )
+      throw new Error(
+        "tests require disposable localhost fortnite_test database",
+      );
+    process.env.DATABASE_URL = url;
+    process.env.DATABASE_LOCAL_TEST = "1";
+    await migrate();
+  });
+
+  it("creates bot tables only in the private schema with RLS", async () => {
+    await invocation(null, async () => {
+      const tables = await raw<{ tablename: string; rowsecurity: boolean }>(
+        "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname='fortnite_bot'",
+      );
+      expect(tables.rows.length).toBeGreaterThan(10);
+      expect(tables.rows.every((table) => table.rowsecurity)).toBe(true);
+      const publicTables = await raw(
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=ANY($1)",
+        [tables.rows.map((table) => table.tablename)],
+      );
+      expect(publicTables.rows).toEqual([]);
+    });
+  });
+
+  it("removes retired tables and preserves roast preferences while updating cleanup", async () => {
+    const sql = await readFile(
+      new URL(
+        "../supabase/migrations/20261004154824_remove_legacy_storage.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    await invocation(null, async () => {
+      await raw("BEGIN");
+      try {
+        await raw(
+          "CREATE TABLE import_manifest(id integer); CREATE TABLE news_sent(id integer); CREATE TABLE fortnite_news_seen(id integer)",
+        );
+        await raw(
+          `CREATE SCHEMA cron;
+           CREATE TABLE cron.job(jobid bigint GENERATED ALWAYS AS IDENTITY, jobname text, command text);
+           CREATE FUNCTION cron.alter_job(job_id bigint, command text) ,
         );
         await raw(
           "INSERT INTO cron.job(jobname,command) VALUES ('fortnite-cleanup','SELECT 1 FROM fortnite_bot.import_manifest')",
