@@ -21,19 +21,6 @@ export function parseTargetHour(raw: string): number | null {
   const hour = Number(digits);
   return hour <= messages.PLAY_DEADLINE_HOUR ? hour : null;
 }
-async function setSessionPin(
-  bot: ApiBot,
-  session: db.Session,
-  pinned: boolean,
-): Promise<void> {
-  await ignoreTelegram(() =>
-    pinned
-      ? bot.api.pinChatMessage(session.chat_id, session.message_id, {
-          disable_notification: true,
-        })
-      : bot.api.unpinChatMessage(session.chat_id, session.message_id),
-  );
-}
 export async function closeSession(
   bot: ApiBot,
   session: db.Session,
@@ -56,7 +43,6 @@ export async function closeSession(
           messages.buildCancelledText(session, now),
         ),
   );
-  await setSessionPin(bot, session, false);
   db.getSessions().delete(key(session.chat_id, session.message_id));
 }
 export async function cmdFort(ctx: Context): Promise<void> {
@@ -111,8 +97,6 @@ export async function cmdFort(ctx: Context): Promise<void> {
   db.getSessions().set(key(session.chat_id, sent.message_id), session);
   await db.save_session(session);
   await ignoreTelegram(() => ctx.deleteMessage());
-  const bot = { api: ctx.api };
-  await setSessionPin(bot, session, true);
   const header = await externalCheckpoint("fort-header", () =>
     roast.generateFortHeader(session.chat_id, now),
   );
@@ -275,7 +259,6 @@ export async function sweep_expired_sessions(
         messages.buildExpiredText(session, now),
       ),
     );
-    await setSessionPin(bot, session, false);
     db.getSessions().delete(key(session.chat_id, session.message_id));
     expired.push(session.message_id);
   }

@@ -78,7 +78,7 @@ Do not advertise `/init` in command menus; preserve approvals durably in private
   max_connections=1, router-used update types and drop_pending_updates=false.
 - Supabase Cron/pg_net call authenticated job routes; URL/secret live in Vault.
   See ops/schedules.sql. Verify actual HTTP outcomes, not only cron SQL success.
-- CI runs ESLint, Prettier, TypeScript, Next.js build and Postgres-backed Vitest tests. Check group membership, pin/delete
+- CI runs ESLint, Prettier, TypeScript, Next.js build and Postgres-backed Vitest tests. Check group membership and delete
   permissions, command menus and privacy mode separately from automated unit tests.
 - Keep source checks, CI, deployed behavior, Telegram webhook status and actual scheduled
   outcomes separate when reporting completion.

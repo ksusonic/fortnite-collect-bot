@@ -162,7 +162,7 @@ it("does not advertise or process the retired personal statistics command", asyn
   });
   expect(state.calls).toEqual([]);
 });
-it("deletes the command after saving the gathering and before pinning or Grok", async () => {
+it("deletes the command after saving the gathering without pinning it", async () => {
   await bot().handleUpdate({
     update_id: 1,
     message: {
@@ -178,7 +178,6 @@ it("deletes the command after saving the gathering and before pinning or Grok", 
   expect(state.calls.map((call) => call.method)).toEqual([
     "sendMessage",
     "deleteMessage",
-    "pinChatMessage",
   ]);
 });
 describe("gathering callbacks", () => {
