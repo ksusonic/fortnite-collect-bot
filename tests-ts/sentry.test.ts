@@ -13,6 +13,12 @@ import { GET } from "../src/app/api/sentry-example-api/route";
 
 afterEach(() => vi.unstubAllEnvs());
 describe("Sentry privacy", () => {
+  it("classifies Telegram failures without retaining private descriptions", () => {
+    expect(
+      diagnosticTags({ error_code: 429, description: "private input" }),
+    ).toEqual({ telegram_error_code: "429" });
+    expect(diagnosticTags({ error_code: "private input" })).toEqual({});
+  });
   it("identifies only allowlisted database relations without exposing the error text", () => {
     const error = Object.assign(
       new Error('relation "fortnite_bot.approved_chats" does not exist'),

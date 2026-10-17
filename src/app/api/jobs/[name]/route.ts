@@ -13,5 +13,5 @@ export async function POST(
     if (!Object.hasOwn(JOB_PERIODS, name))
       throw new HttpError(404, "unknown job");
     return runJob(name as JobName, requestSignal(request));
-  });
+  }, "bot.job");
 }

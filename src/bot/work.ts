@@ -1,3 +1,4 @@
+import { logEvent, errorFields } from "./logging";
 import { GrammyError, type Transformer } from "grammy";
 import {
   connection,
@@ -174,13 +175,30 @@ export const telegramTransformer: Transformer = async (
     nativeSignal && deadline
       ? AbortSignal.any([nativeSignal, deadline])
       : (nativeSignal ?? deadline);
+  const started = performance.now();
   try {
     const compatible = combined as unknown as Parameters<typeof previous>[2];
-    if (!(work instanceof Work))
-      return await previous(method, payload, compatible);
-    return (await work.telegram(method, payload, () =>
-      previous(method, payload, compatible),
-    )) as Awaited<ReturnType<typeof previous>>;
+    const send = async () => {
+      const response = await previous(method, payload, compatible);
+      if (!response.ok)
+        logEvent("warn", "telegram.rejected", {
+          method,
+          ...errorFields(response),
+          duration_ms: Math.round(performance.now() - started),
+        });
+      return response;
+    };
+    if (!(work instanceof Work)) return await send();
+    return (await work.telegram(method, payload, () => send())) as Awaited<
+      ReturnType<typeof previous>
+    >;
+  } catch (error) {
+    logEvent("error", "telegram.failed", {
+      method,
+      ...errorFields(error),
+      duration_ms: Math.round(performance.now() - started),
+    });
+    throw error;
   } finally {
     signal?.removeEventListener("abort", abort);
   }

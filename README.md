@@ -277,3 +277,22 @@ removed column. Resume jobs and webhook ingress after verifying the release.
 
 После релиза примените `ops/schedules.sql` через Supabase tools: daily cleanup
 удаляет cache entries, истёкшие более суток назад, сохраняя stale fallback.
+
+### Runtime logs
+
+Vercel captures the bot's JSON console output in the project's **Logs** tab.
+Filter by `request.failed`, `request.rejected`, `work.failed`,
+`work.review_required`, `telegram.rejected`, `telegram.failed`, `job.failed`, or `job.recovery_failed` to investigate problems.
+`request_id` connects request and nested work events and is returned in the
+`X-Request-ID` response header; `work_ref` is a stable
+hash of the durable work key, so retries across requests can be correlated
+without publishing embedded chat IDs. Request/work/job completion events include
+durations; job completion distinguishes duplicate and overlapping runs.
+A successful webhook HTTP response with `work.review_required` still requires
+manual reconciliation of the uncertain send. Maintenance can succeed while
+individual recovered work fails: inspect work/recovery events as well.
+Logs omit message bodies, headers, credentials, and raw error descriptions.
+Sentry work errors carry the same `work_ref`, infrastructure diagnostic codes,
+and numeric Telegram error codes; exception text remains scrubbed.
+These logs become available after deploying the change. Vercel log retention
+and access depend on the project's plan and account permissions.

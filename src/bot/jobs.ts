@@ -1,3 +1,6 @@
+import * as Sentry from "@sentry/nextjs";
+import { diagnosticTags } from "../sentry-options";
+import { logEvent, workReference, errorFields } from "./logging";
 import * as db from "./db";
 import { syncReleaseCommands } from "./commands";
 import { syncReleaseWebhook } from "./webhook";
@@ -185,11 +188,17 @@ async function recoverJobs() {
         try {
           await executeJob(latest);
         } catch (error) {
-          console.error(
-            "job recovery failed",
-            item.id,
-            error instanceof Error ? error.name : "Error",
-          );
+          Sentry.captureException(error, {
+            tags: {
+              component: "job_recovery",
+              work_ref: workReference(item.id),
+              ...diagnosticTags(error),
+            },
+          });
+          logEvent("error", "job.recovery_failed", {
+            work_ref: workReference(item.id),
+            ...errorFields(error),
+          });
         }
       },
       false,
@@ -202,54 +211,71 @@ export async function runJob(
 ): Promise<{ ok: true; skipped?: string }> {
   if (!Object.hasOwn(JOB_PERIODS, name)) throw new Error("unknown job");
   const now = Date.now() / 1000;
-  return invocation(
-    null,
-    async () => {
-      const registered = await raw(
-        "SELECT to_regclass('net._http_response') AS table_name",
-      );
-      if (registered.rows[0]?.table_name)
-        await raw(
-          "UPDATE job_http_requests j SET completed_at=r.created,status_code=r.status_code,timed_out=r.timed_out,error=r.error_msg FROM net._http_response r WHERE j.request_id=r.id AND j.completed_at IS NULL",
+  const started = performance.now();
+  logEvent("info", "job.started", { work_kind: name });
+  try {
+    const result = await invocation(
+      null,
+      async () => {
+        const registered = await raw(
+          "SELECT to_regclass('net._http_response') AS table_name",
         );
-      const outcome = await advisoryLock(
-        `job:${name}`,
-        async () => {
-          if (name === "maintenance") {
-            await enqueueExpirations(now);
-            await enqueueWeekly(now);
-            await enqueueDailySnapshots(now);
-            const bot = createBot();
-            await syncReleaseCommands(bot);
-            await syncReleaseWebhook(bot);
-            await recoverPending(bot);
-            await recoverJobs();
-            return { ok: true as const };
-          }
-          const id = `job:${name}:${Math.floor(now / JOB_PERIODS[name])}`;
-          await enqueue(id, "job", null, { name, now });
-          const item = (
-            await raw<JobItem>(
-              "SELECT id,status,payload FROM work_items WHERE id=$1",
-              [id],
-            )
-          ).rows[0];
-          if (item.status === "complete")
-            return { ok: true as const, skipped: "duplicate" };
-          const result = await executeJob({
-            ...item,
-            id,
-            payload: { name, ...item.payload },
-          });
-          // Compatibility routes still recover chat work, but durable job recovery
-          // is independently driven by maintenance and cannot be lost on a new tick.
-          await recoverPending(createBot());
-          return result;
-        },
-        false,
-      );
-      return outcome ?? { ok: true, skipped: "overlap" };
-    },
-    signal,
-  );
+        if (registered.rows[0]?.table_name)
+          await raw(
+            "UPDATE job_http_requests j SET completed_at=r.created,status_code=r.status_code,timed_out=r.timed_out,error=r.error_msg FROM net._http_response r WHERE j.request_id=r.id AND j.completed_at IS NULL",
+          );
+        const outcome = await advisoryLock(
+          `job:${name}`,
+          async () => {
+            if (name === "maintenance") {
+              await enqueueExpirations(now);
+              await enqueueWeekly(now);
+              await enqueueDailySnapshots(now);
+              const bot = createBot();
+              await syncReleaseCommands(bot);
+              await syncReleaseWebhook(bot);
+              await recoverPending(bot);
+              await recoverJobs();
+              return { ok: true as const };
+            }
+            const id = `job:${name}:${Math.floor(now / JOB_PERIODS[name])}`;
+            await enqueue(id, "job", null, { name, now });
+            const item = (
+              await raw<JobItem>(
+                "SELECT id,status,payload FROM work_items WHERE id=$1",
+                [id],
+              )
+            ).rows[0];
+            if (item.status === "complete")
+              return { ok: true as const, skipped: "duplicate" };
+            const result = await executeJob({
+              ...item,
+              id,
+              payload: { name, ...item.payload },
+            });
+            // Compatibility routes still recover chat work, but durable job recovery
+            // is independently driven by maintenance and cannot be lost on a new tick.
+            await recoverPending(createBot());
+            return result;
+          },
+          false,
+        );
+        return outcome ?? { ok: true as const, skipped: "overlap" };
+      },
+      signal,
+    );
+    logEvent("info", "job.completed", {
+      work_kind: name,
+      status: result.skipped ?? "complete",
+      duration_ms: Math.round(performance.now() - started),
+    });
+    return result;
+  } catch (error) {
+    logEvent("error", "job.failed", {
+      work_kind: name,
+      ...errorFields(error),
+      duration_ms: Math.round(performance.now() - started),
+    });
+    throw error;
+  }
 }
