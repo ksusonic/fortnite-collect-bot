@@ -18,11 +18,12 @@ import {
 
 // Dexclub custom emoji, in F / O / R / T order. Telegram requires an
 // ordinary emoji as each tag's fallback; these stickers use ➕.
+// Separate the dark letter tiles and leave a blank line before the invitation.
 const DEFAULT_FORT_TITLE =
-  '<tg-emoji emoji-id="5416088003753835395">➕</tg-emoji>' +
-  '<tg-emoji emoji-id="5415815767251778194">➕</tg-emoji>' +
-  '<tg-emoji emoji-id="5418220089944077842">➕</tg-emoji>' +
-  '<tg-emoji emoji-id="5415855714742599689">➕</tg-emoji>';
+  '<tg-emoji emoji-id="5416088003753835395">➕</tg-emoji> ' +
+  '<tg-emoji emoji-id="5415815767251778194">➕</tg-emoji> ' +
+  '<tg-emoji emoji-id="5418220089944077842">➕</tg-emoji> ' +
+  '<tg-emoji emoji-id="5415855714742599689">➕</tg-emoji>\n';
 
 export const STYLES = [
   {

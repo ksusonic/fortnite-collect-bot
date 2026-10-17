@@ -250,7 +250,8 @@ Roast понимает обычные просьбы через reply или @у
 Просьба замолчать выключает самостоятельное участие, явные обращения остаются доступны.
 `/afk` сохраняется; `/roast` и `/fortemoji` удалены. Сохранённые custom titles
 продолжают отображаться. По умолчанию заголовок FORT состоит из четырёх custom
-emoji F / O / R / T из набора [Dexclub](https://t.me/addemoji/dexclub).
+emoji F / O / R / T из набора [Dexclub](https://t.me/addemoji/dexclub), разделённых
+пробелами. Пустая строка отделяет заголовок от приглашения.
 
 JSON-флаг Vercel `roast-policy` задаёт общую политику: `proactiveAllowed`, `defaults`
 (`proactive`, `frequency`, `length`, `tone`, `profanity`) и `intervals` в секундах
