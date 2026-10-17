@@ -6,7 +6,9 @@ import { displayName, escapeHtml, mskDate, nowSeconds, reply } from "./common";
 export async function cmdAfk(ctx: Context): Promise<void> {
   if (!ctx.chat || !ctx.from || ctx.message?.sender_chat || ctx.from.is_bot)
     return;
-  const args = String(ctx.match ?? "").trim().split(/\s+/);
+  const args = String(ctx.match ?? "")
+    .trim()
+    .split(/\s+/);
   const rawUsername = args.length > 1 ? args.shift() : undefined;
   const username = rawUsername?.replace(/^`([^`]+)`$/, "$1").replace(/^@/, "");
   const arg = (args[0] ?? "").toLowerCase();
