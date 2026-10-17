@@ -16,6 +16,14 @@ import {
   type PlayerStats,
 } from "./fortnite";
 
+// Dexclub custom emoji, in F / O / R / T order. Telegram requires an
+// ordinary emoji as each tag's fallback; these stickers use ➕.
+const DEFAULT_FORT_TITLE =
+  '<tg-emoji emoji-id="5416088003753835395">➕</tg-emoji>' +
+  '<tg-emoji emoji-id="5415815767251778194">➕</tg-emoji>' +
+  '<tg-emoji emoji-id="5418220089944077842">➕</tg-emoji>' +
+  '<tg-emoji emoji-id="5415855714742599689">➕</tg-emoji>';
+
 export const STYLES = [
   {
     header: "🍕 {name} заказал пиццу и зовёт в катку.",
@@ -318,7 +326,7 @@ export function buildGatherText(session: Session, now = nowSeconds()): string {
     : playerList(squad);
   if (count === SQUAD_SIZE) {
     const lines = [
-      session.fort_title || "🎮 <b>FORT</b>",
+      session.fort_title || DEFAULT_FORT_TITLE,
       style.done_header,
       DIVIDER,
       `👊 <b>Состав</b> ${count}`,
@@ -351,7 +359,7 @@ export function buildGatherText(session: Session, now = nowSeconds()): string {
     ),
   );
   const lines = [
-    session.fort_title || "🎮 <b>FORT</b>",
+    session.fort_title || DEFAULT_FORT_TITLE,
     header,
     DIVIDER,
     `✅ <b>Go</b> ${count}/${SQUAD_SIZE}`,
@@ -374,7 +382,7 @@ function buildClosedText(
     userLink(session.initiator_id, session.initiator_name),
   );
   const lines = [
-    session.fort_title || "🎮 <b>FORT</b>",
+    session.fort_title || DEFAULT_FORT_TITLE,
     header,
     DIVIDER,
     `✅ <b>Go</b> ${squad.size}/${SQUAD_SIZE}`,
