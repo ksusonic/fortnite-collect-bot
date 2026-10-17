@@ -13,7 +13,7 @@ Do not use Docker or restore polling/SSH deployment. Preserve unrelated local fi
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
-pnpm bot migrate
+pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 db push --db-url "postgresql://localhost/fortnite_test?sslmode=disable"
 pnpm bot register-webhook https://production-domain
 pnpm bot webhook-info
 pnpm bot configure-commands
@@ -24,6 +24,7 @@ TEST_DATABASE_URL=postgresql://localhost/fortnite_test pnpm test
 pnpm build
 ```
 
+Apply migrations with Supabase CLI before running database tests.
 Tests require disposable Postgres and clear bot tables. Never use production URLs for tests.
 All `.env` variants are ignored; Never commit credentials.
 Use Supabase tools for production database changes/scheduling/verification.
@@ -63,7 +64,7 @@ Do not advertise `/init` in command menus; preserve approvals durably in private
 
 ## Storage
 
-- `migrations/*.sql` are versioned; no schema changes or webhook registration at startup.
+- `supabase/migrations/*.sql` are versioned; no schema changes or webhook registration at startup.
 - Never expose bot tables through the Data API. Keep schema privileges private and RLS enabled.
 
 ## Deployment and verification

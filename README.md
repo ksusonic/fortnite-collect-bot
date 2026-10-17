@@ -27,7 +27,7 @@ TypeScript 7 (`@typescript/native`) выполняет `pnpm typecheck`; alias `
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm bot migrate
+pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 db push --db-url "postgresql://localhost/fortnite_test?sslmode=disable"
 pnpm dev
 ```
 
@@ -40,13 +40,15 @@ pnpm dev
 pnpm lint
 pnpm format:check
 pnpm typecheck
+pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 db push --db-url "postgresql://localhost/fortnite_test?sslmode=disable"
 TEST_DATABASE_URL=postgresql://localhost/fortnite_test pnpm test
 pnpm build
 ```
 
 Тесты очищают таблицы **только disposable localhost базы `fortnite_test`**.
 Без `TEST_DATABASE_URL` Postgres-тесты пропускаются; такой запуск не доказывает
-работу хранилища и очередей. CI запускает проверки с отдельной базой.
+работу хранилища и очередей. Перед тестами примените SQL через Supabase CLI;
+тестовые setup hooks больше не меняют схему. CI делает это с отдельной базой.
 
 ## CI/CD
 
@@ -88,8 +90,10 @@ webhook и фактические результаты cron проверяютс
 
 SQL хранится в `supabase/migrations/`; новые файлы создаются командой
 `pnpm --registry=https://registry.npmjs.org dlx supabase@2.119.0 migration new <name>`.
-`pnpm bot migrate` читает тот же каталог и использует общий журнал
-`supabase_migrations.schema_migrations`. В новых SQL используйте квалифицированные
+Миграции выполняет только Supabase CLI / GitHub integration; журнал —
+`supabase_migrations.schema_migrations`. Кастомный TypeScript runner и команда
+`pnpm bot migrate` удалены. Для локальной базы используйте `supabase db push --db-url`
+с явным localhost URL, как в примере выше; CLI не читает `DATABASE_URL` из `.env` приложения. В новых SQL используйте квалифицированные
 имена `fortnite_bot.*` или `SET LOCAL search_path = fortnite_bot`: CLI не задаёт
 search path приложения. Исходные миграции проверяют старый
 журнал `fortnite_bot.migrations`: уже применённый SQL не выполняется повторно,
@@ -115,7 +119,7 @@ checks ветки `main` вместе с `ci`. Branching создаёт отде
 Перед включением Deploy to production сохраните экспорт и проверьте старый журнал
 миграций и состояние production-схемы через Supabase tools. GitHub интеграция должна
 быть единственным автоматическим исполнителем production-миграций; ручной
-`pnpm bot migrate` нужен для локальной разработки. Изменения SQL
+Supabase CLI с явным localhost `--db-url` используется для локальной разработки. Изменения SQL
 должны быть совместимы с текущим runtime: деплои Vercel и Supabase независимы.
 `ops/schedules.sql` применяется отдельно через Supabase tools после проверки job
 routes; production Vault secrets, cron и webhook в preview не копируются.

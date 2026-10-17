@@ -3,8 +3,6 @@ import { rootCertificates } from "node:tls";
 import { withHttpClient } from "./transport";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import path from "node:path";
 import { Client, types, type QueryResultRow } from "pg";
 import type { Session } from "./db";
 
@@ -208,42 +206,4 @@ export function timestamp(seconds: number | null | undefined) {
   return new Date((whole + (micros === 1_000_000 ? 1 : 0)) * 1000)
     .toISOString()
     .replace(".000Z", "." + String(micros % 1_000_000).padStart(6, "0") + "Z");
-}
-export async function migrate() {
-  await invocation(null, () =>
-    transaction(async () => {
-      await raw("SELECT pg_advisory_xact_lock($1)", [lockKey("migrations")]);
-      await raw("CREATE SCHEMA IF NOT EXISTS supabase_migrations");
-      await raw(
-        "CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text PRIMARY KEY)",
-      );
-      await raw(
-        "ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS name text",
-      );
-      await raw(
-        "ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS statements text[]",
-      );
-      const directory = path.join(process.cwd(), "supabase", "migrations");
-      for (const file of (await readdir(directory))
-        .filter((file) => /^\d+_.+\.sql$/.test(file))
-        .sort()) {
-        const [version, ...parts] = file.replace(/\.sql$/, "").split("_");
-        if (
-          (
-            await raw(
-              "SELECT 1 FROM supabase_migrations.schema_migrations WHERE version=$1",
-              [version],
-            )
-          ).rowCount
-        )
-          continue;
-        const sql = await readFile(path.join(directory, file), "utf8");
-        await raw(sql);
-        await raw(
-          "INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES ($1, $2, $3)",
-          [version, parts.join("_"), [sql]],
-        );
-      }
-    }),
-  );
 }

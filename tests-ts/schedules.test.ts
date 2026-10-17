@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
-import { invocation, migrate, raw } from "../src/bot/storage";
+import { invocation, raw } from "../src/bot/storage";
 
 const url = process.env.TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -20,7 +20,6 @@ suite("schedule SQL configuration and cleanup", () => {
       );
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
 
   it("updates schedules idempotently and retains the last 30 days", async () => {

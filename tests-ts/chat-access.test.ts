@@ -12,7 +12,7 @@ import {
   vi,
 } from "vitest";
 import type { Update } from "grammy/types";
-import { invocation, migrate, raw } from "../src/bot/storage";
+import { invocation, raw } from "../src/bot/storage";
 import {
   createBot,
   enqueue,
@@ -70,7 +70,6 @@ const url = process.env.TEST_DATABASE_URL;
       throw new Error("disposable localhost fortnite_test required");
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
   beforeEach(async () => {
     calls.length = 0;
