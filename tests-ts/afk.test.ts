@@ -61,7 +61,9 @@ it.each(["1d", "off"])("targets usernames for %s", async (arg) => {
   if (arg === "off") expect(db.clear_afk).toHaveBeenCalledWith(-100, 2);
   else
     expect(db.set_afk).toHaveBeenCalledWith(-100, 2, Date.now() / 1000 + 86400);
-  expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("tg://user?id=2"));
+  expect(ctx.reply).toHaveBeenCalledWith(
+    expect.stringContaining("tg://user?id=2"),
+  );
 });
 it.each(["1d", "off"])("targets replies for %s", async (arg) => {
   const ctx = context(arg, other);

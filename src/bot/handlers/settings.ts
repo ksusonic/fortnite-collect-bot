@@ -55,9 +55,10 @@ export async function cmdAfk(ctx: Context): Promise<void> {
     await reply(ctx, `Снова буду звать ${target} в новых /fort сборах.`);
     return;
   }
+  if (!match) return;
   const until = await valueCheckpoint(
     "afk-until",
-    () => nowSeconds() + Number(match![1]) * (match![2] === "w" ? 7 : 1) * 86400,
+    () => nowSeconds() + Number(match[1]) * (match[2] === "w" ? 7 : 1) * 86400,
   );
   await db.set_afk(ctx.chat.id, userId, until);
   const date = mskDate(until);
