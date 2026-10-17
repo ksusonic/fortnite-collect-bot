@@ -1,4 +1,5 @@
 import "server-only";
+import { logEvent } from "@/bot/logging";
 import { authenticate, endpoint, HttpError, requestSignal } from "@/bot/http";
 import { processUpdate, validateUpdate } from "@/bot/runtime";
 export const runtime = "nodejs";
@@ -17,9 +18,12 @@ export async function POST(request: Request) {
       throw new HttpError(400, "invalid update");
     }
     const result = await processUpdate(payload, requestSignal(request));
+    logEvent(result === "complete" ? "info" : "warn", "webhook.outcome", {
+      status: result,
+    });
     if (result === "ambiguous") return { ok: true, review_required: true };
     if (result !== "complete")
       throw new HttpError(503, "processing incomplete");
     return { ok: true };
-  });
+  }, "telegram.webhook");
 }

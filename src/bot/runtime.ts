@@ -1,3 +1,4 @@
+import { logEvent, workReference, errorFields } from "./logging";
 import * as Sentry from "@sentry/nextjs";
 import { diagnosticTags } from "../sentry-options";
 import { httpSignal, scopedFetch } from "./transport";
@@ -121,6 +122,9 @@ interface Item {
   payload: Record<string, unknown>;
 }
 export async function executeItem(item: Item, bot: Bot): Promise<string> {
+  const started = performance.now();
+  const fields = { work_ref: workReference(item.id), work_kind: item.kind };
+  logEvent("info", "work.started", fields);
   const approved =
     item.chat_id !== null
       ? await isChatApproved(item.chat_id)
@@ -140,6 +144,10 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       "UPDATE work_items w SET status='complete',error='chat not approved',updated_at=now() WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM work_steps s WHERE s.work_id=w.id) RETURNING id",
       [item.id],
     );
+    logEvent("warn", "work.unapproved", {
+      ...fields,
+      status: retired.rows.length ? "complete" : "failed",
+    });
     return retired.rows.length ? "complete" : "failed";
   }
 
@@ -185,13 +193,25 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       "UPDATE work_items SET status='complete',error=NULL,updated_at=now() WHERE id=$1",
       [item.id],
     );
+    logEvent("info", "work.completed", {
+      ...fields,
+      duration_ms: Math.round(performance.now() - started),
+    });
     return "complete";
   } catch (error) {
     if (error instanceof BotError) error = error.error;
     if (error instanceof AmbiguousOutcome) {
       Sentry.captureMessage("Uncertain Telegram send requires review", {
         level: "warning",
-        tags: { component: "bot", work_kind: item.kind },
+        tags: {
+          component: "bot",
+          work_kind: item.kind,
+          work_ref: fields.work_ref,
+        },
+      });
+      logEvent("warn", "work.review_required", {
+        ...fields,
+        status: "ambiguous",
       });
       return "ambiguous";
     }
@@ -199,14 +219,15 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       tags: {
         component: "bot",
         work_kind: item.kind,
+        work_ref: fields.work_ref,
         ...diagnosticTags(error),
       },
     });
-    console.error(
-      "work failed",
-      item.id,
-      error instanceof Error ? error.name : "Error",
-    );
+    logEvent("error", "work.failed", {
+      ...fields,
+      ...errorFields(error),
+      duration_ms: Math.round(performance.now() - started),
+    });
     await raw(
       "UPDATE work_items SET status='failed',error=$1,updated_at=now() WHERE id=$2",
       [error instanceof Error ? error.name : "Error", item.id],

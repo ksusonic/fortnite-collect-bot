@@ -57,6 +57,18 @@ export function diagnosticCode(error: unknown, depth = 0): string | undefined {
 export function diagnosticTags(error: unknown): Record<string, string> {
   const code = diagnosticCode(error);
   const tags: Record<string, string> = code ? { error_code: code } : {};
+  // Telegram descriptions can contain private input; classify using numeric codes only.
+  if (
+    error &&
+    typeof error === "object" &&
+    "error_code" in error &&
+    typeof error.error_code === "number" &&
+    [400, 401, 403, 404, 409, 429, 500, 502, 503, 504].includes(
+      error.error_code,
+    )
+  )
+    tags.telegram_error_code = String(error.error_code);
+
   if (code === "42P01" && error instanceof Error) {
     const relation = error.message.match(
       /relation "(?:fortnite_bot\.)?([a-z_]+)" does not exist/,
