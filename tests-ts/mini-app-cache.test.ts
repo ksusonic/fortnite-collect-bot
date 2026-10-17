@@ -7,7 +7,7 @@ import {
   vi,
   afterEach,
 } from "vitest";
-import { invocation, migrate, raw, advisoryLock } from "../src/bot/storage";
+import { invocation, raw, advisoryLock } from "../src/bot/storage";
 import { cached, readCache, providerSlot } from "../src/statistics/cache";
 import {
   accountProfile,
@@ -65,7 +65,6 @@ suite("private statistics cache and snapshot integration", () => {
       throw new Error("disposable localhost fortnite_test required");
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
   beforeEach(async () => {
     roast.mockReset();

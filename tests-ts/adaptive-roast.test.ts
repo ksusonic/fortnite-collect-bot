@@ -12,7 +12,7 @@ import {
   vi,
 } from "vitest";
 import type { Update } from "grammy/types";
-import { invocation, migrate, raw, withWork } from "../src/bot/storage";
+import { invocation, raw, withWork } from "../src/bot/storage";
 import { Work } from "../src/bot/work";
 import { createBot, enqueue, executeItem } from "../src/bot/runtime";
 import { loadRoastProfile } from "../src/bot/services/roast-profile";
@@ -45,7 +45,6 @@ const url = process.env.TEST_DATABASE_URL;
         throw new Error("disposable localhost fortnite_test required");
       process.env.DATABASE_URL = url;
       process.env.DATABASE_LOCAL_TEST = "1";
-      await migrate();
     });
     beforeEach(async () => {
       vi.clearAllMocks();

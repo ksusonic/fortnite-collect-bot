@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { invocation, migrate, raw } from "../src/bot/storage";
+import { invocation, raw } from "../src/bot/storage";
 import {
   checkDatabase,
   checkProductionDatabase,
@@ -40,7 +40,6 @@ suite("database readiness on disposable Postgres", () => {
       );
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
 
   it("checks the fully migrated release without reading or modifying application rows", async () => {

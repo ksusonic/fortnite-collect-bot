@@ -11,7 +11,6 @@ import {
   databaseConfig,
   invocation,
   lockKey,
-  migrate,
   raw,
   withWork,
 } from "../src/bot/storage";
@@ -37,7 +36,6 @@ suite("Postgres recovery and storage", () => {
       );
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
   beforeEach(async () => {
     await invocation(null, async () => {

@@ -5,14 +5,12 @@ vi.mock("undici", async (importOriginal) => {
 });
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
-  migrate: vi.fn(),
   checkDatabase: vi.fn(),
   commands: vi.fn(),
   webhook: vi.fn(),
   info: vi.fn(),
   menu: vi.fn(),
 }));
-vi.mock("../src/bot/storage", () => ({ migrate: mocks.migrate }));
 vi.mock("../src/bot/readiness", () => ({ checkDatabase: mocks.checkDatabase }));
 vi.mock("../src/bot/commands", () => ({ setupBotCommands: mocks.commands }));
 vi.mock("../src/bot/runtime", () => ({
@@ -42,7 +40,6 @@ describe("explicit maintenance", () => {
   it("checks database readiness without changing schema, menus or webhook", async () => {
     await maintain(["check-db"]);
     expect(mocks.checkDatabase).toHaveBeenCalledOnce();
-    expect(mocks.migrate).not.toHaveBeenCalled();
     expect(mocks.commands).not.toHaveBeenCalled();
     expect(mocks.webhook).not.toHaveBeenCalled();
   });
@@ -69,9 +66,10 @@ describe("explicit maintenance", () => {
     ).rejects.toThrow("HTTPS");
   });
 
-  it("does not register a webhook during migration", async () => {
-    await maintain(["migrate"]);
-    expect(mocks.migrate).toHaveBeenCalledOnce();
+  it("rejects the retired migration command without side effects", async () => {
+    await expect(maintain(["migrate"])).rejects.toThrow("usage:");
+    expect(mocks.checkDatabase).not.toHaveBeenCalled();
+    expect(mocks.commands).not.toHaveBeenCalled();
     expect(mocks.webhook).not.toHaveBeenCalled();
   });
   it("requires health success before changing menus or webhook", async () => {

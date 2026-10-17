@@ -1,6 +1,5 @@
 /** Explicit maintenance only: startup never changes schemas or webhooks. */
 import { createBot } from "./runtime";
-import { migrate } from "./storage";
 import { checkDatabase } from "./readiness";
 import { pathToFileURL } from "node:url";
 import { scopedFetch, httpSignal, withHttpClient } from "./transport";
@@ -17,10 +16,6 @@ export async function maintain(args: string[]): Promise<void> {
   }
   if (command === "configure-commands") {
     await withHttpClient(() => setupBotCommands(createBot()));
-    return;
-  }
-  if (command === "migrate") {
-    await migrate();
     return;
   }
   if (command === "configure-mini-app") {
@@ -48,7 +43,7 @@ export async function maintain(args: string[]): Promise<void> {
   }
   if (command !== "register-webhook" && command !== "webhook-info")
     throw new Error(
-      "usage: pnpm bot check-db|migrate|register-webhook <url>|webhook-info|configure-mini-app <url>|configure-commands",
+      "usage: pnpm bot check-db|register-webhook <url>|webhook-info|configure-mini-app <url>|configure-commands",
     );
   const info =
     command === "register-webhook"

@@ -14,7 +14,7 @@ import {
   type PlayerStats,
 } from "../src/bot/fortnite";
 import { enqueueDailySnapshots, executeSnapshot } from "../src/bot/snapshots";
-import { invocation, migrate, raw, withWork } from "../src/bot/storage";
+import { invocation, raw, withWork } from "../src/bot/storage";
 import { Work } from "../src/bot/work";
 
 const provider = vi.hoisted(() => vi.fn());
@@ -57,7 +57,6 @@ suite("daily durable snapshots", () => {
       );
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
   beforeEach(async () => {
     provider.mockReset();

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { invocation, migrate, raw } from "../src/bot/storage";
+import { invocation, raw } from "../src/bot/storage";
 import * as db from "../src/bot/db";
 import { enqueueDailySnapshots } from "../src/bot/snapshots";
 const url = process.env.TEST_DATABASE_URL;
@@ -16,7 +16,6 @@ const url = process.env.TEST_DATABASE_URL;
       );
     process.env.DATABASE_URL = url;
     process.env.DATABASE_LOCAL_TEST = "1";
-    await migrate();
   });
   it("shares relinks across participant chats and excludes bots and unrelated users", async () => {
     await invocation(null, async () => {
