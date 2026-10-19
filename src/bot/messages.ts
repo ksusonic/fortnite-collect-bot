@@ -7,6 +7,8 @@ import {
   teamFacts,
 } from "../statistics/summary";
 import type { Session, ChatStats, EpicLink } from "./db";
+import { defaultFortTitle } from "./fort-titles";
+import { fortEmoji } from "./fort-emojis";
 import {
   EpicNameNotFound,
   StatsPrivate,
@@ -16,14 +18,9 @@ import {
   type PlayerStats,
 } from "./fortnite";
 
-// Dexclub custom emoji, in F / O / R / T order. Telegram requires an
-// ordinary emoji as each tag's fallback; these stickers use ➕.
-// Separate the dark letter tiles and leave a blank line before the invitation.
-const DEFAULT_FORT_TITLE =
-  '<tg-emoji emoji-id="5416088003753835395">➕</tg-emoji> ' +
-  '<tg-emoji emoji-id="5415815767251778194">➕</tg-emoji> ' +
-  '<tg-emoji emoji-id="5418220089944077842">➕</tg-emoji> ' +
-  '<tg-emoji emoji-id="5415855714742599689">➕</tg-emoji>\n';
+function fortTitleFor(session: Session): string {
+  return session.fort_title || defaultFortTitle(session.style);
+}
 
 export const STYLES = [
   {
@@ -246,7 +243,7 @@ function userCode(name: string): string {
 }
 export function buildTagLine(users: Map<number, string>): string {
   return users.size
-    ? `📣 ${[...users].map(([uid, name]) => userLink(uid, name)).join(" ")}`
+    ? `${fortEmoji("📣")} ${[...users].map(([uid, name]) => userLink(uid, name)).join(" ")}`
     : "";
 }
 function playerList(players: Map<number, string>): string {
@@ -327,23 +324,23 @@ export function buildGatherText(session: Session, now = nowSeconds()): string {
     : playerList(squad);
   if (count === SQUAD_SIZE) {
     const lines = [
-      session.fort_title || DEFAULT_FORT_TITLE,
+      fortTitleFor(session),
       style.done_header,
       DIVIDER,
-      `👊 <b>Состав</b> ${count}`,
+      `${fortEmoji("👊")} <b>Состав</b> ${count}`,
       players,
     ];
     if (reserve.size)
       lines.push(
         DIVIDER,
-        `🪑 <b>Резерв</b> ${reserve.size}/${RESERVE_SIZE}`,
+        `${fortEmoji("🪑")} <b>Резерв</b> ${reserve.size}/${RESERVE_SIZE}`,
         session.time_slots.length
           ? playerEtaList(session, reserve, now, true)
           : playerList(reserve),
       );
     lines.push(
       DIVIDER,
-      "❌ <b>Пас</b>",
+      `${fortEmoji("❌")} <b>Пас</b>`,
       playerList(session.pass_players),
       DIVIDER,
       style.done_footer,
@@ -360,13 +357,13 @@ export function buildGatherText(session: Session, now = nowSeconds()): string {
     ),
   );
   const lines = [
-    session.fort_title || DEFAULT_FORT_TITLE,
+    fortTitleFor(session),
     header,
     DIVIDER,
-    `✅ <b>Go</b> ${count}/${SQUAD_SIZE}`,
+    `${fortEmoji("✅")} <b>Go</b> ${count}/${SQUAD_SIZE}`,
     players,
     DIVIDER,
-    "❌ <b>Пас</b>",
+    `${fortEmoji("❌")} <b>Пас</b>`,
     playerList(session.pass_players),
   ];
   if (pending.size) lines.push("", buildTagLine(pending));
@@ -383,10 +380,10 @@ function buildClosedText(
     userLink(session.initiator_id, session.initiator_name),
   );
   const lines = [
-    session.fort_title || DEFAULT_FORT_TITLE,
+    fortTitleFor(session),
     header,
     DIVIDER,
-    `✅ <b>Go</b> ${squad.size}/${SQUAD_SIZE}`,
+    `${fortEmoji("✅")} <b>Go</b> ${squad.size}/${SQUAD_SIZE}`,
     session.time_slots.length
       ? playerEtaList(session, squad, now)
       : playerList(squad),
@@ -394,14 +391,14 @@ function buildClosedText(
   if (reserve.size)
     lines.push(
       DIVIDER,
-      `🪑 <b>Резерв</b> ${reserve.size}/${RESERVE_SIZE}`,
+      `${fortEmoji("🪑")} <b>Резерв</b> ${reserve.size}/${RESERVE_SIZE}`,
       session.time_slots.length
         ? playerEtaList(session, reserve, now, true)
         : playerList(reserve),
     );
   lines.push(
     DIVIDER,
-    "❌ <b>Пас</b>",
+    `${fortEmoji("❌")} <b>Пас</b>`,
     playerList(session.pass_players),
     DIVIDER,
     footer,
@@ -413,8 +410,8 @@ export function buildExpiredText(session: Session, now = nowSeconds()): string {
   return buildClosedText(
     session,
     squad.size >= 2
-      ? `⏰ Окно закрылось. В деле было ${squad.size} — добивайте в игре 🎮`
-      : "⏰ Время вышло — сбор отменён.",
+      ? `${fortEmoji("⏰")} Окно закрылось. В деле было ${squad.size} — добивайте в игре 🎮`
+      : `${fortEmoji("⏰")} Время вышло — сбор отменён.`,
     now,
   );
 }
@@ -422,7 +419,11 @@ export function buildCancelledText(
   session: Session,
   now = nowSeconds(),
 ): string {
-  return buildClosedText(session, "🔄 Сбор отменён — запущен новый.", now);
+  return buildClosedText(
+    session,
+    `${fortEmoji("🔄")} Сбор отменён — запущен новый.`,
+    now,
+  );
 }
 export function buildKeyboard(goCount: number, timeSlots?: string[] | null) {
   if (timeSlots?.length)
