@@ -1,3 +1,5 @@
+import { enqueueConversationMemory } from "./services/conversation-memory";
+import { cleanupConversations } from "./services/conversation-store";
 import * as Sentry from "@sentry/nextjs";
 import { diagnosticTags } from "../sentry-options";
 import { logEvent, workReference, errorFields } from "./logging";
@@ -140,8 +142,10 @@ async function executeJob(
     [item.id],
   );
   try {
-    if (name === "cleanup") await db.cleanup_old_snapshots(30);
-    else if (name === "status") await statusCheck(Date.now());
+    if (name === "cleanup") {
+      await db.cleanup_old_snapshots(30);
+      await cleanupConversations();
+    } else if (name === "status") await statusCheck(Date.now());
     else if (name === "expiry") await enqueueExpirations(Date.now() / 1000);
     else await enqueueWeekly(Date.now() / 1000);
     await raw(
@@ -223,6 +227,7 @@ export async function runJob(
               await enqueueExpirations(now);
               await enqueueWeekly(now);
               await enqueueDailySnapshots(now);
+              await enqueueConversationMemory(now);
               const bot = createBot();
               await syncReleaseCommands(bot);
               await syncReleaseWebhook(bot);

@@ -49,10 +49,14 @@ it("validates the full remote policy and enforces minimum intervals", () => {
   ])
     expect(parseRoastPolicy(bad)).toEqual(DEFAULT_ROAST_POLICY);
 });
-it("keeps new chats quiet and limits attempts, including silent decisions", () => {
+it("defaults to rare participation and limits attempts, including silent decisions", () => {
   const policy = DEFAULT_ROAST_POLICY;
-  expect(proactiveDue(policy, policy.defaults, null, 1000)).toBe(false);
-  const prefs = { ...policy.defaults, proactive: true };
+  expect(proactiveDue(policy, policy.defaults, null, 1000)).toBe(true);
+  const prefs = {
+    ...policy.defaults,
+    proactive: true,
+    frequency: "normal" as const,
+  };
   expect(proactiveDue(policy, prefs, 1000, 1599)).toBe(false);
   expect(proactiveDue(policy, prefs, 1000, 1600)).toBe(true);
   expect(

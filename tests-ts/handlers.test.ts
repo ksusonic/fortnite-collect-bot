@@ -19,6 +19,7 @@ vi.mock("@vercel/connect", () => ({
   getToken: vi.fn().mockRejectedValue(new Error("connection missing")),
 }));
 vi.mock("../src/bot/storage", () => ({
+  maybeCurrent: () => undefined,
   getRoastState: () => ({ history: [], message_ids: [], last_roast: null }),
 }));
 

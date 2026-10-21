@@ -14,7 +14,7 @@ export const schemaContract = {
   fort_cooldowns: "chat_id user_id attempted_at",
   service_state: "key value",
   work_items:
-    "id kind chat_id payload status created_at updated_at attempts error",
+    "id kind chat_id payload status created_at updated_at attempts error conversation_version",
   work_steps: "work_id step signature status result",
   job_http_requests:
     "request_id job requested_at completed_at status_code timed_out error",
@@ -22,5 +22,14 @@ export const schemaContract = {
     "cache_key version result fetched_at expires_at retry_after",
   roast_profiles:
     "chat_id preferences pending_question last_evaluated_at changed_by changed_message_id changed_at",
+  conversation_messages:
+    "chat_id message_id user_id name text sent_at edited_at thread_id reply_to_id is_bot forwarded citation_refs processed forgotten search_vector",
+  conversation_memories:
+    "id chat_id source_message_id user_id name thread_id content quote source_at expires_at created_at explicit search_vector",
+  conversation_state:
+    "chat_id thread_id dialogue_user_id dialogue_until pending_user_id pending_question evaluated_at proactive_at reacted_at extracted_at",
+  conversation_memory_epochs: "chat_id user_id epoch",
+  conversation_memory_deletions:
+    "chat_id user_id epoch attempts retry_at complete",
   approved_chats: "chat_id approved_by approved_at",
 } as const;

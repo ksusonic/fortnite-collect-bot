@@ -1,3 +1,7 @@
+import {
+  extractConversationMemory,
+  retryMemoryDeletions,
+} from "./services/conversation-memory";
 import { logEvent, workReference, errorFields } from "./logging";
 import * as Sentry from "@sentry/nextjs";
 import { diagnosticTags } from "../sentry-options";
@@ -97,7 +101,7 @@ export async function enqueue(
   payload: unknown,
 ) {
   await raw(
-    "INSERT INTO work_items(id,kind,chat_id,payload) VALUES ($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING",
+    "INSERT INTO work_items(id,kind,chat_id,payload,conversation_version) VALUES ($1,$2,$3,$4,2) ON CONFLICT(id) DO NOTHING",
     [id, kind, chat, JSON.stringify(payload)],
   );
 }
@@ -157,11 +161,23 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
     [item.id],
   );
   try {
-    await withWork(new Work(item.id), async () => {
+    const version =
+      (
+        await raw("SELECT conversation_version FROM work_items WHERE id=$1", [
+          item.id,
+        ])
+      ).rows[0]?.conversation_version ?? 1;
+    await withWork(new Work(item.id, version), async () => {
       if (item.kind !== "snapshot") await hydrate(item.chat_id);
       if (item.kind === "update")
         await bot.handleUpdate(item.payload as unknown as Update);
-      else if (item.kind === "gathering")
+      else if (item.kind === "conversation-memory") {
+        await extractConversationMemory(
+          item.chat_id!,
+          Number(item.payload.now),
+        );
+        await retryMemoryDeletions(item.chat_id!, Number(item.payload.now));
+      } else if (item.kind === "gathering")
         await gatheringTick(bot, Number(item.payload.message_id));
       else if (item.kind === "expiry")
         await sweep_expired_sessions(

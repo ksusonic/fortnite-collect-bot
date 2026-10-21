@@ -13,8 +13,8 @@ export interface RoastPolicy {
 export const DEFAULT_ROAST_POLICY: RoastPolicy = {
   proactiveAllowed: true,
   defaults: {
-    proactive: false,
-    frequency: "normal",
+    proactive: true,
+    frequency: "rare",
     length: "normal",
     tone: "sharp",
     profanity: true,

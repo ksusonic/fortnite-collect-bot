@@ -16,7 +16,7 @@ function bot() {
     api.getWebhookInfo.mockResolvedValue({
       url,
       max_connections: 1,
-      allowed_updates: ["message", "callback_query"],
+      allowed_updates: ["message", "edited_message", "callback_query"],
     });
     return true;
   });
@@ -36,7 +36,7 @@ it("sets and verifies the production webhook before recording the release", asyn
   expect(instance.api.setWebhook).toHaveBeenCalledWith(url, {
     secret_token: "test-secret",
     max_connections: 1,
-    allowed_updates: ["message", "callback_query"],
+    allowed_updates: ["message", "edited_message", "callback_query"],
     drop_pending_updates: false,
   });
   const marker = JSON.parse(mock.raw.mock.calls[1]![1][0]);
@@ -64,7 +64,7 @@ it("checks the webhook at startup without using the database", async () => {
   instance.api.getWebhookInfo.mockResolvedValue({
     url,
     max_connections: 1,
-    allowed_updates: ["message", "callback_query"],
+    allowed_updates: ["message", "edited_message", "callback_query"],
   });
   await ensureStartupWebhook(instance as unknown as Bot);
   expect(instance.api.setWebhook).not.toHaveBeenCalled();
