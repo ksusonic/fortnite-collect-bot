@@ -7,7 +7,6 @@ import { syncReleaseWebhook } from "./webhook";
 import { moscowDate, weeklyDue } from "./schedule-time";
 export { moscowDate, weeklyDue } from "./schedule-time";
 import * as status from "./status";
-import * as messages from "./messages";
 import { enqueueDailySnapshots } from "./snapshots";
 import { advisoryLock, invocation, lockKey, raw } from "./storage";
 import { createBot, enqueue, recoverPending } from "./runtime";
@@ -68,43 +67,36 @@ async function saveStatus(state: EpicState) {
   );
 }
 async function enqueueExpirations(now: number) {
-  const pastDeadline =
-    moscowDate(now * 1000).getUTCHours() >= messages.PLAY_DEADLINE_HOUR;
-  // Suppress a new Telegram task while a
-  // failed or ambiguous expiry is awaiting reconciliation. Recheck under the
-  // chat lock when executing: players may have joined since this query.
+  // Evaluate only the first four FIFO players. Unknown availability and reserve
+  // members never manufacture an early start. Execution rechecks under the chat lock.
   const sessions = (
     await raw(
-      `SELECT s.chat_id,s.message_id,
-       ($2 OR (s.created_at AT TIME ZONE 'Europe/Moscow')::date <
-         (to_timestamp($1) AT TIME ZONE 'Europe/Moscow')::date) AS past_deadline FROM sessions s
-     WHERE EXISTS (SELECT 1 FROM approved_chats a WHERE a.chat_id=s.chat_id)
-     AND NOT s.is_closed AND ($2 OR
-       (s.created_at AT TIME ZONE 'Europe/Moscow')::date <
-         (to_timestamp($1) AT TIME ZONE 'Europe/Moscow')::date OR
-       EXTRACT(EPOCH FROM s.created_at) < $1 - CASE WHEN
-         (SELECT COUNT(*) FROM responses r WHERE r.chat_id=s.chat_id
-          AND r.message_id=s.message_id AND r.response='go') >= 2
-       THEN $3::double precision ELSE $4::double precision END)
-     AND NOT EXISTS (SELECT 1 FROM work_items w
-       WHERE w.kind='expiry' AND w.chat_id=s.chat_id AND w.status<>'complete')
-     ORDER BY s.created_at,s.chat_id LIMIT 100`,
-      [
-        now,
-        pastDeadline,
-        messages.SESSION_TIMEOUT_TRACTION,
-        messages.SESSION_TIMEOUT,
-      ],
+      `SELECT s.chat_id,s.message_id FROM sessions s
+    LEFT JOIN LATERAL (
+      SELECT count(*) AS players,count(ready_at) AS ready,min(available_at) AS first_at
+      FROM (SELECT r.available_at,r.ready_at FROM responses r
+        WHERE r.chat_id=s.chat_id AND r.message_id=s.message_id AND r.response='go'
+        ORDER BY joined_at NULLS LAST,responded_at,user_id LIMIT 4) roster
+    ) t ON true
+    WHERE NOT s.is_closed AND EXISTS (SELECT 1 FROM approved_chats a WHERE a.chat_id=s.chat_id)
+    AND ((s.created_at AT TIME ZONE 'Europe/Moscow')::date < (to_timestamp($1) AT TIME ZONE 'Europe/Moscow')::date
+      OR (s.gathering->>'notified_at' IS NULL AND t.players>=2 AND t.ready<t.players AND t.first_at IS NOT NULL
+        AND CASE WHEN t.ready>0 OR t.first_at<=s.created_at OR
+          ceil(EXTRACT(EPOCH FROM t.first_at)/300)*300 >= EXTRACT(EPOCH FROM (((s.created_at AT TIME ZONE 'Europe/Moscow')::date+1)::timestamp AT TIME ZONE 'Europe/Moscow'))
+          THEN EXTRACT(EPOCH FROM t.first_at) ELSE ceil(EXTRACT(EPOCH FROM t.first_at)/300)*300 END <= $1))
+    AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.chat_id=s.chat_id
+      AND w.kind IN ('gathering','expiry') AND w.status<>'complete')
+    ORDER BY s.created_at,s.chat_id LIMIT 100`,
+      [now],
     )
   ).rows;
-  for (const session of sessions) {
+  for (const session of sessions)
     await enqueue(
-      `expiry:${session.chat_id}:${session.message_id}:${Math.floor(now / 60)}`,
-      "expiry",
+      `gathering:${session.chat_id}:${session.message_id}:${Math.floor(now / 60)}`,
+      "gathering",
       session.chat_id,
-      { now, past_deadline: session.past_deadline ?? pastDeadline },
+      { now, message_id: session.message_id },
     );
-  }
 }
 async function enqueueWeekly(now: number) {
   const due = weeklyDue(now);

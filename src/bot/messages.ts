@@ -1,4 +1,10 @@
 import {
+  availability,
+  clock,
+  eveningEnd,
+  rosterTimes,
+} from "./services/gathering";
+import {
   rank,
   totals,
   roundEven,
@@ -177,11 +183,9 @@ const STATS_STYLES = [
 
 export const SQUAD_SIZE = 4;
 export const RESERVE_SIZE = 4;
-export const PLAY_DEADLINE_HOUR = 23;
+export const PLAY_DEADLINE_HOUR = 24;
 export const NOW_SLOT = "now";
 export const SLOT_OFFERS_MIN = [30, 60, 120];
-export const SESSION_TIMEOUT = 60 * 60;
-export const SESSION_TIMEOUT_TRACTION = 3 * 60 * 60;
 const DIVIDER = "─────────────────────";
 const TEAM_DIVIDER = "─".repeat(20);
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -231,7 +235,7 @@ export function generateTimeSlots(
   return [
     NOW_SLOT,
     ...SLOT_OFFERS_MIN.filter(
-      (minutes) => seconds + minutes * 60 <= PLAY_DEADLINE_HOUR * 3600,
+      (minutes) => seconds + minutes * 60 < PLAY_DEADLINE_HOUR * 3600,
     ).map(String),
   ];
 }
@@ -253,25 +257,6 @@ function playerList(players: Map<number, string>): string {
         .join("\n")
     : "   (пока пусто)";
 }
-function etaLabel(slot: string, now: number): string {
-  if (slot === NOW_SLOT) return "сейчас";
-  let label = `≈ ${slot}`;
-  const match = /^(\d{1,2}):(\d{1,2})$/.exec(slot);
-  if (match && Number(match[1]) < 24 && Number(match[2]) < 60) {
-    const d = mskDate(now);
-    const delta = roundEven(
-      (Number(match[1]) * 3600 +
-        Number(match[2]) * 60 -
-        (d.getUTCHours() * 3600 +
-          d.getUTCMinutes() * 60 +
-          d.getUTCSeconds() +
-          d.getUTCMilliseconds() / 1000)) /
-        60,
-    );
-    if (delta > 0) label += ` (через ~${delta}м)`;
-  }
-  return label;
-}
 export function splitRoster(
   session: Session,
 ): [Map<number, string>, Map<number, string>] {
@@ -281,149 +266,112 @@ export function splitRoster(
     new Map(players.slice(SQUAD_SIZE, SQUAD_SIZE + RESERVE_SIZE)),
   ];
 }
-function playerEtaList(
-  session: Session,
-  players: Map<number, string>,
-  now: number,
-  preserveOrder = false,
-): string {
-  if (!players.size) return "   (пока пусто)";
-  const entries = [...players];
-  if (!preserveOrder)
-    entries.sort((a, b) => {
-      const sa = session.player_slots.get(a[0]) || NOW_SLOT,
-        sb = session.player_slots.get(b[0]) || NOW_SLOT;
-      return sa === sb
-        ? 0
-        : sa === NOW_SLOT
-          ? -1
-          : sb === NOW_SLOT
-            ? 1
-            : sa < sb
-              ? -1
-              : 1;
-    });
-  return entries
-    .map(([uid, name], i) => {
-      const slot = session.player_slots.get(uid);
-      return `   ${i + 1}. ${userLink(uid, name)}${slot ? ` — ${etaLabel(slot, now)}` : ""}`;
-    })
-    .join("\n");
-}
 function styleFor(session: Session) {
   return STYLES[
     ((session.style % STYLES.length) + STYLES.length) % STYLES.length
   ]!;
 }
 export function buildGatherText(session: Session, now = nowSeconds()): string {
-  const style = styleFor(session),
-    [squad, reserve] = splitRoster(session),
-    count = squad.size;
-  const players = session.time_slots.length
-    ? playerEtaList(session, squad, now)
-    : playerList(squad);
-  if (count === SQUAD_SIZE) {
-    const lines = [
-      fortTitleFor(session),
-      style.done_header,
-      DIVIDER,
-      `${fortEmoji("👊")} <b>Состав</b> ${count}`,
-      players,
-    ];
-    if (reserve.size)
-      lines.push(
-        DIVIDER,
-        `${fortEmoji("🪑")} <b>Резерв</b> ${reserve.size}/${RESERVE_SIZE}`,
-        session.time_slots.length
-          ? playerEtaList(session, reserve, now, true)
-          : playerList(reserve),
-      );
-    lines.push(
-      DIVIDER,
-      `${fortEmoji("❌")} <b>Пас</b>`,
-      playerList(session.pass_players),
-      DIVIDER,
-      style.done_footer,
-    );
-    return lines.join("\n");
-  }
-  const header = (session.llm_header || style.header).replaceAll(
-    "{name}",
-    userLink(session.initiator_id, session.initiator_name),
-  );
-  const pending = new Map(
-    [...session.tagged_users].filter(
-      ([uid]) => !session.go_players.has(uid) && !session.pass_players.has(uid),
-    ),
-  );
-  const lines = [
-    fortTitleFor(session),
-    header,
-    DIVIDER,
-    `${fortEmoji("✅")} <b>Go</b> ${count}/${SQUAD_SIZE}`,
-    players,
-    DIVIDER,
-    `${fortEmoji("❌")} <b>Пас</b>`,
-    playerList(session.pass_players),
-  ];
-  if (pending.size) lines.push("", buildTagLine(pending));
-  return lines.join("\n");
-}
-function buildClosedText(
-  session: Session,
-  footer: string,
-  now: number,
-): string {
   const [squad, reserve] = splitRoster(session);
+  const times = rosterTimes(session);
   const header = (session.llm_header || styleFor(session).header).replaceAll(
     "{name}",
     userLink(session.initiator_id, session.initiator_name),
   );
-  const lines = [
-    fortTitleFor(session),
-    header,
+  const lines = [fortTitleFor(session), header, DIVIDER];
+  if (times.start !== undefined)
+    lines.push(
+      times.start <= now
+        ? "🕐 Можно начинать сейчас"
+        : `🕐 Начинаем с <b>${clock(times.start)}</b> МСК`,
+    );
+  else lines.push("🕐 Время пока не указано");
+  if (times.unknown) lines.push(`Время не указали: ${times.unknown}`);
+  else if (
+    times.all !== undefined &&
+    times.all > now &&
+    times.all !== times.start
+  )
+    lines.push(`Все смогут к ${clock(times.all)} МСК`);
+  if (squad.size === SQUAD_SIZE)
+    lines.push(
+      times.ready === SQUAD_SIZE ? "✅ Все готовы играть" : "✅ Состав набран",
+    );
+  const list = (players: Map<number, string>) =>
+    players.size
+      ? [...players]
+          .map(([id, name], i) => {
+            const at = availability(session, id);
+            const status = session.ready_players?.has(id)
+              ? "⚡ готов играть"
+              : at === undefined
+                ? "время не указано"
+                : at <= now
+                  ? `с ${clock(at)} · готовность не подтверждена`
+                  : `сможет с ${clock(at)}`;
+            return `   ${i + 1}. ${userLink(id, name)} — ${status}`;
+          })
+          .join("\n")
+      : "   (пока пусто)";
+  lines.push(
     DIVIDER,
-    `${fortEmoji("✅")} <b>Go</b> ${squad.size}/${SQUAD_SIZE}`,
-    session.time_slots.length
-      ? playerEtaList(session, squad, now)
-      : playerList(squad),
-  ];
+    `${fortEmoji("✅")} <b>Состав ${squad.size}/${SQUAD_SIZE} · готовы играть ${times.ready}/${squad.size}</b>`,
+    list(squad),
+  );
   if (reserve.size)
     lines.push(
       DIVIDER,
-      `${fortEmoji("🪑")} <b>Резерв</b> ${reserve.size}/${RESERVE_SIZE}`,
-      session.time_slots.length
-        ? playerEtaList(session, reserve, now, true)
-        : playerList(reserve),
+      `${fortEmoji("🪑")} <b>Резерв ${reserve.size}/${RESERVE_SIZE}</b>`,
+      list(reserve),
     );
   lines.push(
     DIVIDER,
     `${fortEmoji("❌")} <b>Пас</b>`,
     playerList(session.pass_players),
-    DIVIDER,
-    footer,
   );
+  const pending = new Map(
+    [...session.tagged_users].filter(
+      ([id]) => !session.go_players.has(id) && !session.pass_players.has(id),
+    ),
+  );
+  if (squad.size < SQUAD_SIZE && pending.size)
+    lines.push("", buildTagLine(pending));
   return lines.join("\n");
 }
+export function buildGatheringKeyboard(session: Session, now = nowSeconds()) {
+  const { start } = rosterTimes(session);
+  const first = [];
+  if (start !== undefined && start > now)
+    first.push({
+      text: `👍 Смогу к ${clock(start)}`,
+      callback_data: `gat:${start}`,
+    });
+  first.push({ text: "⚡ Готов играть", callback_data: "gready" });
+  const relative = SLOT_OFFERS_MIN.filter(
+    (minutes) => now + minutes * 60 < eveningEnd(session.created_at),
+  ).map((minutes) => ({
+    text: minutes === 30 ? "🕐 +30м" : `🕐 +${minutes / 60}ч`,
+    callback_data: `gslot:${minutes}`,
+  }));
+  return {
+    inline_keyboard: [
+      first,
+      ...(relative.length ? [relative] : []),
+      [
+        { text: "✍️ Своё время", callback_data: "gtime" },
+        { text: "❌ Пас", callback_data: "pass" },
+      ],
+    ],
+  };
+}
 export function buildExpiredText(session: Session, now = nowSeconds()): string {
-  const [squad] = splitRoster(session);
-  return buildClosedText(
-    session,
-    squad.size >= 2
-      ? `${fortEmoji("⏰")} Окно закрылось. В деле было ${squad.size} — добивайте в игре 🎮`
-      : `${fortEmoji("⏰")} Время вышло — сбор отменён.`,
-    now,
-  );
+  return `${buildGatherText({ ...session, tagged_users: new Map() }, now)}\n${DIVIDER}\n🌙 Вечер завершён`;
 }
 export function buildCancelledText(
   session: Session,
   now = nowSeconds(),
 ): string {
-  return buildClosedText(
-    session,
-    `${fortEmoji("🔄")} Сбор отменён — запущен новый.`,
-    now,
-  );
+  return `${buildGatherText({ ...session, tagged_users: new Map() }, now)}\n${DIVIDER}\nСбор отменён`;
 }
 export function buildKeyboard(goCount: number, timeSlots?: string[] | null) {
   if (timeSlots?.length)

@@ -23,6 +23,7 @@ import {
   type RoastEntry,
 } from "./storage";
 import { AmbiguousOutcome, telegramTransformer, Work } from "./work";
+import { gatheringTick } from "./handlers/gatherings";
 
 export function createBot(): Bot {
   const token = process.env.BOT_TOKEN;
@@ -160,6 +161,8 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       if (item.kind !== "snapshot") await hydrate(item.chat_id);
       if (item.kind === "update")
         await bot.handleUpdate(item.payload as unknown as Update);
+      else if (item.kind === "gathering")
+        await gatheringTick(bot, Number(item.payload.message_id));
       else if (item.kind === "expiry")
         await sweep_expired_sessions(
           bot,

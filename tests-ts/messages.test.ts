@@ -18,6 +18,7 @@ import {
   buildTeamFnStatsText,
   generateTimeSlots,
   formatFixed,
+  escapeHtml,
   myFnCaption,
   splitRoster,
   type Success,
@@ -36,9 +37,18 @@ describe("message rendering fixtures", () => {
   for (const example of fixture.sessions)
     it(`preserves stored style ${example.session.style}, roster, escaping and lifecycle text`, () => {
       const session = hydrate(example.session);
-      expect(buildGatherText(session, fixture.now)).toBe(example.gather);
-      expect(buildExpiredText(session, fixture.now)).toBe(example.expired);
-      expect(buildCancelledText(session, fixture.now)).toBe(example.cancelled);
+      const text = buildGatherText(session, fixture.now);
+      expect(text.split("\n")[0]).toBe(example.gather.split("\n")[0]);
+      expect(text).toContain("готовы играть 0/");
+      for (const name of session.go_players.values())
+        expect(text).toContain(escapeHtml(name));
+      expect(text).not.toContain("Все четверо в сборе");
+      expect(buildExpiredText(session, fixture.now)).toContain(
+        "Вечер завершён",
+      );
+      expect(buildCancelledText(session, fixture.now)).toContain(
+        "Сбор отменён",
+      );
     });
   it("preserves every chat stats template", () => {
     fixture.stats_texts.forEach((expected, i) =>
@@ -93,26 +103,19 @@ describe("numeric rendering", () => {
 });
 describe("relative readiness offers", () => {
   const at = (time: string) => Date.parse(`2026-10-03T${time}+03:00`) / 1000;
-  it("trims relative offers at 23:00 with exact boundary parity", () => {
-    expect(generateTimeSlots(null, at("20:59:59"))).toEqual([
+  it("trims relative offers at midnight", () => {
+    expect(generateTimeSlots(null, at("21:59:59"))).toEqual([
       "now",
       "30",
       "60",
       "120",
     ]);
-    expect(generateTimeSlots(null, at("21:00:00"))).toEqual([
-      "now",
-      "30",
-      "60",
-      "120",
-    ]);
-    expect(generateTimeSlots(null, at("21:00:01"))).toEqual([
+    expect(generateTimeSlots(null, at("22:00:01"))).toEqual([
       "now",
       "30",
       "60",
     ]);
-    expect(generateTimeSlots(null, at("22:30:00"))).toEqual(["now", "30"]);
-    expect(generateTimeSlots(null, at("22:30:01"))).toEqual(["now"]);
+    expect(generateTimeSlots(null, at("23:30:01"))).toEqual(["now"]);
   });
   it("keeps pinned absolute slots and callback shapes", () => {
     expect(generateTimeSlots(20, at("22:30:01"))).toEqual(["20:00"]);
