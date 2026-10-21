@@ -89,7 +89,7 @@ export function registerHandlers(bot: Bot): void {
       await handler(ctx);
     });
   bot.callbackQuery(
-    /^(go|pass|slot:.*|gready|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/,
+    /^(go|pass|slot:.*|gready(?::\d+)?|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/,
     onCallback,
   );
   bot.on("message:new_chat_members", async (ctx) => {

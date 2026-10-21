@@ -7,6 +7,7 @@ import { Bot } from "grammy";
 import type { Update } from "grammy/types";
 import type { Session } from "../src/bot/db";
 import { GROUP_COMMANDS } from "../src/bot/commands";
+import { gatheringTick } from "../src/bot/handlers/gatherings";
 import {
   registerHandlers,
   buildWeeklyView,
@@ -185,6 +186,52 @@ it("records the initiator, deletes the command and quietly pins the gathering", 
   ]);
 });
 describe("gathering callbacks", () => {
+  it("adds a ready button to the start notice and updates the pinned card on click", async () => {
+    const current = session();
+    current.availability = new Map([[1, current.created_at]]);
+    state.sessions.set("-100:20", current);
+    const instance = bot();
+    await gatheringTick(instance, current.message_id, current.created_at);
+    const notice = state.calls.find((call) => call.method === "sendMessage")!;
+    expect(notice.payload.reply_markup).toEqual({
+      inline_keyboard: [
+        [{ text: "✅ Готов играть", callback_data: "gready:20" }],
+      ],
+    });
+    expect(current.ready_players?.size ?? 0).toBe(0);
+    const update = callback(2, "gready:20");
+    update.callback_query!.message!.message_id = 99;
+    await instance.handleUpdate(update);
+    expect([...current.ready_players!]).toEqual([2]);
+    expect(state.saveResponse).toHaveBeenCalledTimes(1);
+    expect(
+      state.calls.find((call) => call.method === "editMessageText")?.payload,
+    ).toMatchObject({ chat_id: -100, message_id: 20 });
+    expect(
+      state.calls.some((call) => call.method === "answerCallbackQuery"),
+    ).toBe(true);
+  });
+  it.each(["closed", "missing", "other-chat"])(
+    "rejects a ready button for a %s gathering without changing the current card",
+    async (kind) => {
+      const current = session();
+      state.sessions.set("-100:20", current);
+      if (kind === "closed") current.is_closed = true;
+      if (kind === "other-chat") {
+        state.sessions.delete("-100:20");
+        current.chat_id = -200;
+        state.sessions.set("-200:20", current);
+      }
+      await bot().handleUpdate(
+        callback(2, kind === "missing" ? "gready:19" : "gready:20"),
+      );
+      expect(state.saveResponse).not.toHaveBeenCalled();
+      expect(state.calls.map((call) => call.method)).toEqual([
+        "answerCallbackQuery",
+      ]);
+      expect(state.calls[0]?.payload.text).toContain("Сбор завершён");
+    },
+  );
   it("finishes a persisted response when Telegram rejects an expired acknowledgement", async () => {
     const current = session();
     state.sessions.set("-100:20", current);
