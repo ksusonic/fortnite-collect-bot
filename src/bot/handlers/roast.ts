@@ -256,7 +256,9 @@ export async function maybeRoast(ctx: Context): Promise<void> {
   const citations =
     decision && decision.action !== "forget" ? decision.sources : [];
   let html = escapeHtml(text);
-  for (const ref of [...new Set(citations)].slice(0, 5)) {
+  // Proactive conversation uses the Telegram reply for context, without a bibliography.
+  // Keep citations in storage so an explicit follow-up can still ask for evidence.
+  for (const ref of [...new Set(addressed ? citations : [])].slice(0, 5)) {
     const source = sources.find((s) => s.ref === ref)!;
     const url = messageLink(
       chat,
