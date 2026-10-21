@@ -162,7 +162,7 @@ it("does not advertise or process the retired personal statistics command", asyn
   });
   expect(state.calls).toEqual([]);
 });
-it("deletes the command after saving the gathering without pinning it", async () => {
+it("records the initiator, deletes the command and quietly pins the gathering", async () => {
   await bot().handleUpdate({
     update_id: 1,
     message: {
@@ -174,10 +174,14 @@ it("deletes the command after saving the gathering without pinning it", async ()
       entities: [{ type: "bot_command", offset: 0, length: 5 }],
     },
   });
-  expect(state.sessions.has("-100:20")).toBe(true);
+  expect(state.sessions.get("-100:20")?.go_players.has(1)).toBe(true);
+  expect(
+    state.calls.find((c) => c.method === "pinChatMessage")?.payload,
+  ).toEqual({ chat_id: -100, message_id: 20, disable_notification: true });
   expect(state.calls.map((call) => call.method)).toEqual([
     "sendMessage",
     "deleteMessage",
+    "pinChatMessage",
   ]);
 });
 describe("gathering callbacks", () => {

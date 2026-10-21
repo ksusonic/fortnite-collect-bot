@@ -1,7 +1,11 @@
 import { query, chatId, getSessions, timestamp } from "./storage";
 import { valueCheckpoint } from "./work";
+import type { GatheringState } from "./services/gathering";
 export { getSessions };
 export interface Session {
+  availability?: Map<number, number>;
+  ready_players?: Set<number>;
+  gathering?: GatheringState;
   chat_id: number;
   message_id: number;
   initiator_id: number;
@@ -28,6 +32,9 @@ export function newSession(
     Partial<Session>,
 ): Session {
   return {
+    availability: new Map(),
+    ready_players: new Set(),
+    gathering: { prompts: {}, revisions: {} },
     go_players: new Map(),
     pass_players: new Map(),
     player_slots: new Map(),
@@ -101,9 +108,9 @@ export async function set_fort_title(chat: number, title: string | null) {
 }
 export async function save_session(s: Session) {
   await query(
-    `INSERT INTO sessions(message_id,chat_id,initiator_id,initiator_name,is_complete,is_expired,is_closed,style,created_at,completed_at,time_slots,tag_line,llm_header,fort_title)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(chat_id,message_id) DO UPDATE SET
-    initiator_id=excluded.initiator_id,initiator_name=excluded.initiator_name,is_complete=excluded.is_complete,is_expired=excluded.is_expired,is_closed=excluded.is_closed,style=excluded.style,created_at=excluded.created_at,completed_at=excluded.completed_at,time_slots=excluded.time_slots,tag_line=excluded.tag_line,llm_header=excluded.llm_header,fort_title=excluded.fort_title`,
+    `INSERT INTO sessions(message_id,chat_id,initiator_id,initiator_name,is_complete,is_expired,is_closed,style,created_at,completed_at,time_slots,tag_line,llm_header,fort_title,gathering)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(chat_id,message_id) DO UPDATE SET
+    initiator_id=excluded.initiator_id,initiator_name=excluded.initiator_name,is_complete=excluded.is_complete,is_expired=excluded.is_expired,is_closed=excluded.is_closed,style=excluded.style,created_at=excluded.created_at,completed_at=excluded.completed_at,time_slots=excluded.time_slots,tag_line=excluded.tag_line,llm_header=excluded.llm_header,fort_title=excluded.fort_title,gathering=excluded.gathering`,
     [
       s.message_id,
       s.chat_id,
@@ -119,6 +126,7 @@ export async function save_session(s: Session) {
       JSON.stringify(Object.fromEntries(s.tagged_users)),
       s.llm_header,
       s.fort_title,
+      JSON.stringify(s.gathering ?? { prompts: {}, revisions: {} }),
     ],
   );
 }
@@ -132,14 +140,17 @@ export async function save_response(
     is_bot?: boolean;
     became_complete?: boolean;
     chat_id?: number;
+    available_at?: number | null;
+    ready?: boolean;
   } = {},
 ) {
   const chat = chatId(options.chat_id);
   const time = await now("response.time");
   await query(
-    `INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at,time_slot,is_bot,joined_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at,time_slot,is_bot,joined_at,available_at,ready_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     ON CONFLICT(chat_id,message_id,user_id) DO UPDATE SET user_name=excluded.user_name,response=excluded.response,responded_at=excluded.responded_at,time_slot=excluded.time_slot,is_bot=excluded.is_bot,
-    joined_at=CASE WHEN excluded.response='pass' THEN NULL WHEN responses.response='go' THEN responses.joined_at ELSE excluded.joined_at END`,
+    joined_at=CASE WHEN excluded.response='pass' THEN NULL WHEN responses.response='go' THEN responses.joined_at ELSE excluded.joined_at END,
+    available_at=excluded.available_at,ready_at=excluded.ready_at`,
     [
       chat,
       mid,
@@ -150,6 +161,8 @@ export async function save_response(
       options.time_slot ?? null,
       options.is_bot ?? false,
       response === "go" ? timestamp(time) : null,
+      timestamp(options.available_at ?? null),
+      options.ready ? timestamp(time) : null,
     ],
   );
   if (options.became_complete)
@@ -190,14 +203,18 @@ export async function load_session(
     ),
     llm_header: row.llm_header,
     fort_title: row.fort_title,
+    gathering: row.gathering ?? { prompts: {}, revisions: {} },
   });
   for (const r of await query(
-    "SELECT user_id,user_name,response,time_slot FROM responses WHERE chat_id=$1 AND message_id=$2 ORDER BY CASE WHEN joined_at IS NULL THEN 1 ELSE 0 END,joined_at,responded_at",
+    "SELECT user_id,user_name,response,time_slot,available_at,ready_at FROM responses WHERE chat_id=$1 AND message_id=$2 ORDER BY CASE WHEN joined_at IS NULL THEN 1 ELSE 0 END,joined_at,responded_at,user_id",
     [cid, mid],
   )) {
     if (r.response === "go") {
       session.go_players.set(r.user_id, r.user_name);
       if (r.time_slot) session.player_slots.set(r.user_id, r.time_slot);
+      if (r.available_at != null)
+        session.availability!.set(r.user_id, r.available_at);
+      if (r.ready_at != null) session.ready_players!.add(r.user_id);
     } else session.pass_players.set(r.user_id, r.user_name);
   }
   return session;

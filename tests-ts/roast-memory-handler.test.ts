@@ -13,7 +13,10 @@ const state = vi.hoisted(() => ({
   store: vi.fn(),
   confirm: vi.fn(),
 }));
-vi.mock("../src/bot/storage", () => ({ getRoastState: () => ({}) }));
+vi.mock("../src/bot/storage", () => ({
+  getRoastState: () => ({}),
+  getSessions: () => new Map(),
+}));
 vi.mock("../src/bot/services/chat-access", () => ({
   isChatApproved: async () => true,
 }));

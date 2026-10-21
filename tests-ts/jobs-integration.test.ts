@@ -59,55 +59,72 @@ const url = process.env.TEST_DATABASE_URL;
         await db.save_response(1, player, String(player), "go");
     });
   }
-  it("enqueues only timed-out sessions, then deduplicates unfinished work and uses new completed identities", async () => {
+  it("keeps old gatherings alive during the evening and archives after midnight", async () => {
     await session(-10, 3601, 1);
     await session(-11, 3601, 2);
     await session(-12, 10801, 2);
-    await session(-13, 60, 0);
+    await runJob("maintenance");
+    await invocation(null, async () => {
+      expect(
+        (await raw("SELECT id FROM work_items WHERE kind='gathering'")).rows,
+      ).toHaveLength(0);
+    });
+    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T21:00:00Z"));
     await runJob("maintenance");
     await invocation(null, async () => {
       expect(
         (
           await raw(
-            "SELECT chat_id FROM work_items WHERE kind='expiry' ORDER BY chat_id",
+            "SELECT chat_id FROM work_items WHERE kind='gathering' ORDER BY chat_id",
           )
-        ).rows.map((row) => row.chat_id),
-      ).toEqual([-12, -10]);
+        ).rows.map((r) => r.chat_id),
+      ).toEqual([-12, -11, -10]);
+    });
+    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T21:01:00Z"));
+    await runJob("maintenance");
+    await invocation(null, async () => {
+      expect(
+        (await raw("SELECT id FROM work_items WHERE kind='gathering'")).rows,
+      ).toHaveLength(3);
+    });
+  });
+  it("queues a start reminder only for two or more main players, once", async () => {
+    await session(-10, 3600, 1);
+    await session(-11, 3600, 2);
+    await session(-12, 3600, 5);
+    await invocation(null, () =>
+      raw(
+        "UPDATE responses SET available_at=to_timestamp($1) WHERE user_id<=2",
+        [Date.now() / 1000],
+      ),
+    );
+    // Reserve readiness must not make an otherwise future roster due.
+    await invocation(null, () =>
+      raw(
+        "UPDATE responses SET available_at=to_timestamp($1 + CASE WHEN user_id=5 THEN -3600 ELSE 3600 END) WHERE chat_id=-12",
+        [Date.now() / 1000],
+      ),
+    );
+    await runJob("maintenance");
+    await invocation(null, async () => {
+      expect(
+        (await raw("SELECT chat_id FROM work_items WHERE kind='gathering'"))
+          .rows,
+      ).toEqual([{ chat_id: -11 }]);
+      await raw(
+        "UPDATE work_items SET status='complete' WHERE kind='gathering'",
+      );
+      await raw(
+        `UPDATE sessions SET gathering=jsonb_set(gathering,'{notified_at}',to_jsonb($1::double precision)) WHERE chat_id=-11`,
+        [Date.now() / 1000],
+      );
     });
     vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T14:01:00Z"));
     await runJob("maintenance");
     await invocation(null, async () => {
       expect(
-        (
-          await raw(
-            "SELECT count(*)::int AS count FROM work_items WHERE kind='expiry'",
-          )
-        ).rows[0].count,
-      ).toBe(2);
-      await raw("UPDATE work_items SET status='complete' WHERE chat_id=-10");
-    });
-    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T14:02:00Z"));
-    await runJob("maintenance");
-    await invocation(null, async () => {
-      const work = (
-        await raw(
-          "SELECT id,status FROM work_items WHERE kind='expiry' AND chat_id=-10 ORDER BY id",
-        )
-      ).rows;
-      expect(work).toHaveLength(2);
-      expect(work.map((row) => row.status)).toEqual(["complete", "pending"]);
-    });
-  });
-  it("catches a missed 23:00 deadline after midnight despite traction timeout", async () => {
-    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T20:50:00Z"));
-    await session(-10, 0, 2);
-    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T21:10:00Z"));
-    await runJob("maintenance");
-    await invocation(null, async () => {
-      expect(
-        (await raw("SELECT payload FROM work_items WHERE kind='expiry'"))
-          .rows[0].payload.past_deadline,
-      ).toBe(true);
+        (await raw("SELECT id FROM work_items WHERE kind='gathering'")).rows,
+      ).toHaveLength(1);
     });
   });
   it("recovered Friday deadline scheduler cannot expire a new Sunday session", async () => {

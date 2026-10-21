@@ -1,9 +1,9 @@
 /** Release requirements; CI checks this contract against the migrated schema. */
 export const schemaContract = {
   sessions:
-    "message_id chat_id initiator_id initiator_name is_complete is_expired is_closed style created_at completed_at time_slots tag_line llm_header fort_title",
+    "message_id chat_id initiator_id initiator_name is_complete is_expired is_closed style created_at completed_at time_slots tag_line llm_header fort_title gathering",
   responses:
-    "chat_id message_id user_id user_name response responded_at joined_at time_slot is_bot",
+    "chat_id message_id user_id user_name response responded_at joined_at time_slot is_bot available_at ready_at",
   chat_features: "chat_id feature enabled value",
   afk_mutes: "chat_id user_id muted_until",
   chat_fort_titles: "chat_id title",

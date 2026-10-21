@@ -16,7 +16,12 @@ import {
   isGroup,
   reply,
 } from "./handlers/common";
-import { closeSession, cmdFort, onCallback } from "./handlers/gatherings";
+import {
+  closeSession,
+  cmdFort,
+  onCallback,
+  maybeGatheringMessage,
+} from "./handlers/gatherings";
 import { cmdAfk } from "./handlers/settings";
 import { cmdLinkepicfor, runTeamstats } from "./handlers/stats";
 import { maybeRoast } from "./handlers/roast";
@@ -83,7 +88,10 @@ export function registerHandlers(bot: Bot): void {
       }
       await handler(ctx);
     });
-  bot.callbackQuery(/^(go|pass|slot:.*)$/, onCallback);
+  bot.callbackQuery(
+    /^(go|pass|slot:.*|gready|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/,
+    onCallback,
+  );
   bot.on("message:new_chat_members", async (ctx) => {
     for (const member of ctx.message.new_chat_members) {
       if (member.is_bot && member.id !== ctx.me.id) continue;
@@ -98,5 +106,7 @@ export function registerHandlers(bot: Bot): void {
       );
     }
   });
-  bot.on("message:text", maybeRoast);
+  bot.on("message:text", async (ctx) => {
+    if (!(await maybeGatheringMessage(ctx))) await maybeRoast(ctx);
+  });
 }

@@ -90,21 +90,21 @@ describe("durable job orchestration", () => {
       expect.anything(),
     );
   });
-  it("enqueues only query-selected due expirations, using fresh tick identities", async () => {
+  it("enqueues only query-selected due gatherings, using fresh tick identities", async () => {
     const now = vi
       .spyOn(Date, "now")
       .mockReturnValue(Date.parse("2026-10-02T20:00:00Z"));
     mocks.due.mockReturnValue([{ chat_id: -100, message_id: 9 }]);
     await runJob("expiry");
     expect(mocks.enqueue).toHaveBeenCalledWith(
-      expect.stringContaining("expiry:-100:9:"),
-      "expiry",
+      expect.stringContaining("gathering:-100:9:"),
+      "gathering",
       -100,
-      { now: now() / 1000, past_deadline: true },
+      { now: now() / 1000, message_id: 9 },
     );
     expect(mocks.raw).toHaveBeenCalledWith(
       expect.stringContaining("AND NOT EXISTS"),
-      [now() / 1000, true, 10800, 3600],
+      [now() / 1000],
     );
     expect(mocks.recover).toHaveBeenCalledOnce();
     vi.restoreAllMocks();
@@ -178,7 +178,7 @@ describe("durable job orchestration", () => {
     await runJob("maintenance");
     expect(mocks.raw).toHaveBeenCalledWith(
       expect.stringContaining("SELECT s.chat_id"),
-      [Date.now() / 1000, false, 10800, 3600],
+      [Date.now() / 1000],
     );
     vi.restoreAllMocks();
     expect(mocks.raw).toHaveBeenCalledWith(
