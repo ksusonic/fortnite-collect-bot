@@ -340,9 +340,12 @@ export async function onCallback(ctx: Context): Promise<void> {
   const raw = callback.data ?? "",
     chat = callback.message.chat.id;
   const confirmation = /^(gconfirm|gdismiss):(-?\d+)$/.exec(raw);
+  const readyNotice = /^gready:(\d+)$/.exec(raw);
   const mid = confirmation
     ? Number(confirmation[2])
-    : callback.message.message_id;
+    : readyNotice
+      ? Number(readyNotice[1])
+      : callback.message.message_id;
   const session =
     db.getSessions().get(key(chat, mid)) ?? (await db.load_session(mid, chat));
   const now = await valueCheckpoint("callback-time-v2", nowSeconds);
@@ -398,7 +401,12 @@ export async function onCallback(ctx: Context): Promise<void> {
   }
   let decision: GatheringDecision;
   if (raw === "pass") decision = { action: "pass" };
-  else if (raw === "gready" || raw === "slot:now" || raw === "go")
+  else if (
+    readyNotice ||
+    raw === "gready" ||
+    raw === "slot:now" ||
+    raw === "go"
+  )
     decision = { action: "ready" };
   else if (/^gat:\d+(?:\.\d+)?$/.test(raw))
     decision = { action: "set_time", at: Number(raw.slice(4)) };
@@ -600,9 +608,19 @@ export async function gatheringTick(bot: Bot, mid: number, now?: number) {
     .join("\n");
   await bot.api.sendMessage(
     session.chat_id,
-    `🎮 Можно начинать\n${roster}\nОтметься в карточке, когда будешь готов играть.`,
+    `🎮 Можно начинать\n${roster}\nНажми «✅ Готов играть», когда будешь готов.`,
     {
       reply_parameters: { message_id: session.message_id },
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "✅ Готов играть",
+              callback_data: `gready:${session.message_id}`,
+            },
+          ],
+        ],
+      },
     },
   );
   gatheringState(session).notified_at = now;
