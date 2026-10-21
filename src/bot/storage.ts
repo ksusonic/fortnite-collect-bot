@@ -20,6 +20,7 @@ export interface RoastState {
   last_roast: number | null;
 }
 export interface Checkpointer {
+  readonly conversationVersion?: number;
   databaseStep<T>(signature: string, factory: () => Promise<T>): Promise<T>;
   valueStep<T>(name: string, factory: () => T): Promise<T>;
   externalStep<T>(name: string, factory: () => Promise<T>): Promise<T>;

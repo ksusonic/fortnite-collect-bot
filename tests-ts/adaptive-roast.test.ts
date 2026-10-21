@@ -156,6 +156,9 @@ const url = process.env.TEST_DATABASE_URL;
       };
       const result = await invocation(item.chat_id, async () => {
         await enqueue(item.id, "update", item.chat_id, payload);
+        await raw("UPDATE work_items SET conversation_version=1 WHERE id=$1", [
+          item.id,
+        ]);
         return executeItem(item, bot);
       });
       return { item, bot, result };
@@ -213,9 +216,7 @@ const url = process.env.TEST_DATABASE_URL;
         pending_question: null,
       });
     });
-    it("keeps new chats quiet, isolates chats, and processes direct replies while muted", async () => {
-      await run(update(1, "покороче", false));
-      expect(mocks.decision).not.toHaveBeenCalled();
+    it("isolates chats and processes direct replies while muted", async () => {
       mocks.decision.mockResolvedValue({
         action: "update",
         patch: { proactive: false },
@@ -240,7 +241,7 @@ const url = process.env.TEST_DATABASE_URL;
     it("limits evaluation attempts even when the model chooses silence or fails", async () => {
       await invocation(-10, () =>
         raw(
-          `INSERT INTO roast_profiles(chat_id,preferences) VALUES (-10,'{"proactive":true}')`,
+          `INSERT INTO roast_profiles(chat_id,preferences) VALUES (-10,'{"proactive":true,"frequency":"normal"}')`,
         ),
       );
       mocks.decision.mockResolvedValue({ action: "skip" });

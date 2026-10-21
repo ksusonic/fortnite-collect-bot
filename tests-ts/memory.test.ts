@@ -3,6 +3,7 @@ import {
   confirmMemoryTurn,
   searchMemories,
   storeMemoryTurn,
+  deleteMemoryScope,
 } from "../src/bot/memory";
 
 const eventId = "3c90c3cc-0d44-4b50-8888-8dd25736052a";
@@ -187,4 +188,41 @@ it("leaves a still-running event unconfirmed after bounded checks", async () => 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("isolates new Mem0 generations and verifies deletion with a scoped read", async () => {
+  vi.stubEnv("MEM0_API_KEY", "test-key");
+  request.mockResolvedValue(Response.json({ results: [] }));
+  await searchMemories(-100, 7, "query", 2);
+  expect(JSON.parse(request.mock.calls[0][1].body).filters).toEqual({
+    user_id: "telegram:-100:user:7:epoch:2",
+  });
+  request.mockClear();
+  request.mockImplementation(async (_url: string, init: RequestInit) =>
+    Response.json(
+      init.method === "DELETE" ? { message: "deleted" } : { results: [] },
+    ),
+  );
+  expect(await deleteMemoryScope(-100, 7, 2)).toBe(true);
+  expect(request.mock.calls[0][0]).toContain(
+    "user_id=telegram%3A-100%3Auser%3A7%3Aepoch%3A2",
+  );
+  expect(request.mock.calls[0][1].method).toBe("DELETE");
+  expect(JSON.parse(request.mock.calls[1][1].body).filters).toEqual({
+    user_id: "telegram:-100:user:7:epoch:2",
+  });
+});
+it("does not claim external deletion when unavailable or memories still exist", async () => {
+  vi.stubEnv("MEM0_API_KEY", "");
+  expect(await deleteMemoryScope(-100, 7, 0)).toBe(false);
+  expect(request).not.toHaveBeenCalled();
+  vi.stubEnv("MEM0_API_KEY", "test-key");
+  request.mockImplementation(async (_url: string, init: RequestInit) =>
+    Response.json(
+      init.method === "DELETE"
+        ? { message: "accepted" }
+        : { results: [{ memory: "still present" }] },
+    ),
+  );
+  expect(await deleteMemoryScope(-100, 7, 0)).toBe(false);
 });

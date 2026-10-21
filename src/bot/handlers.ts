@@ -1,4 +1,8 @@
 import {
+  archiveMessage,
+  usesConversation,
+} from "./services/conversation-store";
+import {
   approveChat,
   isChatApproved,
   isGeneralAdmin,
@@ -52,6 +56,7 @@ export function registerHandlers(bot: Bot): void {
   bot.use(async (ctx, next) => {
     if (!isGroup(ctx) || !ctx.chat || !(await isChatApproved(ctx.chat.id)))
       return;
+    if (usesConversation()) await archiveMessage(ctx);
     await next();
   });
 
@@ -106,7 +111,7 @@ export function registerHandlers(bot: Bot): void {
       );
     }
   });
-  bot.on("message:text", async (ctx) => {
+  bot.on(["message:text", "message:caption"], async (ctx) => {
     if (!(await maybeGatheringMessage(ctx))) await maybeRoast(ctx);
   });
 }

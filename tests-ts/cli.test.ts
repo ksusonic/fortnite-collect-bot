@@ -93,7 +93,7 @@ describe("explicit maintenance", () => {
       {
         secret_token: "test-webhook-secret",
         max_connections: 1,
-        allowed_updates: ["message", "callback_query"],
+        allowed_updates: ["message", "edited_message", "callback_query"],
         drop_pending_updates: false,
       },
     );

@@ -5,7 +5,7 @@ import { setupBotCommands } from "./commands";
 import { raw } from "./storage";
 import { httpSignal, scopedFetch, withHttpClient } from "./transport";
 
-const allowedUpdates = ["message", "callback_query"] as const;
+const allowedUpdates = ["message", "edited_message", "callback_query"] as const;
 
 function webhookSettings(argument: string) {
   if (!argument) throw new Error("production URL required");

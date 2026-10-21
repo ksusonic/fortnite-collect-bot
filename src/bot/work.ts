@@ -24,7 +24,10 @@ interface Step {
 }
 export class Work implements Checkpointer {
   private counters = new Map<string, number>();
-  constructor(readonly id: string) {}
+  constructor(
+    readonly id: string,
+    readonly conversationVersion = 2,
+  ) {}
   private next(category: string) {
     const index = this.counters.get(category) ?? 0;
     this.counters.set(category, index + 1);

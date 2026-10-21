@@ -149,7 +149,7 @@ export function buildTurns(history: HistoryEntry[]): Turn[] {
   flush();
   return turns;
 }
-async function complete(
+export async function complete(
   messages: Turn[],
   timeoutSeconds: number,
   attempts = 1,

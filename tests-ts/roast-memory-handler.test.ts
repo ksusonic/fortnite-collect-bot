@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   confirm: vi.fn(),
 }));
 vi.mock("../src/bot/storage", () => ({
+  maybeCurrent: () => undefined,
   getRoastState: () => ({}),
   getSessions: () => new Map(),
 }));

@@ -3,8 +3,8 @@ import * as Sentry from "@sentry/nextjs";
 import { httpSignal, scopedFetch } from "./transport";
 
 // Both IDs are server-derived: a user's memories never cross group boundaries.
-const identity = (chat: number, user: number) =>
-  `telegram:${chat}:user:${user}`;
+const identity = (chat: number, user: number, epoch = 0) =>
+  `telegram:${chat}:user:${user}${epoch ? `:epoch:${epoch}` : ""}`;
 
 class Mem0HttpError extends Error {
   constructor(readonly status: number) {
@@ -12,7 +12,7 @@ class Mem0HttpError extends Error {
   }
 }
 
-type MemoryOperation = "search" | "add" | "confirm";
+type MemoryOperation = "search" | "add" | "confirm" | "delete";
 export type MemorySubmission = { eventId: string } | null;
 export type MemoryOutcome = "saved" | "empty" | "failed" | "pending";
 
@@ -69,13 +69,14 @@ export async function searchMemories(
   chat: number,
   user: number,
   query: string,
+  epoch = 0,
 ): Promise<string[]> {
   try {
     Sentry.logger.info("Mem0 operation started", { operation: "search" });
     const memory = await client("search");
     if (!memory) return [];
     const result = await memory.search(query.slice(0, 4096), {
-      filters: { user_id: identity(chat, user) },
+      filters: { user_id: identity(chat, user, epoch) },
       topK: 5,
     });
     return result.results
@@ -94,6 +95,7 @@ export async function storeMemoryTurn(
   message: string,
   reply: string,
   messageId: number,
+  epoch = 0,
 ): Promise<MemorySubmission> {
   try {
     Sentry.logger.info("Mem0 operation started", { operation: "add" });
@@ -106,7 +108,7 @@ export async function storeMemoryTurn(
         { role: "assistant", content: reply.slice(0, 4096) },
       ],
       {
-        userId: identity(chat, user),
+        userId: identity(chat, user, epoch),
         metadata: { source: "telegram", message_id: messageId },
         customInstructions:
           "Remember only explicit user facts and preferences useful for future conversation. " +
@@ -181,4 +183,26 @@ export async function confirmMemoryTurn(
   }
   Sentry.logger.warn("Mem0 write unconfirmed", { operation: "confirm" });
   return "pending";
+}
+
+/** Deletion is only complete when a bounded read confirms the namespace is empty. */
+export async function deleteMemoryScope(
+  chat: number,
+  user: number,
+  epoch: number,
+): Promise<boolean> {
+  try {
+    const memory = await client("delete");
+    if (!memory) return false;
+    await memory.deleteAll({ userId: identity(chat, user, epoch) });
+    const remaining = await memory.getAll({
+      filters: { user_id: identity(chat, user, epoch) },
+      page: 1,
+      pageSize: 1,
+    });
+    return Array.isArray(remaining.results) && remaining.results.length === 0;
+  } catch (error) {
+    logMemoryError("delete", error);
+    return false;
+  }
 }
