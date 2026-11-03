@@ -625,8 +625,8 @@ const url = process.env.TEST_DATABASE_URL;
             .length,
         ).toBe(2);
         await raw(
-          "UPDATE conversation_messages SET sent_at=now()-interval '31 days' WHERE chat_id=$1",
-          [chat],
+          "UPDATE conversation_messages SET sent_at=to_timestamp($2)-interval '31 days' WHERE chat_id=$1",
+          [chat, now],
         );
         expect(await recentSources(chat, 0, now)).toEqual([]);
         await cleanupConversations();
