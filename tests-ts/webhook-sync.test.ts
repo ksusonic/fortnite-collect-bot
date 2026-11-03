@@ -3,7 +3,7 @@ import type { Bot } from "grammy";
 
 const mock = vi.hoisted(() => ({ raw: vi.fn() }));
 vi.mock("../src/bot/storage", () => ({ raw: mock.raw }));
-import { ensureStartupWebhook, syncReleaseWebhook } from "../src/bot/webhook";
+import { syncReleaseWebhook } from "../src/bot/webhook";
 
 const url = "https://fortnite.example/api/telegram/webhook";
 
@@ -43,9 +43,7 @@ it("sets and verifies the production webhook before recording the release", asyn
   mock.raw.mockResolvedValue({ rows: [{ value: marker }] });
   await syncReleaseWebhook(instance as unknown as Bot);
   expect(instance.api.setWebhook).toHaveBeenCalledTimes(1);
-  instance.api.getWebhookInfo.mockResolvedValueOnce({ url: "" });
-  await syncReleaseWebhook(instance as unknown as Bot);
-  expect(instance.api.setWebhook).toHaveBeenCalledTimes(2);
+  expect(instance.api.getWebhookInfo).toHaveBeenCalledTimes(1);
 });
 
 it("does not record a release when Telegram readback disagrees", async () => {
@@ -59,14 +57,30 @@ it("does not record a release when Telegram readback disagrees", async () => {
   );
 });
 
-it("checks the webhook at startup without using the database", async () => {
+it("retries a failed release on the next tick", async () => {
   const instance = bot();
-  instance.api.getWebhookInfo.mockResolvedValue({
-    url,
-    max_connections: 1,
-    allowed_updates: ["message", "edited_message", "callback_query"],
-  });
-  await ensureStartupWebhook(instance as unknown as Bot);
-  expect(instance.api.setWebhook).not.toHaveBeenCalled();
-  expect(mock.raw).not.toHaveBeenCalled();
+  instance.api.setWebhook.mockRejectedValueOnce(
+    new Error("Telegram unavailable"),
+  );
+  await expect(syncReleaseWebhook(instance as unknown as Bot)).rejects.toThrow(
+    "Telegram unavailable",
+  );
+  expect(mock.raw.mock.calls.some(([sql]) => sql.startsWith("INSERT"))).toBe(
+    false,
+  );
+  await syncReleaseWebhook(instance as unknown as Bot);
+  expect(instance.api.setWebhook).toHaveBeenCalledTimes(2);
+  expect(mock.raw.mock.calls.some(([sql]) => sql.startsWith("INSERT"))).toBe(
+    true,
+  );
+});
+
+it("reconciles again when webhook settings change", async () => {
+  const instance = bot();
+  await syncReleaseWebhook(instance as unknown as Bot);
+  const marker = JSON.parse(mock.raw.mock.calls[1]![1][0]);
+  mock.raw.mockResolvedValue({ rows: [{ value: marker }] });
+  vi.stubEnv("TELEGRAM_WEBHOOK_SECRET", "rotated-secret");
+  await syncReleaseWebhook(instance as unknown as Bot);
+  expect(instance.api.setWebhook).toHaveBeenCalledTimes(2);
 });
