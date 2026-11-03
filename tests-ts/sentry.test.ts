@@ -66,6 +66,30 @@ describe("Sentry privacy", () => {
     expect(diagnosticCode(circular)).toBeUndefined();
     expect(diagnosticCode(new Error("private payload"))).toBeUndefined();
   });
+  it("retains infrastructure codes from original exceptions before scrubbing", () => {
+    for (const code of ["53300", "57P01", "08006", "08P01", "XX000"]) {
+      const error = Object.assign(new Error("private SQL and credentials"), {
+        code,
+      });
+      const event = privacyOptions.beforeSend(
+        {
+          type: undefined,
+          tags: { component: "http" },
+          exception: { values: [{ type: "error", value: error.message }] },
+        },
+        { originalException: error },
+      );
+      expect(event.tags).toEqual({ component: "http", error_code: code });
+      expect(event.exception?.values?.[0].value).toBe("error");
+      expect(JSON.stringify(event)).not.toContain("private SQL");
+    }
+    expect(
+      privacyOptions.beforeSend(
+        { type: undefined },
+        { originalException: { code: "PRIVATE" } },
+      ).tags,
+    ).toEqual({});
+  });
   it("keeps the selected project and disables private data collection", () => {
     expect(new URL(SENTRY_DSN).pathname).toBe("/4512190824513616");
     expect(privacyOptions.sendDefaultPii).toBe(false);

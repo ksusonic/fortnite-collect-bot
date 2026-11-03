@@ -1,4 +1,4 @@
-import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
+import type { Breadcrumb, ErrorEvent, EventHint } from "@sentry/nextjs";
 import { schemaContract } from "./bot/schema-contract";
 type SentryOptions = NonNullable<
   Parameters<typeof import("@sentry/nextjs").init>[0]
@@ -28,6 +28,23 @@ const diagnosticCodes = new Set([
   "UND_ERR_HEADERS_TIMEOUT",
   "UND_ERR_BODY_TIMEOUT",
   "UND_ERR_SOCKET",
+  "08000", // connection exception
+  "08001", // unable to establish connection
+  "08003", // connection does not exist
+  "08004", // connection rejected
+  "08006", // connection failure
+  "08007", // transaction resolution unknown
+  "08P01", // protocol violation
+  "53000", // insufficient resources
+  "53100", // disk full
+  "53200", // out of memory
+  "53300", // too many connections
+  "53400", // configuration limit exceeded
+  "57P01", // administrative shutdown
+  "57P02", // crash shutdown
+  "57P03", // database not ready
+  "57P05", // idle session timeout
+  "XX000", // internal database / pooler error
   "57014", // query cancellation / statement timeout
   "55P03", // lock unavailable
   "40P01", // deadlock
@@ -234,7 +251,11 @@ export const privacyOptions = {
     urlQueryParams: false,
     stackFrameVariables: false,
   },
-  beforeSend: sanitizeEvent,
+  beforeSend: (event: ErrorEvent, hint: EventHint) =>
+    sanitizeEvent({
+      ...event,
+      tags: { ...event.tags, ...diagnosticTags(hint.originalException) },
+    }),
   beforeSendSpan: sanitizeSpan,
   beforeBreadcrumb: sanitizeBreadcrumb,
 };

@@ -32,22 +32,16 @@ function webhookSettings(argument: string) {
   };
 }
 
-async function ensureWebhook(bot: Bot, argument: string, force = false) {
+async function ensureWebhook(bot: Bot, argument: string) {
   const { url, options } = webhookSettings(argument);
   const matches = (info: Awaited<ReturnType<Bot["api"]["getWebhookInfo"]>>) =>
     info.url === url &&
     info.max_connections === options.max_connections &&
     allowedUpdates.every((update) => info.allowed_updates?.includes(update)) &&
     info.allowed_updates?.length === allowedUpdates.length;
-  if (!force && matches(await bot.api.getWebhookInfo())) return;
   await bot.api.setWebhook(url, options);
   if (!matches(await bot.api.getWebhookInfo()))
     throw new Error("Telegram webhook verification failed");
-}
-
-/** Called at production Node instance startup; no database or job side effects. */
-export function ensureStartupWebhook(bot: Bot): Promise<void> {
-  return ensureWebhook(bot, process.env.PUBLIC_BASE_URL ?? "");
 }
 
 /** The first authenticated maintenance tick reconciles the stable webhook. */
@@ -59,12 +53,8 @@ export async function syncReleaseWebhook(bot: Bot): Promise<void> {
       "SELECT value FROM service_state WHERE key='telegram_webhook_release'",
     )
   ).rows[0]?.value;
-  await ensureWebhook(
-    bot,
-    process.env.PUBLIC_BASE_URL ?? "",
-    prior?.revision !== revision,
-  );
   if (prior?.revision === revision) return;
+  await ensureWebhook(bot, process.env.PUBLIC_BASE_URL ?? "");
   await raw(
     "INSERT INTO service_state(key,value) VALUES ('telegram_webhook_release',$1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     [JSON.stringify({ revision })],
