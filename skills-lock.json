@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "telegram-mini-app-skill": {
+      "source": "Rithprohos/telegram-mini-app-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "0c0d985c59a1f9685d86a23c1bf9f56f52c59ab6d6fa5b18dc54a0b8d2a3c453"
+    }
+  }
+}
