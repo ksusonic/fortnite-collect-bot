@@ -8,7 +8,6 @@ import {
   clock,
   eveningEnd,
   gatheringState,
-  messageLink,
   mentionsOtherDay,
   parseGatheringTime,
   rosterTimes,
@@ -179,22 +178,7 @@ export async function cmdFort(ctx: Context): Promise<void> {
       }
       await renderGathering({ api: ctx.api }, active, now);
     }
-    await ctx.reply("🎮 Текущий сбор", {
-      reply_parameters: { message_id: active.message_id },
-      reply_markup:
-        ctx.chat.type === "supergroup"
-          ? {
-              inline_keyboard: [
-                [
-                  {
-                    text: "Открыть сбор",
-                    url: messageLink(ctx.chat.id, active.message_id),
-                  },
-                ],
-              ],
-            }
-          : undefined,
-    });
+    await telegramResult(() => ctx.react("👍"));
     return;
   }
   const last = await db.get_fort_cooldown(ctx.chat.id, ctx.from.id);
@@ -328,8 +312,7 @@ async function feedback(ctx: Context, error: string | null) {
     await reply(ctx, error);
     return;
   }
-  const reacted = await telegramResult(() => ctx.react("👍"));
-  if (!reacted) await reply(ctx, "✅ Обновил твой статус в карточке сбора.");
+  await telegramResult(() => ctx.react("👍"));
 }
 export async function onCallback(ctx: Context): Promise<void> {
   const callback = ctx.callbackQuery;
@@ -583,44 +566,38 @@ export async function gatheringTick(bot: Bot, mid: number, now?: number) {
   }
   const due = await valueCheckpoint("gathering-reminder-v2", () => {
     const times = rosterTimes(session);
-    return (
-      !gatheringState(session).notified_at &&
-      times.squad.length >= 2 &&
-      times.start !== undefined &&
-      times.start <= now &&
-      times.ready !== times.squad.length
-    );
+    return !gatheringState(session).notified_at && times.ready >= 2;
   });
   if (!due) return;
-  const roster = [...session.go_players]
-    .slice(0, 4)
-    .map(([id, name]) => {
-      const at = session.availability?.get(id);
-      const status = session.ready_players?.has(id)
-        ? "⚡ готов играть"
-        : at === undefined
-          ? "время не указано"
-          : at > now!
-            ? `подключится с ${clock(at)}`
-            : "время наступило, ждём подтверждения";
-      return `<a href="tg://user?id=${id}">${messages.escapeHtml(name)}</a> — ${status}`;
-    })
+  const squad = [...session.go_players].slice(0, 4);
+  const ready = squad.filter(([id]) => session.ready_players?.has(id));
+  const roster = ready
+    .map(
+      ([id, name]) =>
+        `<a href="tg://user?id=${id}">${messages.escapeHtml(name)}</a>`,
+    )
     .join("\n");
+  const waiting = ready.length < squad.length;
+  const title = ready.length === 2 ? "Двое готовы" : `Готовы ${ready.length}`;
   await bot.api.sendMessage(
     session.chat_id,
-    `🎮 Можно начинать\n${roster}\nНажми «✅ Готов играть», когда будешь готов.`,
+    `🎮 ${title} — можно залетать\n${roster}${waiting ? "\nОстальные — жмите «✅ Готов играть», когда подключитесь." : ""}`,
     {
       reply_parameters: { message_id: session.message_id },
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "✅ Готов играть",
-              callback_data: `gready:${session.message_id}`,
+      ...(waiting
+        ? {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: "✅ Готов играть",
+                    callback_data: `gready:${session.message_id}`,
+                  },
+                ],
+              ],
             },
-          ],
-        ],
-      },
+          }
+        : {}),
     },
   );
   gatheringState(session).notified_at = now;

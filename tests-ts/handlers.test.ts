@@ -187,9 +187,34 @@ it("records the initiator, deletes the command and quietly pins the gathering", 
   ]);
 });
 describe("gathering callbacks", () => {
+  it.each([{ ready: [] }, { ready: [1] }, { ready: [1, 5] }])(
+    "does not announce fewer than two ready main players: %j",
+    async ({ ready }) => {
+      const current = session();
+      current.ready_players = new Set(ready);
+      state.sessions.set("-100:20", current);
+      await gatheringTick(bot(), current.message_id, current.created_at);
+      expect(state.calls.some((call) => call.method === "sendMessage")).toBe(
+        false,
+      );
+    },
+  );
+  it("announces all four ready players once without a ready button", async () => {
+    const current = session();
+    current.ready_players = new Set([1, 2, 3, 4]);
+    state.sessions.set("-100:20", current);
+    const instance = bot();
+    await gatheringTick(instance, current.message_id, current.created_at);
+    await gatheringTick(instance, current.message_id, current.created_at);
+    const notices = state.calls.filter((call) => call.method === "sendMessage");
+    expect(notices).toHaveLength(1);
+    expect(notices[0].payload.text).toContain("Готовы 4 — можно залетать");
+    expect(notices[0].payload.reply_markup).toBeUndefined();
+  });
   it("adds a ready button to the start notice and updates the pinned card on click", async () => {
     const current = session();
     current.availability = new Map([[1, current.created_at]]);
+    current.ready_players = new Set([1, 3]);
     state.sessions.set("-100:20", current);
     const instance = bot();
     await gatheringTick(instance, current.message_id, current.created_at);
@@ -199,11 +224,11 @@ describe("gathering callbacks", () => {
         [{ text: "✅ Готов играть", callback_data: "gready:20" }],
       ],
     });
-    expect(current.ready_players?.size ?? 0).toBe(0);
+    expect(current.ready_players?.size ?? 0).toBe(2);
     const update = callback(2, "gready:20");
     update.callback_query!.message!.message_id = 99;
     await instance.handleUpdate(update);
-    expect([...current.ready_players!]).toEqual([2]);
+    expect([...current.ready_players!]).toEqual([1, 3, 2]);
     expect(state.saveResponse).toHaveBeenCalledTimes(1);
     expect(
       state.calls.find((call) => call.method === "editMessageText")?.payload,

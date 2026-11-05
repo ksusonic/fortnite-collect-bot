@@ -203,3 +203,18 @@ it("rejects impossible dates and remembering forwarded claims", () => {
     ),
   ).toBeNull();
 });
+
+it("accepts explicit recipients and keeps legacy intent results readable", () => {
+  const base = {
+    addressed: false,
+    operation: "reply",
+    search: { queries: [] },
+  };
+  expect(parseIntent(base, sources, 7)).toEqual(base);
+  expect(
+    parseIntent({ ...base, recipient: "other" }, sources, 7)?.recipient,
+  ).toBe("other");
+  expect(
+    parseIntent({ ...base, recipient: "invented" }, sources, 7),
+  ).toBeNull();
+});

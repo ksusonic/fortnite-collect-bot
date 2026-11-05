@@ -128,6 +128,7 @@ export async function maybeRoast(ctx: Context): Promise<void> {
       history,
     }),
   );
+  if (intent?.recipient === "other") return;
   const addressed = direct || intent?.addressed === true;
   if (!addressed && (!policy.proactiveAllowed || !preferences.proactive))
     return;
@@ -186,6 +187,7 @@ export async function maybeRoast(ctx: Context): Promise<void> {
           user,
           now,
           addressed,
+          recipient: intent.recipient,
           operation: intent.operation,
           preferences,
           pending,

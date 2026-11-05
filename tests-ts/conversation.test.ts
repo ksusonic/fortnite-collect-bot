@@ -232,6 +232,16 @@ const url = process.env.TEST_DATABASE_URL;
     async function source(id: number, thread = 0) {
       return invocation(chat, () => sourceByRef(chat, thread, `s:${id}`, now));
     }
+    it("does not generate a reply addressed to another participant", async () => {
+      mocks.intent.mockResolvedValue({
+        addressed: false,
+        recipient: "other",
+        operation: "reply",
+        search: { queries: [] },
+      });
+      await run(update(1, "Гриш, не пойдешь?", 7));
+      expect(mocks.decision).not.toHaveBeenCalled();
+    });
     it("archives silent messages, replies to an older post with escaped links, and replays once", async () => {
       expect(
         (await run(update(1, "Смогу только после девяти", 7, 0, 86400))).result,
