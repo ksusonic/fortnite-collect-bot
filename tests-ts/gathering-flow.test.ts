@@ -97,7 +97,7 @@ const url = process.env.TEST_DATABASE_URL;
           if (
             method === "sendMessage" &&
             failNotice &&
-            String(body.text).startsWith("🎮 Можно начинать")
+            String(body.text).includes("— можно залетать")
           )
             throw new Error("uncertain send");
           if (method === reject)
@@ -330,6 +330,20 @@ const url = process.env.TEST_DATABASE_URL;
       await processUpdate(text("20:00", 1, expired));
       expect((await current()).availability?.get(1)).toBe(at("19:30:00"));
     });
+    it("reacts to repeated fort commands without a separate acknowledgement", async () => {
+      await processUpdate(text("/fort"));
+      const sends = () =>
+        calls.filter((c) => c.method === "sendMessage").length;
+      const initial = sends();
+      await processUpdate(text("/fort"));
+      expect(sends()).toBe(initial);
+      await processUpdate(text("/fort 18"));
+      expect(sends()).toBe(initial);
+      expect((await current()).availability?.get(1)).toBe(at("18:00:00"));
+      expect(
+        calls.filter((c) => c.method === "setMessageReaction"),
+      ).toHaveLength(2);
+    });
     it("sends one start notice for two players and rechecks changes before execution", async () => {
       await processUpdate(text("/fort 16:14"));
       await processUpdate(text("/fort 16:32", 2));
@@ -337,12 +351,16 @@ const url = process.env.TEST_DATABASE_URL;
         calls.filter(
           (c) =>
             c.method === "sendMessage" &&
-            String(c.body.text).startsWith("🎮 Можно начинать"),
+            String(c.body.text).includes("— можно залетать"),
         );
       await tick("before");
       expect(sends()).toHaveLength(0);
       vi.mocked(Date.now).mockReturnValue(at("16:15:00") * 1000);
       await tick("due");
+      expect(sends()).toHaveLength(0);
+      await click("gready", 1);
+      await click("gready", 2);
+      await tick("ready");
       await tick("duplicate");
       expect(sends()).toHaveLength(1);
       await processUpdate(text("/fort 18"));
@@ -351,9 +369,12 @@ const url = process.env.TEST_DATABASE_URL;
       await tick("later");
       expect(sends()).toHaveLength(1);
     });
-    it("does not ping one player or an already ready roster", async () => {
+    it("announces an explicitly ready roster, but not one player", async () => {
       await processUpdate(text("/fort"));
       await tick("single");
+      expect(
+        calls.some((c) => String(c.body.text).includes("— можно залетать")),
+      ).toBe(false);
       await processUpdate(text("/fort через час", 2));
       await click("gready", 1);
       await click("gready", 2);
@@ -363,9 +384,9 @@ const url = process.env.TEST_DATABASE_URL;
         calls.filter(
           (c) =>
             c.method === "sendMessage" &&
-            String(c.body.text).startsWith("🎮 Можно начинать"),
+            String(c.body.text).includes("— можно залетать"),
         ),
-      ).toHaveLength(0);
+      ).toHaveLength(1);
     });
     it("archives only at midnight, unpins only its own card, and never counts evening end as expiry", async () => {
       await processUpdate(text("/fort"));
@@ -464,6 +485,8 @@ const url = process.env.TEST_DATABASE_URL;
     it("does not repeat a delivered notice after failed persistence", async () => {
       await processUpdate(text("/fort"));
       await processUpdate(text("/fort 18", 2));
+      await click("gready", 1);
+      await click("gready", 2);
       const save = db.save_session;
       let interrupted = false;
       vi.spyOn(db, "save_session").mockImplementation(async (session) => {
@@ -479,7 +502,7 @@ const url = process.env.TEST_DATABASE_URL;
         calls.filter(
           (c) =>
             c.method === "sendMessage" &&
-            String(c.body.text).startsWith("🎮 Можно начинать"),
+            String(c.body.text).includes("— можно залетать"),
         ),
       ).toHaveLength(1);
       expect((await current()).gathering?.notified_at).toBe(at("16:00:00"));
@@ -487,6 +510,8 @@ const url = process.env.TEST_DATABASE_URL;
     it("blocks ambiguous notice sends rather than sending again", async () => {
       await processUpdate(text("/fort"));
       await processUpdate(text("/fort 18", 2));
+      await click("gready", 1);
+      await click("gready", 2);
       failNotice = true;
       expect(await tick("notice-ambiguous")).toBe("ambiguous");
       expect(await drainChat(chat, createBot())).toBe("ambiguous");
@@ -494,7 +519,7 @@ const url = process.env.TEST_DATABASE_URL;
         calls.filter(
           (c) =>
             c.method === "sendMessage" &&
-            String(c.body.text).startsWith("🎮 Можно начинать"),
+            String(c.body.text).includes("— можно залетать"),
         ),
       ).toHaveLength(1);
     });
