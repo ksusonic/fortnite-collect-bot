@@ -20,6 +20,7 @@ export type GatheringGame = "fortnite" | "warcraft";
 export interface GatheringState {
   game?: GatheringGame;
   invite_usernames?: string[];
+  invite_policy?: number;
   emoji_id?: string;
   notified_at?: number;
   close_reason?: "cancelled" | "evening_end";
