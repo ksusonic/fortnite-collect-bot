@@ -366,6 +366,82 @@ const url = process.env.TEST_DATABASE_URL;
         Infinity,
       );
     });
+    it("adds a named player by reply to the selected card without changing the author, another game or readiness", async () => {
+      await invocation(chat, async () => {
+        await db.save_session(
+          db.newSession({
+            chat_id: chat,
+            message_id: 98,
+            initiator_id: 8,
+            initiator_name: "@dim_led",
+            is_closed: true,
+          }),
+        );
+        await db.save_response(98, 8, "@dim_led", "go", { chat_id: chat });
+      });
+      await processUpdate(text("/fort 18:32"));
+      const fort = await current();
+      await processUpdate(text("/warcraft 19:32"));
+      const warcraft = (
+        await invocation(chat, () => db.load_active_sessions(chat))
+      ).find((s) => gatheringGame(s) === "warcraft")!;
+      const request = text("добавь @DIM_LED", 3, warcraft.message_id);
+      expect(await processUpdate(request)).toBe("complete");
+      expect(await processUpdate(request)).toBe("complete");
+      const w = (await invocation(chat, () =>
+        db.load_session(warcraft.message_id, chat),
+      ))!;
+      const f = (await invocation(chat, () =>
+        db.load_session(fort.message_id, chat),
+      ))!;
+      expect([...w.go_players.keys()]).toEqual([1, 8]);
+      expect(w.availability?.get(8)).toBeUndefined();
+      expect(w.ready_players?.has(8)).toBe(false);
+      expect(w.go_players.has(3)).toBe(false);
+      expect(w.availability?.get(1)).toBe(at("19:32:00"));
+      expect([...f.go_players.keys()]).toEqual([1]);
+      expect(f.availability?.get(1)).toBe(at("18:32:00"));
+      expect(mocks.intent).not.toHaveBeenCalled();
+      await click("gready", 8, warcraft.message_id);
+      await processUpdate(text("добавь @dim_led", 3, warcraft.message_id));
+      expect(
+        (await invocation(chat, () =>
+          db.load_session(warcraft.message_id, chat),
+        ))!.ready_players?.has(8),
+      ).toBe(true);
+    });
+    it("adds named players to FIFO reserve, preserves existing slots and rejects unknown users", async () => {
+      await invocation(chat, async () => {
+        await db.save_session(
+          db.newSession({
+            chat_id: chat,
+            message_id: 98,
+            initiator_id: 8,
+            initiator_name: "@dim_led",
+            is_closed: true,
+          }),
+        );
+        await db.save_response(98, 8, "@dim_led", "go", { chat_id: chat });
+      });
+      await processUpdate(text("/fort"));
+      const f = await current();
+      for (const id of [2, 3, 4]) await click("gready", id, f.message_id);
+      await processUpdate(text("добавь @dim_led", 1, f.message_id));
+      expect([...(await current()).go_players.keys()]).toEqual([1, 2, 3, 4, 8]);
+      expect(buildGatherText(await current())).toContain("Резерв 1/4");
+      const prior = [...(await current()).go_players.keys()];
+      await processUpdate(text("добавь @unknown_player", 1, f.message_id));
+      expect([...(await current()).go_players.keys()]).toEqual(prior);
+      expect(
+        calls.some(
+          (c) =>
+            c.method === "sendMessage" &&
+            String(c.body.text).includes("Не нашёл @unknown_player"),
+        ),
+      ).toBe(true);
+      await processUpdate(text("добавь @dim_led", 1, 987654));
+      expect([...(await current()).go_players.keys()]).toEqual(prior);
+    });
     it("falls back to Warcraft Unicode styling when the emoji pack is unavailable", async () => {
       reject = "getStickerSet";
       expect(await processUpdate(text("/warcraft"))).toBe("complete");

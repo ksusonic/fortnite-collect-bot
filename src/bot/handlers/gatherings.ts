@@ -593,6 +593,27 @@ export async function maybeGatheringMessage(ctx: Context): Promise<boolean> {
     }
     return false;
   }
+  const add = /^добавь\s+(@[a-z0-9_]+)[.!]?$/iu.exec(message.text.trim());
+  if (add && message.reply_to_message?.message_id === session.message_id) {
+    const target = await db.resolve_user_by_username(session.chat_id, add[1]!);
+    if (!target) {
+      await reply(
+        ctx,
+        `Не нашёл ${messages.escapeHtml(add[1]!)} среди участников этого чата. Пусть сначала нажмёт кнопку на карточке сбора.`,
+      );
+      return true;
+    }
+    const error = await changePlayer(
+      session,
+      target[0],
+      target[1],
+      { action: "join" },
+      now,
+    );
+    if (!error) await renderGathering({ api: ctx.api }, session, now);
+    await feedback(ctx, error);
+    return true;
+  }
   const state = gatheringState(session);
   const pending: GatheringPrompt | undefined = message.reply_to_message
     ? state.prompts[message.reply_to_message.message_id]
