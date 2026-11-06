@@ -7,6 +7,7 @@ import {
   isChatApproved,
   isGeneralAdmin,
 } from "./services/chat-access";
+import { gatheringGame } from "./services/gathering";
 import { statisticsKeyboard } from "./mini-app-link";
 import type { Bot, Context } from "grammy";
 import * as db from "./db";
@@ -23,6 +24,7 @@ import {
 import {
   closeSession,
   cmdFort,
+  cmdWarcraft,
   onCallback,
   maybeGatheringMessage,
 } from "./handlers/gatherings";
@@ -62,6 +64,7 @@ export function registerHandlers(bot: Bot): void {
 
   const commands: Record<string, (ctx: Context) => Promise<void>> = {
     fort: cmdFort,
+    warcraft: cmdWarcraft,
     afk: cmdAfk,
     linkepicfor: cmdLinkepicfor,
     stats: async (ctx) => {
@@ -78,10 +81,37 @@ export function registerHandlers(bot: Bot): void {
       if (ctx.chat) await runTeamstats(bot, ctx.chat.id);
     },
     rm: async (ctx) => {
-      const active = [...db.getSessions().values()].find(
-        (session) => session.chat_id === ctx.chat?.id && !session.is_closed,
+      const argument = String(ctx.match ?? "")
+        .trim()
+        .toLowerCase();
+      if (argument && !["fort", "fortnite", "warcraft"].includes(argument)) {
+        await reply(
+          ctx,
+          "Используй /rm fort или /rm warcraft, либо ответь /rm на карточку сбора.",
+        );
+        return;
+      }
+      const candidates = [...db.getSessions().values()].filter(
+        (s) => s.chat_id === ctx.chat?.id && !s.is_closed,
       );
-      if (active) await closeSession(bot, active, true);
+      const replyId = ctx.message?.reply_to_message?.message_id;
+      const selected = argument
+        ? candidates.filter(
+            (s) =>
+              gatheringGame(s) ===
+              (argument === "warcraft" ? "warcraft" : "fortnite"),
+          )
+        : replyId !== undefined
+          ? candidates.filter((s) => s.message_id === replyId)
+          : candidates;
+      if (selected.length > 1) {
+        await reply(
+          ctx,
+          "Открыты два сбора. Укажи /rm fort или /rm warcraft, либо ответь /rm на нужную карточку.",
+        );
+        return;
+      }
+      if (selected[0]) await closeSession(bot, selected[0], true);
       await ignoreTelegram(() => ctx.deleteMessage());
     },
   };
@@ -106,7 +136,7 @@ export function registerHandlers(bot: Bot): void {
           : `<a href="tg://user?id=${member.id}">${escapeHtml(displayName(member))}</a>`;
       await ignoreTelegram(() =>
         ctx.reply(
-          `👋 Привет, ${mention}.\n\nЯ бот для сбора скуада в Fortnite. Команды:\n🎮 /fort — собрать отряд из 4 человек\n🗑 /rm — отменить активный сбор\n📊 /stats — статистика чата\n\nТакже слежу за статусом серверов Epic и предупрежу, если они недоступны.`,
+          `👋 Привет, ${mention}.\n\nЯ бот для сбора скуада в Fortnite. Команды:\n🎮 /fort — собрать отряд из 4 человек\n⚔️ /warcraft — собрать отряд в Warcraft\n🗑 /rm fort или /rm warcraft — отменить сбор\n📊 /stats — статистика чата\n\nТакже слежу за статусом серверов Epic и предупрежу, если они недоступны.`,
         ),
       );
     }

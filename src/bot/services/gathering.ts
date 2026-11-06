@@ -16,7 +16,11 @@ export interface GatheringPrompt {
   decision?: GatheringDecision;
   invalidated?: boolean;
 }
+export type GatheringGame = "fortnite" | "warcraft";
 export interface GatheringState {
+  game?: GatheringGame;
+  invite_usernames?: string[];
+  emoji_id?: string;
   notified_at?: number;
   close_reason?: "cancelled" | "evening_end";
   prompts: Record<string, GatheringPrompt>;
@@ -24,6 +28,12 @@ export interface GatheringState {
 }
 export function gatheringState(session: Session): GatheringState {
   return (session.gathering ??= { prompts: {}, revisions: {} });
+}
+export function gatheringGame(session: Session): GatheringGame {
+  return session.gathering?.game ?? "fortnite";
+}
+export function gatheringCommand(session: Session): string {
+  return gatheringGame(session) === "warcraft" ? "/warcraft" : "/fort";
 }
 export function eveningEnd(created: number): number {
   return Math.floor((created + 10800) / 86400) * 86400 + 86400 - 10800;
@@ -120,7 +130,9 @@ export async function changePlayer(
 ): Promise<string | null> {
   const plan = await valueCheckpoint("gathering-transition-v2", () => {
     if (session.is_closed || now >= eveningEnd(session.created_at))
-      return { error: "Вечер завершён. Создай новый сбор: /fort." };
+      return {
+        error: `Вечер завершён. Создай новый сбор: ${gatheringCommand(session)}.`,
+      };
     if (decision.action === "ignore" || decision.action === "clarify")
       return { error: "Укажи время: например, 19:30 или через 20 минут." };
     if (

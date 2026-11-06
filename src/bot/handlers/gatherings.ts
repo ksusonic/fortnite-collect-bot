@@ -8,6 +8,9 @@ import {
   clock,
   eveningEnd,
   gatheringState,
+  gatheringGame,
+  gatheringCommand,
+  type GatheringGame,
   mentionsOtherDay,
   parseGatheringTime,
   rosterTimes,
@@ -101,12 +104,16 @@ export async function closeSession(
 async function activeSession(
   ctx: Context,
   now: number,
+  game: GatheringGame = "fortnite",
 ): Promise<db.Session | undefined> {
   const id = await valueCheckpoint(
     "active-gathering-v2",
     () =>
       [...db.getSessions().values()].find(
-        (s) => s.chat_id === ctx.chat?.id && !s.is_closed,
+        (s) =>
+          s.chat_id === ctx.chat?.id &&
+          !s.is_closed &&
+          gatheringGame(s) === game,
       )?.message_id ?? null,
   );
   if (id === null || !ctx.chat) return;
@@ -140,6 +147,13 @@ async function timeDecision(
 const TIME_HELP =
   "Укажи время сегодня до полуночи МСК: например, 19:30 или через час.";
 export async function cmdFort(ctx: Context): Promise<void> {
+  return cmdGathering(ctx, "fortnite");
+}
+export async function cmdWarcraft(ctx: Context): Promise<void> {
+  return cmdGathering(ctx, "warcraft");
+}
+const WARCRAFT_INVITES = ["@dim_led", "@ksusonic", "@Sirius_Auror"];
+async function cmdGathering(ctx: Context, game: GatheringGame): Promise<void> {
   if (
     !ctx.from ||
     !ctx.chat ||
@@ -162,7 +176,7 @@ export async function cmdFort(ctx: Context): Promise<void> {
     await reply(ctx, TIME_HELP);
     return;
   }
-  const active = await activeSession(ctx, now);
+  const active = await activeSession(ctx, now, game);
   if (active) {
     if (decision) {
       const error = await changePlayer(
@@ -181,13 +195,42 @@ export async function cmdFort(ctx: Context): Promise<void> {
     await telegramResult(() => ctx.react("👍"));
     return;
   }
-  const last = await db.get_fort_cooldown(ctx.chat.id, ctx.from.id);
+  const last = await db.get_fort_cooldown(ctx.chat.id, ctx.from.id, game);
   if (last !== null && now - last < 30) {
     await reply(ctx, "Новый сбор можно создать через несколько секунд.");
     return;
   }
-  await db.set_fort_cooldown(ctx.chat.id, ctx.from.id, now);
-  const participants = await db.get_chat_participants(ctx.chat.id);
+  await db.set_fort_cooldown(ctx.chat.id, ctx.from.id, now, game);
+  const participants =
+    game === "fortnite" ? await db.get_chat_participants(ctx.chat.id) : [];
+  const invites: string[] = [];
+  if (game === "warcraft") {
+    for (const username of WARCRAFT_INVITES) {
+      if (username.toLowerCase() === displayName(ctx.from).toLowerCase())
+        continue;
+      const user = await db.resolve_user_by_username(ctx.chat.id, username);
+      if (user) {
+        const until = await db.get_afk_until(ctx.chat.id, user[0]);
+        if (until !== null && until > now) continue;
+        participants.push(user);
+      } else invites.push(username);
+    }
+  }
+  const emojiId =
+    game === "warcraft"
+      ? await externalCheckpoint("warcraft-emoji-pack-v1", async () => {
+          try {
+            const pack = await ctx.api.getStickerSet("rumble_es");
+            return (
+              pack.stickers.find((s) => s.custom_emoji_id)?.custom_emoji_id ??
+              null
+            );
+          } catch (error) {
+            if (!(error instanceof GrammyError)) throw error;
+            return null;
+          }
+        })
+      : null;
   const at = decision?.at ?? now;
   const session = db.newSession({
     chat_id: ctx.chat.id,
@@ -202,7 +245,19 @@ export async function cmdFort(ctx: Context): Promise<void> {
     ready_players: new Set(),
     player_slots: new Map([[ctx.from.id, clock(at)]]),
     tagged_users: new Map(participants.filter(([id]) => id !== ctx.from!.id)),
-    fort_title: await db.get_fort_title(ctx.chat.id),
+    fort_title:
+      game === "fortnite" ? await db.get_fort_title(ctx.chat.id) : null,
+    ...(game === "warcraft"
+      ? {
+          gathering: {
+            game,
+            invite_usernames: invites,
+            ...(emojiId ? { emoji_id: emojiId } : {}),
+            prompts: {},
+            revisions: {},
+          },
+        }
+      : {}),
   });
   const sent = await ctx.reply(messages.buildGatherText(session, now), {
     reply_markup: messages.buildGatheringKeyboard(session, now),
@@ -232,6 +287,7 @@ export async function cmdFort(ctx: Context): Promise<void> {
       ctx,
       "Сбор создан, но закрепить карточку не удалось. Проверь право бота на закрепление сообщений.",
     );
+  if (game === "warcraft") return;
   const header = await externalCheckpoint("fort-header-v2", () =>
     roast.generateFortHeader(session.chat_id, now),
   );
@@ -333,7 +389,10 @@ export async function onCallback(ctx: Context): Promise<void> {
     db.getSessions().get(key(chat, mid)) ?? (await db.load_session(mid, chat));
   const now = await valueCheckpoint("callback-time-v2", nowSeconds);
   if (!session || session.is_closed || now >= eveningEnd(session.created_at)) {
-    await answerCallback(ctx, "Сбор завершён. Создай новый: /fort.");
+    await answerCallback(
+      ctx,
+      `Сбор завершён. Создай новый: ${session ? gatheringCommand(session) : "/fort или /warcraft"}.`,
+    );
     return;
   }
   if (confirmation) {
@@ -442,8 +501,67 @@ export async function maybeGatheringMessage(ctx: Context): Promise<boolean> {
   )
     return false;
   const now = await valueCheckpoint("gathering-message-time-v2", nowSeconds);
-  const session = await activeSession(ctx, now);
-  if (!session) return false;
+  const target = await valueCheckpoint("gathering-message-target-v3", () => {
+    const sessions = [...db.getSessions().values()].filter(
+      (s) =>
+        s.chat_id === ctx.chat?.id &&
+        !s.is_closed &&
+        now < eveningEnd(s.created_at),
+    );
+    const replyId = message.reply_to_message?.message_id;
+    if (replyId !== undefined) {
+      const linked = sessions.find(
+        (s) => s.message_id === replyId || !!s.gathering?.prompts[replyId],
+      );
+      // A reply to another message must not change an unrelated gathering.
+      return linked?.message_id ?? null;
+    }
+    const warcraft = /(?:warcraft|варкрафт)/iu.test(message.text!);
+    const fortnite = /(?:fortnite|фортнайт)/iu.test(message.text!);
+    if (warcraft !== fortnite)
+      return (
+        sessions.find(
+          (s) => gatheringGame(s) === (warcraft ? "warcraft" : "fortnite"),
+        )?.message_id ?? null
+      );
+    if (sessions.length === 1) return sessions[0]!.message_id;
+    const joined = sessions.filter(
+      (s) => s.go_players.has(ctx.from!.id) || s.pass_players.has(ctx.from!.id),
+    );
+    return joined.length === 1 ? joined[0]!.message_id : null;
+  });
+  const session =
+    target === null
+      ? undefined
+      : db.getSessions().get(key(ctx.chat!.id, target));
+  if (!session) {
+    const joined = [...db.getSessions().values()].filter(
+      (s) =>
+        !s.is_closed &&
+        now < eveningEnd(s.created_at) &&
+        s.go_players.has(ctx.from!.id),
+    );
+    if (!message.reply_to_message && joined.length > 1) {
+      const decision = await externalCheckpoint(
+        "gathering-ambiguous-intent-v1",
+        () =>
+          interpretGatheringMessage({
+            text: message.text!,
+            now,
+            participating: true,
+            passed: false,
+          }),
+      );
+      if (decision && decision.action !== "ignore") {
+        await reply(
+          ctx,
+          "В каком сборе меняем статус — Fortnite или Warcraft? Ответь на нужную карточку или нажми её кнопку.",
+        );
+        return true;
+      }
+    }
+    return false;
+  }
   const state = gatheringState(session);
   const pending: GatheringPrompt | undefined = message.reply_to_message
     ? state.prompts[message.reply_to_message.message_id]
@@ -581,7 +699,7 @@ export async function gatheringTick(bot: Bot, mid: number, now?: number) {
   const title = ready.length === 2 ? "Двое готовы" : `Готовы ${ready.length}`;
   await bot.api.sendMessage(
     session.chat_id,
-    `🎮 ${title} — можно залетать\n${roster}${waiting ? "\nОстальные — жмите «✅ Готов играть», когда подключитесь." : ""}`,
+    `🎮 ${gatheringGame(session) === "warcraft" ? "Warcraft · " : ""}${title} — можно залетать\n${roster}${waiting ? "\nОстальные — жмите «✅ Готов играть», когда подключитесь." : ""}`,
     {
       reply_parameters: { message_id: session.message_id },
       ...(waiting

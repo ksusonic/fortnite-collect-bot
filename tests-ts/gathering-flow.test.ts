@@ -18,6 +18,7 @@ import {
 } from "../src/bot/runtime";
 import {
   changePlayer,
+  gatheringGame,
   eveningEnd,
   parseGatheringTime,
   rosterTimes,
@@ -116,14 +117,19 @@ const url = process.env.TEST_DATABASE_URL;
                   first_name: "Bot",
                   username: "fort_test_bot",
                 }
-              : method === "sendMessage"
+              : method === "getStickerSet"
                 ? {
-                    message_id: ++messageId,
-                    date: Date.now() / 1000,
-                    chat: { id: chat, type: "supergroup" },
-                    text: body.text,
+                    name: "rumble_es",
+                    stickers: [{ custom_emoji_id: "123456789", emoji: "⚔️" }],
                   }
-                : true;
+                : method === "sendMessage"
+                  ? {
+                      message_id: ++messageId,
+                      date: Date.now() / 1000,
+                      chat: { id: chat, type: "supergroup" },
+                      text: body.text,
+                    }
+                  : true;
           return new Response(JSON.stringify({ ok: true, result }), {
             headers: { "Content-Type": "application/json" },
           });
@@ -131,7 +137,7 @@ const url = process.env.TEST_DATABASE_URL;
       );
       await invocation(null, async () => {
         await raw(
-          "TRUNCATE approved_chats,sessions,responses,work_items,work_steps,fort_cooldowns,roast_state CASCADE",
+          "TRUNCATE approved_chats,sessions,responses,work_items,work_steps,fort_cooldowns,chat_features,afk_mutes,roast_state CASCADE",
         );
         await raw(
           "INSERT INTO approved_chats(chat_id,approved_by) VALUES ($1,1)",
@@ -212,6 +218,166 @@ const url = process.env.TEST_DATABASE_URL;
       );
       return drainChat(chat, createBot());
     }
+    it("keeps simultaneous games, callbacks, times, cooldowns, invites and stats independent after hydration", async () => {
+      await processUpdate(text("/fort"));
+      const fort = await current();
+      expect(await processUpdate(text("/warcraft 18:32"))).toBe("complete");
+      const sessions = await invocation(chat, () =>
+        db.load_active_sessions(chat),
+      );
+      expect(sessions).toHaveLength(2);
+      const warcraft = sessions.find((s) => gatheringGame(s) === "warcraft")!;
+      expect(warcraft.message_id).not.toBe(fort.message_id);
+      expect(warcraft.availability?.get(1)).toBe(at("18:32:00"));
+      const card = buildGatherText(warcraft, at("16:00:00"));
+      for (const username of ["@dim_led", "@ksusonic", "@Sirius_Auror"])
+        expect(card).toContain(username);
+      expect(card).toContain('emoji-id="123456789"');
+      expect(card).toContain("Азерота");
+      expect(card).not.toContain("Fortnite");
+      await processUpdate(text("/warcraft 19:32", 2));
+      await click("gready", 3, warcraft.message_id);
+      await processUpdate(text("через час", 1, warcraft.message_id));
+      const updated = await invocation(chat, () =>
+        db.load_active_sessions(chat),
+      );
+      const f = updated.find((s) => gatheringGame(s) === "fortnite")!;
+      const w = updated.find((s) => gatheringGame(s) === "warcraft")!;
+      expect([...f.go_players.keys()]).toEqual([1]);
+      expect(f.availability?.get(1)).toBe(at("16:00:00"));
+      expect([...w.go_players.keys()]).toEqual([1, 2, 3]);
+      expect(w.availability?.get(1)).toBe(at("17:00:00"));
+      expect(w.ready_players?.has(3)).toBe(true);
+      await invocation(chat, async () => {
+        expect((await db.get_chat_stats(chat)).total_sessions).toBe(1);
+        expect(await db.get_chat_participants(chat)).toEqual([[1, "user1"]]);
+      });
+    });
+    it("does not guess a game for shared participants and removes only the selected card", async () => {
+      await processUpdate(text("/fort"));
+      await processUpdate(text("/warcraft"));
+      mocks.intent.mockResolvedValue({ action: "pass" });
+      await processUpdate(text("я пас"));
+      expect(
+        calls.some(
+          (c) =>
+            c.method === "sendMessage" &&
+            String(c.body.text).includes("В каком сборе"),
+        ),
+      ).toBe(true);
+      await processUpdate(text("/rm"));
+      expect(
+        await invocation(chat, () => db.load_active_sessions(chat)),
+      ).toHaveLength(2);
+      await processUpdate(text("/rm warcraft"));
+      const remaining = await invocation(chat, () =>
+        db.load_active_sessions(chat),
+      );
+      expect(remaining).toHaveLength(1);
+      expect(gatheringGame(remaining[0]!)).toBe("fortnite");
+      expect(calls.filter((c) => c.method === "unpinChatMessage")).toHaveLength(
+        1,
+      );
+    });
+    it("filters Warcraft mentions to the configured trio and respects their AFK", async () => {
+      await invocation(chat, async () => {
+        const old = db.newSession({
+          chat_id: chat,
+          message_id: 99,
+          initiator_id: 7,
+          initiator_name: "@other",
+          is_closed: true,
+        });
+        await db.save_session(old);
+        for (const [id, name] of [
+          [7, "@other"],
+          [8, "@DIM_LED"],
+          [9, "@ksusonic"],
+          [10, "@Sirius_Auror"],
+        ] as const)
+          await db.save_response(99, id, name, "go", { chat_id: chat });
+        await db.set_afk(chat, 9, at("19:00:00"));
+      });
+      await processUpdate(text("/warcraft"));
+      const w = await current();
+      expect([...w.tagged_users.keys()].sort((a, b) => a - b)).toEqual([8, 10]);
+      const card = buildGatherText(w);
+      expect(card).not.toContain("@other");
+      expect(card).not.toContain("@ksusonic");
+      expect(card).toContain("@DIM_LED");
+      expect(card).toContain("@Sirius_Auror");
+    });
+    it("falls back to Warcraft Unicode styling when the emoji pack is unavailable", async () => {
+      reject = "getStickerSet";
+      expect(await processUpdate(text("/warcraft"))).toBe("complete");
+      const w = await current();
+      expect(buildGatherText(w)).toContain("⚔️ <b>Warcraft");
+      expect(w.gathering?.emoji_id).toBeUndefined();
+    });
+    it("enforces at most one open session per game at the database boundary", async () => {
+      await processUpdate(text("/fort"));
+      await processUpdate(text("/warcraft"));
+      for (const game of ["fortnite", "warcraft"] as const) {
+        await expect(
+          invocation(chat, () =>
+            db.save_session(
+              db.newSession({
+                chat_id: chat,
+                message_id: game === "fortnite" ? 901 : 902,
+                initiator_id: 1,
+                initiator_name: "user1",
+                gathering: { game, prompts: {}, revisions: {} },
+              }),
+            ),
+          ),
+        ).rejects.toThrow("sessions_one_open_per_game");
+      }
+    });
+    it("sends an independent start notice per game and expires both cards at midnight", async () => {
+      await processUpdate(text("/fort"));
+      const f = await current();
+      await processUpdate(text("/warcraft"));
+      const w = (
+        await invocation(chat, () => db.load_active_sessions(chat))
+      ).find((s) => gatheringGame(s) === "warcraft")!;
+      for (const s of [f, w]) {
+        await click("gready", 1, s.message_id);
+        await click("gready", 2, s.message_id);
+        await invocation(chat, () =>
+          enqueue(`notice:${s.message_id}`, "gathering", chat, {
+            message_id: s.message_id,
+          }),
+        );
+        await drainChat(chat, createBot());
+      }
+      const notices = calls.filter(
+        (c) =>
+          c.method === "sendMessage" &&
+          String(c.body.text).includes("— можно залетать"),
+      );
+      expect(notices).toHaveLength(2);
+      expect(
+        notices.filter((c) => String(c.body.text).includes("Warcraft")),
+      ).toHaveLength(1);
+      vi.spyOn(Date, "now").mockReturnValue(at("23:59:59") * 1000 + 1000);
+      for (const s of [f, w]) {
+        await invocation(chat, () =>
+          enqueue(`expire:${s.message_id}`, "gathering", chat, {
+            message_id: s.message_id,
+          }),
+        );
+        await drainChat(chat, createBot());
+      }
+      expect(
+        await invocation(chat, () => db.load_active_sessions(chat)),
+      ).toHaveLength(0);
+      expect(
+        calls
+          .filter((c) => c.method === "unpinChatMessage")
+          .map((c) => c.body.message_id)
+          .sort(),
+      ).toEqual([f.message_id, w.message_id].sort());
+    });
     it("creates and pins one card, records its author, and updates only the command caller", async () => {
       expect(await processUpdate(text("/fort через час"))).toBe("complete");
       const initial = await current();
