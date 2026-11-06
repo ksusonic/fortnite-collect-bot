@@ -279,7 +279,7 @@ const url = process.env.TEST_DATABASE_URL;
         1,
       );
     });
-    it("filters Warcraft mentions to the configured trio and respects their AFK", async () => {
+    it("invites the configured Warcraft trio independently of Fortnite AFK", async () => {
       await invocation(chat, async () => {
         const old = db.newSession({
           chat_id: chat,
@@ -296,16 +296,75 @@ const url = process.env.TEST_DATABASE_URL;
           [10, "@Sirius_Auror"],
         ] as const)
           await db.save_response(99, id, name, "go", { chat_id: chat });
+        await raw(
+          "INSERT INTO afk_mutes(chat_id,user_id,muted_until) VALUES ($1,8,'infinity')",
+          [chat],
+        );
         await db.set_afk(chat, 9, at("19:00:00"));
       });
       await processUpdate(text("/warcraft"));
       const w = await current();
-      expect([...w.tagged_users.keys()].sort((a, b) => a - b)).toEqual([8, 10]);
+      expect([...w.tagged_users.keys()].sort((a, b) => a - b)).toEqual([
+        8, 9, 10,
+      ]);
       const card = buildGatherText(w);
       expect(card).not.toContain("@other");
-      expect(card).not.toContain("@ksusonic");
+      expect(card).toContain("@ksusonic");
+      await invocation(chat, async () => {
+        expect(await db.get_afk_until(chat, 8)).toBe(Infinity);
+        expect(
+          (await db.get_chat_participants(chat)).map(([id]) => id),
+        ).not.toContain(8);
+      });
       expect(card).toContain("@DIM_LED");
       expect(card).toContain("@Sirius_Auror");
+    });
+    it("repairs legacy Warcraft invitations without clearing Fortnite AFK or sending another card", async () => {
+      await invocation(chat, async () => {
+        await db.save_session(
+          db.newSession({
+            chat_id: chat,
+            message_id: 98,
+            initiator_id: 8,
+            initiator_name: "@dim_led",
+            is_closed: true,
+          }),
+        );
+        await db.save_response(98, 8, "@dim_led", "go", { chat_id: chat });
+        await raw(
+          "INSERT INTO afk_mutes(chat_id,user_id,muted_until) VALUES ($1,8,'infinity')",
+          [chat],
+        );
+      });
+      await processUpdate(text("/warcraft"));
+      const w = await current();
+      await invocation(chat, async () => {
+        const legacy = (await db.load_session(w.message_id, chat))!;
+        delete legacy.gathering!.invite_policy;
+        legacy.tagged_users.delete(8);
+        await db.save_session(legacy);
+      });
+      const sent = calls.filter((c) => c.method === "sendMessage").length;
+      failEdit = true;
+      expect(await tick("repair-invites")).toBe("failed");
+      expect(await drainChat(chat, createBot())).toBe("complete");
+      const repaired = await current();
+      expect(repaired.tagged_users.get(8)).toBe("@dim_led");
+      expect(repaired.gathering?.invite_policy).toBe(2);
+      expect(calls.filter((c) => c.method === "sendMessage")).toHaveLength(
+        sent,
+      );
+      expect(
+        calls.filter((c) => c.method === "editMessageText").at(-1)?.body.text,
+      ).toContain("@dim_led");
+      const edits = calls.filter((c) => c.method === "editMessageText").length;
+      await tick("repair-invites-again");
+      expect(calls.filter((c) => c.method === "editMessageText")).toHaveLength(
+        edits,
+      );
+      expect(await invocation(chat, () => db.get_afk_until(chat, 8))).toBe(
+        Infinity,
+      );
     });
     it("falls back to Warcraft Unicode styling when the emoji pack is unavailable", async () => {
       reject = "getStickerSet";

@@ -153,6 +153,43 @@ export async function cmdWarcraft(ctx: Context): Promise<void> {
   return cmdGathering(ctx, "warcraft");
 }
 const WARCRAFT_INVITES = ["@dim_led", "@ksusonic", "@Sirius_Auror"];
+async function warcraftInvites(chat: number, initiator: number, name: string) {
+  const participants: [number, string][] = [],
+    invites: string[] = [];
+  for (const username of WARCRAFT_INVITES) {
+    if (username.toLowerCase() === name.toLowerCase()) continue;
+    const user = await db.resolve_user_by_username(chat, username);
+    // /afk belongs to Fortnite; the Warcraft invite list is independent.
+    if (user) {
+      if (user[0] !== initiator) participants.push(user);
+    } else invites.push(username);
+  }
+  return { participants, invites };
+}
+async function refreshWarcraftInvites(
+  bot: ApiBot,
+  session: db.Session,
+  now: number,
+) {
+  if (gatheringGame(session) !== "warcraft") return;
+  const needed = await valueCheckpoint(
+    "warcraft-invite-policy-v2",
+    () => session.gathering?.invite_policy !== 2,
+  );
+  if (!needed) return;
+  const { participants, invites } = await warcraftInvites(
+    session.chat_id,
+    session.initiator_id,
+    session.initiator_name,
+  );
+  session.tagged_users = new Map(participants);
+  Object.assign(gatheringState(session), {
+    invite_usernames: invites,
+    invite_policy: 2,
+  });
+  await db.save_session(session);
+  await renderGathering(bot, session, now);
+}
 async function cmdGathering(ctx: Context, game: GatheringGame): Promise<void> {
   if (
     !ctx.from ||
@@ -178,6 +215,7 @@ async function cmdGathering(ctx: Context, game: GatheringGame): Promise<void> {
   }
   const active = await activeSession(ctx, now, game);
   if (active) {
+    await refreshWarcraftInvites({ api: ctx.api }, active, now);
     if (decision) {
       const error = await changePlayer(
         active,
@@ -201,21 +239,13 @@ async function cmdGathering(ctx: Context, game: GatheringGame): Promise<void> {
     return;
   }
   await db.set_fort_cooldown(ctx.chat.id, ctx.from.id, now, game);
-  const participants =
-    game === "fortnite" ? await db.get_chat_participants(ctx.chat.id) : [];
-  const invites: string[] = [];
-  if (game === "warcraft") {
-    for (const username of WARCRAFT_INVITES) {
-      if (username.toLowerCase() === displayName(ctx.from).toLowerCase())
-        continue;
-      const user = await db.resolve_user_by_username(ctx.chat.id, username);
-      if (user) {
-        const until = await db.get_afk_until(ctx.chat.id, user[0]);
-        if (until !== null && until > now) continue;
-        participants.push(user);
-      } else invites.push(username);
-    }
-  }
+  const { participants, invites } =
+    game === "warcraft"
+      ? await warcraftInvites(ctx.chat.id, ctx.from.id, displayName(ctx.from))
+      : {
+          participants: await db.get_chat_participants(ctx.chat.id),
+          invites: [],
+        };
   const emojiId =
     game === "warcraft"
       ? await externalCheckpoint("warcraft-emoji-pack-v1", async () => {
@@ -251,6 +281,7 @@ async function cmdGathering(ctx: Context, game: GatheringGame): Promise<void> {
       ? {
           gathering: {
             game,
+            invite_policy: 2,
             invite_usernames: invites,
             ...(emojiId ? { emoji_id: emojiId } : {}),
             prompts: {},
@@ -682,6 +713,7 @@ export async function gatheringTick(bot: Bot, mid: number, now?: number) {
     await closeSession(bot, session);
     return;
   }
+  await refreshWarcraftInvites(bot, session, now);
   const due = await valueCheckpoint("gathering-reminder-v2", () => {
     const times = rosterTimes(session);
     return !gatheringState(session).notified_at && times.ready >= 2;
