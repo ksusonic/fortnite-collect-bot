@@ -21,6 +21,18 @@ export async function GET(request: Request) {
       }));
       const bot = createBot();
       const me = await bot.api.getMe();
+      const emojiSet = new URL(request.url).searchParams.get("emoji_set");
+      let warcraftEmojiSet;
+      if (emojiSet === "rumble_es") {
+        const pack = await bot.api.getStickerSet(emojiSet);
+        warcraftEmojiSet = {
+          name: pack.name,
+          title: pack.title,
+          custom_emoji_id:
+            pack.stickers.find((s) => s.custom_emoji_id)?.custom_emoji_id ??
+            null,
+        };
+      }
       const memberships = [];
       for (const row of data.chats) {
         try {
@@ -40,6 +52,7 @@ export async function GET(request: Request) {
           can_read_all_group_messages: me.can_read_all_group_messages,
         },
         webhook: await bot.api.getWebhookInfo(),
+        ...(warcraftEmojiSet ? { warcraft_emoji_set: warcraftEmojiSet } : {}),
         memberships,
         work: data.work,
         commands: await bot.api.getMyCommands({

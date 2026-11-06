@@ -1,6 +1,6 @@
 import { query, chatId, getSessions, timestamp } from "./storage";
 import { valueCheckpoint } from "./work";
-import type { GatheringState } from "./services/gathering";
+import type { GatheringGame, GatheringState } from "./services/gathering";
 export { getSessions };
 export interface Session {
   availability?: Map<number, number>;
@@ -255,7 +255,7 @@ export async function get_chat_participants(
 ): Promise<[number, string][]> {
   return (
     await query(
-      `SELECT user_id,user_name FROM (SELECT DISTINCT ON(r.user_id) r.user_id,r.user_name,r.responded_at FROM responses r WHERE r.chat_id=$1 AND r.response='go' AND NOT r.is_bot
+      `SELECT user_id,user_name FROM (SELECT DISTINCT ON(r.user_id) r.user_id,r.user_name,r.responded_at FROM responses r WHERE r.chat_id=$1 AND r.response='go' AND NOT r.is_bot AND EXISTS(SELECT 1 FROM sessions s WHERE s.chat_id=r.chat_id AND s.message_id=r.message_id AND COALESCE(s.gathering->>'game','fortnite')='fortnite')
     AND NOT EXISTS(SELECT 1 FROM afk_mutes a WHERE a.chat_id=r.chat_id AND a.user_id=r.user_id AND a.muted_until>$2) ORDER BY r.user_id,r.responded_at DESC) recent ORDER BY responded_at DESC LIMIT 20`,
       [chat, timestamp(await now("participants.time"))],
     )
@@ -327,7 +327,10 @@ export async function set_last_weekly_drop(chat: number, time: number) {
 export async function get_fort_cooldown(
   chat: number,
   uid: number,
+  game: GatheringGame = "fortnite",
 ): Promise<number | null> {
+  if (game === "warcraft")
+    return await get_feature_value(chat, `warcraft_cooldown:${uid}`);
   return (
     (
       await query(
@@ -341,7 +344,10 @@ export async function set_fort_cooldown(
   chat: number,
   uid: number,
   time: number,
+  game: GatheringGame = "fortnite",
 ) {
+  if (game === "warcraft")
+    return set_feature(chat, `warcraft_cooldown:${uid}`, true, time);
   await query(
     "INSERT INTO fort_cooldowns(chat_id,user_id,attempted_at) VALUES ($1,$2,$3) ON CONFLICT(chat_id,user_id) DO UPDATE SET attempted_at=excluded.attempted_at",
     [chat, uid, timestamp(time)],
@@ -491,7 +497,7 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
   };
   const counts = (
     await query(
-      `SELECT COUNT(*) AS total_sessions,COUNT(*) FILTER(WHERE is_complete AND NOT is_expired) AS completed_sessions,COUNT(*) FILTER(WHERE is_closed AND is_expired) AS expired_sessions,COUNT(*) FILTER(WHERE NOT is_closed) AS active_sessions FROM sessions WHERE chat_id=$1`,
+      `SELECT COUNT(*) AS total_sessions,COUNT(*) FILTER(WHERE is_complete AND NOT is_expired) AS completed_sessions,COUNT(*) FILTER(WHERE is_closed AND is_expired) AS expired_sessions,COUNT(*) FILTER(WHERE NOT is_closed) AS active_sessions FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite'`,
       [chat],
     )
   )[0];
@@ -502,20 +508,20 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
   ] as const) {
     result[key] = (
       await query(
-        `SELECT (array_agg(r.user_name ORDER BY r.responded_at DESC))[1] AS name,COUNT(*) AS count FROM responses r JOIN sessions s ON r.chat_id=s.chat_id AND r.message_id=s.message_id WHERE s.chat_id=$1 AND r.response=$2 GROUP BY r.user_id ORDER BY count DESC LIMIT $3`,
+        `SELECT (array_agg(r.user_name ORDER BY r.responded_at DESC))[1] AS name,COUNT(*) AS count FROM responses r JOIN sessions s ON r.chat_id=s.chat_id AND r.message_id=s.message_id WHERE s.chat_id=$1 AND COALESCE(s.gathering->>'game','fortnite')='fortnite' AND r.response=$2 GROUP BY r.user_id ORDER BY count DESC LIMIT $3`,
         [chat, response, limit],
       )
     ).map((r) => [r.name, r.count]);
   }
   result.top_initiators = (
     await query(
-      "SELECT (array_agg(initiator_name ORDER BY created_at DESC))[1] AS name,COUNT(*) AS count FROM sessions WHERE chat_id=$1 GROUP BY initiator_id ORDER BY count DESC LIMIT 5",
+      "SELECT (array_agg(initiator_name ORDER BY created_at DESC))[1] AS name,COUNT(*) AS count FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' GROUP BY initiator_id ORDER BY count DESC LIMIT 5",
       [chat],
     )
   ).map((r) => [r.name, r.count]);
   const times = (
     await query(
-      `SELECT AVG(EXTRACT(EPOCH FROM completed_at-created_at)) AS avg,MIN(EXTRACT(EPOCH FROM completed_at-created_at)) AS min FROM sessions WHERE chat_id=$1 AND is_complete AND NOT is_expired AND completed_at IS NOT NULL`,
+      `SELECT AVG(EXTRACT(EPOCH FROM completed_at-created_at)) AS avg,MIN(EXTRACT(EPOCH FROM completed_at-created_at)) AS min FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' AND is_complete AND NOT is_expired AND completed_at IS NOT NULL`,
       [chat],
     )
   )[0];
@@ -523,7 +529,7 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
   result.fastest_fill_seconds = times.min;
   const completed = (
     await query(
-      "SELECT message_id FROM sessions WHERE chat_id=$1 AND is_complete AND NOT is_expired ORDER BY created_at DESC",
+      "SELECT message_id FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' AND is_complete AND NOT is_expired ORDER BY created_at DESC",
       [chat],
     )
   ).map((r) => r.message_id as number);
@@ -554,7 +560,7 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
   }
   result.best_hours = (
     await query(
-      `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Moscow')::integer AS hour,COUNT(*) AS count,AVG(EXTRACT(EPOCH FROM completed_at-created_at)) AS avg FROM sessions WHERE chat_id=$1 AND is_complete AND NOT is_expired AND completed_at IS NOT NULL GROUP BY hour ORDER BY count DESC,avg ASC LIMIT 2`,
+      `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Moscow')::integer AS hour,COUNT(*) AS count,AVG(EXTRACT(EPOCH FROM completed_at-created_at)) AS avg FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' AND is_complete AND NOT is_expired AND completed_at IS NOT NULL GROUP BY hour ORDER BY count DESC,avg ASC LIMIT 2`,
       [chat],
     )
   ).map((r) => [r.hour, r.count, r.avg]);

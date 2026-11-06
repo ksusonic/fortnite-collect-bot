@@ -27,6 +27,7 @@ it("removes retired commands and verifies the three maintained Telegram scopes",
   const b = bot();
   expect(GROUP_COMMANDS.map((c) => c.command)).toEqual([
     "fort",
+    "warcraft",
     "afk",
     "rm",
     "stats",

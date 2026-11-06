@@ -4,8 +4,9 @@ import { raw } from "./storage";
 
 export const GROUP_COMMANDS = [
   { command: "fort", description: "собрать сквад на катку" },
+  { command: "warcraft", description: "собрать отряд в Warcraft" },
   { command: "afk", description: "AFK себе или @user: 1d, 2w или off" },
-  { command: "rm", description: "отменить активный сбор" },
+  { command: "rm", description: "отменить сбор: fort или warcraft" },
   { command: "stats", description: "статистика чата" },
   { command: "teamstats", description: "командная статистика Fortnite" },
 ];
