@@ -31,6 +31,7 @@ export class StatsEmpty extends FortniteError {
   }
 }
 export interface ModeStats {
+  deaths?: number;
   matches: number;
   wins: number;
   kills: number;
@@ -39,6 +40,7 @@ export interface ModeStats {
   minutes_played: number;
 }
 export interface PlayerStats {
+  time_window?: "season" | "lifetime";
   epic_account_id: string;
   epic_name: string;
   overall: ModeStats;
@@ -49,6 +51,7 @@ export interface PlayerStats {
   image_url: string | null;
 }
 export interface RawModeStats {
+  deaths?: number;
   matches: number;
   wins: number;
   kills: number;
@@ -74,6 +77,9 @@ export function isConfigured(): boolean {
 export function toMode(raw?: RawModeStats | null): ModeStats | null {
   if (!raw || raw.matches === 0) return null;
   return {
+    ...(Number.isInteger(raw.deaths) && raw.deaths! >= 0
+      ? { deaths: raw.deaths }
+      : {}),
     matches: raw.matches,
     wins: raw.wins,
     kills: raw.kills,
@@ -190,7 +196,8 @@ export async function callApi(
 ): Promise<PlayerStats> {
   const raw = await callProvider(options, fetcher, invocationSignal);
   try {
-    return toPlayerStats(raw, options.with_image ?? false);
+    const stats = toPlayerStats(raw, options.with_image ?? false);
+    return { ...stats, time_window: options.time_window ?? "season" };
   } catch (error) {
     if (error instanceof StatsEmpty) throw error;
     throw new FortniteUnavailable("unexpected error");
@@ -206,7 +213,59 @@ function deathsEstimate(mode: ModeStats): number {
       : floor + 1
     : Math.round(n);
 }
+export async function saveLifetimeSnapshot(stats: PlayerStats) {
+  if (stats.time_window !== "lifetime")
+    throw new TypeError("lifetime snapshot requires lifetime counters");
+  const { save_lifetime_snapshot } = await import("./db");
+  await save_lifetime_snapshot({
+    epic_account_id: stats.epic_account_id,
+    fetched_at: stats.fetched_at,
+    matches: stats.overall.matches,
+    wins: stats.overall.wins,
+    kills: stats.overall.kills,
+    // Prefer the provider counter. Matches without a win give a stable fallback
+    // estimate; rounded lifetime K/D must never manufacture counter rollbacks.
+    deaths_est:
+      stats.overall.deaths ?? stats.overall.matches - stats.overall.wins,
+    kd: stats.overall.kd,
+  });
+}
+export async function fetchLifetimeStats(
+  account: string,
+): Promise<PlayerStats> {
+  const result = await externalCheckpoint<FetchResult>(
+    `fortnite:lifetime:${account}`,
+    async () => {
+      try {
+        return {
+          stats: await callApi({
+            account_id: account,
+            time_window: "lifetime",
+          }),
+        };
+      } catch (error) {
+        if (!(error instanceof FortniteError)) throw error;
+        return { error: error.name, message: error.message };
+      }
+    },
+  );
+  if (!("stats" in result)) {
+    if (result.error === "StatsPrivate") throw new StatsPrivate(result.message);
+    if (result.error === "EpicNameNotFound")
+      throw new EpicNameNotFound(result.message);
+    if (result.error === "StatsEmpty")
+      throw new StatsEmpty({ epic_account_id: account, epic_name: account });
+    throw new FortniteUnavailable(result.message);
+  }
+  if (result.stats.epic_account_id !== account)
+    throw new FortniteUnavailable("account mismatch");
+  // SQL/checkpoint commits separately; interrupted saves reuse the fetched counters.
+  await saveLifetimeSnapshot(result.stats);
+  return result.stats;
+}
 export async function saveSeasonSnapshot(stats: PlayerStats) {
+  if (stats.time_window === "lifetime")
+    throw new TypeError("lifetime cannot contribute season snapshots");
   const { save_squad_snapshot } = await import("./db");
   const sq = stats.squad;
   await save_squad_snapshot(

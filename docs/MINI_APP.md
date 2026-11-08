@@ -50,7 +50,7 @@
 3. В BotFather включить Main Mini App с URL `https://<production>/`.
    Задать `MINI_APP_DIRECT_URL=https://t.me/<bot>/<app-short-name>` (или URL Main
    Mini App `https://t.me/<bot>`). Эта server-side настройка добавляет обычную URL
-   кнопку к ответам `/stats`, `/teamstats`, включая пятничные отчёты.
+   кнопку к ответам `/stats`, включая пятничные отчёты.
    Личная Fortnite-статистика доступна в Mini App; `/myfnstats` удалена.
    После deploy выполнить `pnpm bot configure-commands` с production BOT_TOKEN,
    чтобы убрать старую команду из Telegram меню без изменения webhook.
@@ -66,7 +66,7 @@
    payloads; live provider verification требуется перед выпуском.
 7. В Telegram iOS, Android и desktop проверить light/dark, safe areas, узкий экран,
    Back из профиля, фильтры, пустые состояния, ошибки и частичную недоступность API.
-8. Отдельно проверить неизменность `/fort`, `/stats`, `/teamstats`,
+8. Отдельно проверить неизменность `/fort`, `/stats`,
    webhook status и фактический HTTP-исход следующего Friday report. CI и локальные
    тесты не заменяют эти проверки. Web Analytics dashboard activation отдельно.
 9. Speed Insights подключён через Next.js компонент в корневом layout. В Vercel

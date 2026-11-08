@@ -15,6 +15,7 @@ import {
   buildKeyboard,
   buildMyFnStatsText,
   buildStatsText,
+  buildUnifiedStatsText,
   buildTeamFnStatsText,
   generateTimeSlots,
   formatFixed,
@@ -132,5 +133,106 @@ describe("relative readiness offers", () => {
       text: "✅ Go (3/4)",
       callback_data: "go",
     });
+  });
+});
+
+describe("unified weekly statistics", () => {
+  const now = 1794124800;
+  const empty = () => ({
+    daily: new Map(),
+    weekly: new Map(),
+    periods: new Map(),
+    partial: new Map(),
+    reasons: new Map(),
+  });
+  it("keeps gatherings available with a clear game-data status and no decorative table", () => {
+    const html = buildUnifiedStatsText({
+      now,
+      gatherings: fixture.stats as ChatStats,
+      successes: [],
+      weeklyView: [],
+      report: empty(),
+      notices: [],
+      status: "🔗 Нет Epic-аккаунтов",
+    });
+    expect(html).toContain("🎮 <b>Сборы Fortnite</b>");
+    expect(html).toContain("🔗 Нет Epic-аккаунтов");
+    expect(html).not.toMatch(/[─█░]|<pre>/);
+    expect(html).not.toContain("MVP");
+  });
+  it("shows actual partial periods without weekly awards and escapes every name", () => {
+    const entry = [fixture.link, fixture.player] as Success;
+    const report = empty();
+    report.partial.set(entry[1].epic_account_id, {
+      delta: [4, 1, 12, 3],
+      baselineAt: now - 86400,
+      fetchedAt: now,
+    });
+    const html = buildUnifiedStatsText({
+      now,
+      gatherings: fixture.stats as ChatStats,
+      successes: [entry],
+      weeklyView: [],
+      report,
+      notices: [[entry[0], "начали наблюдение"]],
+    });
+    expect(html).toContain("Доступный период");
+    expect(html).toContain("4 матчей");
+    expect(html).toContain("A &amp; &lt;B&gt;");
+    expect(html).not.toContain("MVP");
+    expect(html).not.toContain("👤");
+  });
+  it("does not describe a measured inactive week as missing history", () => {
+    const report = empty();
+    report.weekly.set("id", [0, 0, 0, 0]);
+    const html = buildUnifiedStatsText({
+      now,
+      gatherings: fixture.stats as ChatStats,
+      successes: [],
+      weeklyView: [],
+      report,
+      notices: [],
+    });
+    expect(html).toContain("нет сыгранных матчей");
+    expect(html).not.toContain("копится");
+  });
+  it("bounds long escaped names and mixed player lists within one Telegram message", () => {
+    const entries = Array.from(
+      { length: 40 },
+      (_, id) =>
+        [
+          {
+            ...fixture.link,
+            user_id: id,
+            user_name: "<&".repeat(100),
+            epic_account_id: String(id),
+          },
+          { ...fixture.player, epic_account_id: String(id) },
+        ] as Success,
+    );
+    const report = empty();
+    for (const [, s] of entries) {
+      report.periods.set(s.epic_account_id, {
+        delta: [20, 5, 70, 3.5],
+        baselineAt: now - 604800,
+        fetchedAt: now,
+      });
+      report.partial.set(s.epic_account_id, {
+        delta: [1, 0, 1, 1],
+        baselineAt: now - 86400,
+        fetchedAt: now,
+      });
+    }
+    const html = buildUnifiedStatsText({
+      now,
+      gatherings: fixture.stats as ChatStats,
+      successes: entries,
+      weeklyView: entries,
+      report,
+      notices: [],
+    });
+    expect(html.length).toBeLessThanOrEqual(3500);
+    expect(html).not.toContain("<&");
+    expect(html).toContain("MVP недели");
   });
 });

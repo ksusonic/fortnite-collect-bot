@@ -4,6 +4,7 @@ import * as db from "../bot/db";
 import {
   callProvider,
   saveSeasonSnapshot,
+  saveLifetimeSnapshot,
   FortniteError,
   FortniteUnavailable,
   type PlayerStats,
@@ -14,10 +15,11 @@ import { cached, providerSlot, type Cached } from "./cache";
 import {
   normalizeProfile,
   profileToSeasonStats,
+  profileToStats,
   type Profile,
   type Window,
 } from "./profile";
-import { computeTeamDeltas, buildWeeklyView } from "./weekly";
+import { computeLifetimeReport, buildWeeklyView } from "./weekly";
 import {
   rank,
   teamSummary,
@@ -98,7 +100,10 @@ export async function accountProfile(
               if (profile.inputs.all.overall)
                 await saveSeasonSnapshot(profileToSeasonStats(profile));
             }
-          : undefined,
+          : async (profile) => {
+              if (profile.inputs.all.overall)
+                await saveLifetimeSnapshot(profileToStats(profile));
+            },
       ),
     signal,
   );
@@ -128,10 +133,10 @@ export async function weeklyReport(chat: number): Promise<WeeklyReport> {
       try {
         const cache = await accountProfile(
           link.epic_account_id,
-          "season",
+          "lifetime",
           signal,
         );
-        results[index] = { stats: profileToSeasonStats(cache.data), cache };
+        results[index] = { stats: profileToStats(cache.data), cache };
       } catch (error) {
         results[index] = { error };
       }
@@ -158,8 +163,12 @@ export async function weeklyReport(chat: number): Promise<WeeklyReport> {
     }
   }
   const now = Date.now() / 1000;
-  const [daily, weekly] = await computeTeamDeltas(successes, now);
-  const [view, missing] = buildWeeklyView(successes, weekly);
+  const report = await computeLifetimeReport(successes, now);
+  const [view, missing] = buildWeeklyView(
+    successes,
+    report.weekly,
+    report.reasons,
+  );
   excluded.push(
     ...missing.map(([link, reason]) => ({
       userId: link.user_id,
@@ -169,11 +178,7 @@ export async function weeklyReport(chat: number): Promise<WeeklyReport> {
   );
   const players: WeeklyPlayer[] = [];
   for (const [link, stats] of rank(view)) {
-    const baseline = await db.get_snapshot_before(
-      stats.epic_account_id,
-      now - 604800,
-      now - 864000,
-    );
+    const baseline = report.periods.get(stats.epic_account_id);
     players.push({
       userId: link.user_id,
       name: link.user_name,
@@ -183,12 +188,15 @@ export async function weeklyReport(chat: number): Promise<WeeklyReport> {
       wins: stats.overall.wins,
       kills: stats.overall.kills,
       kd: stats.overall.kd,
-      baselineAt: baseline?.fetched_at ?? null,
+      baselineAt: baseline?.baselineAt ?? null,
       fetchedAt: stats.fetched_at,
       stale: cacheByAccount.get(stats.epic_account_id)!.stale,
     });
   }
-  const facts = teamFacts(view, { weekly_missing: missing, deltas_24h: daily });
+  const facts = teamFacts(view, {
+    weekly_missing: missing,
+    deltas_24h: report.daily,
+  });
   return {
     reportAt: now,
     updatedAt: players.length

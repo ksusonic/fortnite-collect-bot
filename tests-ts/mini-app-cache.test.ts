@@ -70,7 +70,7 @@ suite("private statistics cache and snapshot integration", () => {
     roast.mockReset();
     await invocation(null, () =>
       raw(
-        "TRUNCATE statistics_cache,squad_snapshots,epic_links,sessions CASCADE",
+        "TRUNCATE statistics_cache,lifetime_snapshots,squad_snapshots,epic_links,sessions CASCADE",
       ),
     );
   });
@@ -233,6 +233,40 @@ suite("private statistics cache and snapshot integration", () => {
     });
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+  it("bounds gathering counts, participants and fill times by session creation and isolates games/chats", async () => {
+    await invocation(-100, async () => {
+      const from = Date.parse("2026-11-01T12:00:00Z") / 1000;
+      const to = from + 604800;
+      for (const [chat, mid, created, game] of [
+        [-100, 1, from - 1, "fortnite"],
+        [-100, 2, from, "fortnite"],
+        [-100, 3, to, "fortnite"],
+        [-100, 4, to + 1, "fortnite"],
+        [-100, 5, from + 1, "warcraft"],
+        [-200, 6, from + 1, "fortnite"],
+      ] as const) {
+        await raw(
+          `INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at,completed_at,is_complete,is_closed,gathering)
+          VALUES ($1,$2,$2,'User',to_timestamp($3),to_timestamp($3+60),true,true,$4)`,
+          [chat, mid, created, JSON.stringify({ game })],
+        );
+        await raw(
+          `INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at)
+          VALUES ($1,$2,$2,$3,'go',to_timestamp($4))`,
+          [chat, mid, `Player ${mid}`, created + 60],
+        );
+      }
+      const result = await db.get_chat_stats(-100, { from, to });
+      expect(result.total_sessions).toBe(2);
+      expect(result.completed_sessions).toBe(2);
+      expect(result.avg_fill_seconds).toBe(60);
+      expect(result.top_players.map(([name]) => name).sort()).toEqual([
+        "Player 2",
+        "Player 3",
+      ]);
+      expect((await db.get_chat_stats(-100)).total_sessions).toBe(4);
+    });
+  });
   it("returns partial weekly results with actual baseline timestamps and excludes provider failures", async () => {
     vi.stubGlobal(
       "fetch",
@@ -254,20 +288,15 @@ suite("private statistics cache and snapshot integration", () => {
       await db.save_epic_link(1, "Player", "Sanitized", "test");
       await db.save_epic_link(2, "Private", "Private", "private");
       const baseline = Date.now() / 1000 - 7 * 86400 - 60;
-      await db.save_squad_snapshot(
-        "test",
-        baseline,
-        10,
-        2,
-        30,
-        10,
-        3,
-        80,
-        10,
-        200,
-        80,
-        2.5,
-      );
+      await db.save_lifetime_snapshot({
+        epic_account_id: "test",
+        fetched_at: baseline,
+        matches: 80,
+        wins: 10,
+        kills: 200,
+        deaths_est: 70,
+        kd: 2.5,
+      });
       const report = await weeklyReport(-100);
       expect(report.players).toHaveLength(1);
       expect(report.players[0].baselineAt).toBeCloseTo(baseline, 4);
@@ -275,7 +304,7 @@ suite("private statistics cache and snapshot integration", () => {
         matches: 20,
         wins: 10,
         kills: 100,
-        kd: 5,
+        kd: 10,
         winRate: 0.5,
       });
       expect(report.excluded).toEqual([

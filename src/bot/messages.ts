@@ -1,3 +1,4 @@
+import type { LifetimeReport } from "../statistics/weekly";
 import {
   availability,
   gatheringGame,
@@ -671,4 +672,112 @@ export function buildTeamFnStatsText(
       );
   section(lines, "⚠️ <b>Без данных</b>", errorBody);
   return [lines.join("\n"), facts];
+}
+
+/** Dates reflect actual samples; daily collection is not an exact hourly window. */
+export function statsPeriod(from: number, to: number): string {
+  const fmt = (n: number) =>
+    new Intl.DateTimeFormat("ru-RU", {
+      timeZone: "Europe/Moscow",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(n * 1000);
+  return `${fmt(from)} — ${fmt(to)} МСК`;
+}
+export function buildUnifiedStatsText(options: {
+  now: number;
+  gatherings: ChatStats;
+  successes: Success[];
+  weeklyView: Success[];
+  report: LifetimeReport;
+  notices: [EpicLink, string][];
+  status?: string;
+}): string {
+  const { now, gatherings: g, weeklyView, report } = options;
+  const name = (s: string) => escapeHtml(Array.from(s).slice(0, 32).join(""));
+  const lines = [
+    "📊 <b>Неделя отряда</b>",
+    `📅 ${statsPeriod(now - 604800, now)}`,
+    "",
+    "🎮 <b>Сборы Fortnite</b>",
+    `📣 Создали: <b>${g.total_sessions}</b> · ✅ Собрались: <b>${g.completed_sessions}</b>`,
+  ];
+  if (g.total_sessions)
+    lines.push(
+      `🙌 Успешных сборов: ${formatFixed((100 * g.completed_sessions) / g.total_sessions, 0)}%`,
+    );
+  if (g.avg_fill_seconds !== null)
+    lines.push(`⏱ В среднем: ${Math.round(g.avg_fill_seconds / 60)} мин`);
+  if (g.top_players.length)
+    lines.push(
+      `🙌 Чаще участвовали: ${g.top_players
+        .slice(0, 3)
+        .map(([n, c]) => `${name(n)} — ${c}`)
+        .join(", ")}`,
+    );
+  lines.push("", "🏆 <b>Fortnite</b>");
+  const add = (line: string) => {
+    if (lines.join("\n").length + line.length + 1 <= 3500) {
+      lines.push(line);
+      return true;
+    }
+    return false;
+  };
+  if (weeklyView.length) {
+    const totals = teamSummary(weeklyView);
+    add(
+      "👥 Сумма личных результатов во всех BR-режимах, включая игры вне сборов.",
+    );
+    add("📸 Около 7 суток; фактические даты снимков указаны у игроков.");
+    add(
+      `🎮 ${totals.matches} матчей · 👑 ${totals.wins} побед (${formatFixed(totals.winRate * 100, 1)}%)`,
+    );
+    add(`💥 ${totals.kills} киллов · 🎯 K/D ${formatFixed(totals.kd, 2)}`);
+    add("");
+    for (const [i, [link, stats]] of rank(weeklyView).slice(0, 5).entries()) {
+      const mode = stats.overall;
+      const period = report.periods.get(stats.epic_account_id)!;
+      add(
+        `${["🥇", "🥈", "🥉"][i] ?? "🎮"} ${i === 0 ? "MVP недели · " : ""}<b>${name(link.user_name || stats.epic_name)}</b> · 🎮 ${mode.matches} · 👑 ${mode.wins} · 💥 ${mode.kills} · 🎯 ${formatFixed(mode.kd, 2)}\n📅 ${statsPeriod(period.baselineAt, period.fetchedAt)}`,
+      );
+    }
+    if (weeklyView.length > 5)
+      add(`👥 В недельном зачёте ещё ${weeklyView.length - 5} игроков.`);
+  } else
+    add(
+      options.status ??
+        (report.weekly.size
+          ? "😴 В недельном зачёте нет сыгранных матчей."
+          : "📸 Полная недельная история ещё копится."),
+    );
+  const partial = options.successes.filter(([, s]) =>
+    report.partial.has(s.epic_account_id),
+  );
+  if (partial.length) {
+    add("");
+    add("🌱 <b>Доступный период · вне недельного зачёта</b>");
+    for (const [link, stats] of partial.slice(0, 5)) {
+      const p = report.partial.get(stats.epic_account_id)!;
+      const [m, w, k, kd] = p.delta;
+      add(
+        `🎮 <b>${name(link.user_name || stats.epic_name)}</b> · ${m} матчей · 👑 ${w} · 💥 ${k} · 🎯 ${formatFixed(kd, 2)}\n📅 ${statsPeriod(p.baselineAt, p.fetchedAt)}`,
+      );
+    }
+    if (partial.length > 5)
+      add(`🌱 Ещё ${partial.length - 5} игроков копят недельную историю.`);
+  }
+  const notices = options.notices.filter(
+    ([link]) => !report.partial.has(link.epic_account_id),
+  );
+  if (notices.length) {
+    add("");
+    add("📋 <b>Вне недельного зачёта</b>");
+    for (const [link, reason] of notices.slice(0, 5))
+      add(`👤 ${name(link.user_name)} · ${escapeHtml(reason)}`);
+    if (notices.length > 5)
+      add(`👥 Ещё ${notices.length - 5} игроков без недельного результата.`);
+  }
+  return lines.join("\n");
 }

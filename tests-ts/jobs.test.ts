@@ -4,7 +4,7 @@ vi.mock("../src/bot/services/conversation-store", () => ({
 vi.mock("../src/bot/services/conversation-memory", () => ({
   enqueueConversationMemory: vi.fn(),
 }));
-vi.mock("../src/bot/commands", () => ({ syncReleaseCommands: vi.fn() }));
+vi.mock("../src/bot/commands", () => ({ ensureReleaseCommands: vi.fn() }));
 vi.mock("../src/bot/webhook", () => ({ syncReleaseWebhook: vi.fn() }));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({

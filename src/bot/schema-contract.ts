@@ -11,6 +11,8 @@ export const schemaContract = {
   epic_links: "user_id user_name epic_name epic_account_id linked_at",
   squad_snapshots:
     "epic_account_id fetched_at matches wins kills deaths_est kd overall_matches overall_wins overall_kills overall_deaths_est overall_kd",
+  lifetime_snapshots:
+    "epic_account_id fetched_at matches wins kills deaths_est kd",
   fort_cooldowns: "chat_id user_id attempted_at",
   service_state: "key value",
   work_items:

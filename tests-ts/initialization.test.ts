@@ -1,6 +1,10 @@
+const commands = vi.hoisted(() => ({ ensure: vi.fn() }));
+vi.mock("../src/bot/commands", () => ({
+  ensureReleaseCommands: commands.ensure,
+}));
 import { createServer } from "node:http";
 import { Bot, HttpError, type ApiClientOptions } from "grammy";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initializeBot } from "../src/bot/runtime";
 import { scopedFetch, withHttpClient } from "../src/bot/transport";
 import { telegramTransformer } from "../src/bot/work";
@@ -20,6 +24,7 @@ const info = {
   can_manage_bots: false,
   supports_join_request_queries: false,
 };
+beforeEach(() => commands.ensure.mockReset());
 describe("bounded Telegram initialization", () => {
   it("uses the real SDK transport with a compatible dispatcher", async () => {
     const requests: string[] = [];
@@ -76,5 +81,7 @@ describe("bounded Telegram initialization", () => {
     expect(bot.botInfo).toEqual(info);
     await initializeBot(bot);
     expect(getMe).toHaveBeenCalledOnce();
+    expect(commands.ensure).toHaveBeenCalledOnce();
+    expect(commands.ensure).toHaveBeenCalledWith(bot);
   });
 });

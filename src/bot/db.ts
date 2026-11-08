@@ -1,3 +1,4 @@
+import type { QueryResultRow } from "pg";
 import { query, chatId, getSessions, timestamp } from "./storage";
 import { valueCheckpoint } from "./work";
 import type { GatheringGame, GatheringState } from "./services/gathering";
@@ -473,7 +474,43 @@ export async function get_snapshot_before(
     )[0] ?? null
   );
 }
+export interface LifetimeSnapshot {
+  epic_account_id: string;
+  fetched_at: number;
+  matches: number;
+  wins: number;
+  kills: number;
+  deaths_est: number;
+  kd: number;
+}
+export async function save_lifetime_snapshot(snapshot: LifetimeSnapshot) {
+  await query(
+    `INSERT INTO lifetime_snapshots(epic_account_id,fetched_at,matches,wins,kills,deaths_est,kd)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(epic_account_id,fetched_at) DO NOTHING`,
+    [
+      snapshot.epic_account_id,
+      timestamp(snapshot.fetched_at),
+      snapshot.matches,
+      snapshot.wins,
+      snapshot.kills,
+      snapshot.deaths_est,
+      snapshot.kd,
+    ],
+  );
+}
+export async function get_lifetime_snapshots(
+  account: string,
+  from: number,
+  to: number,
+): Promise<LifetimeSnapshot[]> {
+  return query<LifetimeSnapshot>(
+    "SELECT * FROM lifetime_snapshots WHERE epic_account_id=$1 AND fetched_at>=$2 AND fetched_at<=$3 ORDER BY fetched_at",
+    [account, timestamp(from), timestamp(to)],
+  );
+}
 export async function cleanup_old_snapshots(days = 30): Promise<number> {
+  const cutoff = timestamp((await now("lifetime.cleanup.time")) - days * 86400);
+  await query("DELETE FROM lifetime_snapshots WHERE fetched_at<$1", [cutoff]);
   return (
     await query(
       "DELETE FROM squad_snapshots WHERE fetched_at<$1 RETURNING epic_account_id",
@@ -481,7 +518,10 @@ export async function cleanup_old_snapshots(days = 30): Promise<number> {
     )
   ).length;
 }
-export async function get_chat_stats(chat: number): Promise<ChatStats> {
+export async function get_chat_stats(
+  chat: number,
+  period?: { from: number; to: number },
+): Promise<ChatStats> {
   const result: ChatStats = {
     total_sessions: 0,
     completed_sessions: 0,
@@ -495,8 +535,22 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
     top_streaks: [],
     best_hours: [],
   };
+  const scopedQuery = <R extends QueryResultRow = QueryResultRow>(
+    sql: string,
+    params: unknown[],
+  ) => {
+    if (!period) return query<R>(sql, params);
+    const alias = sql.includes("JOIN sessions s") ? "s." : "";
+    const filter = ` AND ${alias}created_at>= $${params.length + 1} AND ${alias}created_at<= $${params.length + 2}`;
+    const bounded = sql.replace("='fortnite'", "='fortnite'" + filter);
+    return query<R>(bounded, [
+      ...params,
+      timestamp(period.from),
+      timestamp(period.to),
+    ]);
+  };
   const counts = (
-    await query(
+    await scopedQuery(
       `SELECT COUNT(*) AS total_sessions,COUNT(*) FILTER(WHERE is_complete AND NOT is_expired) AS completed_sessions,COUNT(*) FILTER(WHERE is_closed AND is_expired) AS expired_sessions,COUNT(*) FILTER(WHERE NOT is_closed) AS active_sessions FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite'`,
       [chat],
     )
@@ -507,20 +561,20 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
     ["pass", "top_passers", 5],
   ] as const) {
     result[key] = (
-      await query(
+      await scopedQuery(
         `SELECT (array_agg(r.user_name ORDER BY r.responded_at DESC))[1] AS name,COUNT(*) AS count FROM responses r JOIN sessions s ON r.chat_id=s.chat_id AND r.message_id=s.message_id WHERE s.chat_id=$1 AND COALESCE(s.gathering->>'game','fortnite')='fortnite' AND r.response=$2 GROUP BY r.user_id ORDER BY count DESC LIMIT $3`,
         [chat, response, limit],
       )
     ).map((r) => [r.name, r.count]);
   }
   result.top_initiators = (
-    await query(
+    await scopedQuery(
       "SELECT (array_agg(initiator_name ORDER BY created_at DESC))[1] AS name,COUNT(*) AS count FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' GROUP BY initiator_id ORDER BY count DESC LIMIT 5",
       [chat],
     )
   ).map((r) => [r.name, r.count]);
   const times = (
-    await query(
+    await scopedQuery(
       `SELECT AVG(EXTRACT(EPOCH FROM completed_at-created_at)) AS avg,MIN(EXTRACT(EPOCH FROM completed_at-created_at)) AS min FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' AND is_complete AND NOT is_expired AND completed_at IS NOT NULL`,
       [chat],
     )
@@ -528,7 +582,7 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
   result.avg_fill_seconds = times.avg;
   result.fastest_fill_seconds = times.min;
   const completed = (
-    await query(
+    await scopedQuery(
       "SELECT message_id FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' AND is_complete AND NOT is_expired ORDER BY created_at DESC",
       [chat],
     )
@@ -559,7 +613,7 @@ export async function get_chat_stats(chat: number): Promise<ChatStats> {
       .slice(0, 3);
   }
   result.best_hours = (
-    await query(
+    await scopedQuery(
       `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Moscow')::integer AS hour,COUNT(*) AS count,AVG(EXTRACT(EPOCH FROM completed_at-created_at)) AS avg FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite' AND is_complete AND NOT is_expired AND completed_at IS NOT NULL GROUP BY hour ORDER BY count DESC,avg ASC LIMIT 2`,
       [chat],
     )

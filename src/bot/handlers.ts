@@ -8,11 +8,8 @@ import {
   isGeneralAdmin,
 } from "./services/chat-access";
 import { gatheringGame } from "./services/gathering";
-import { statisticsKeyboard } from "./mini-app-link";
 import type { Bot, Context } from "grammy";
 import * as db from "./db";
-import * as messages from "./messages";
-import { valueCheckpoint } from "./work";
 import {
   GROUP_ONLY,
   displayName,
@@ -29,13 +26,13 @@ import {
   maybeGatheringMessage,
 } from "./handlers/gatherings";
 import { cmdAfk } from "./handlers/settings";
-import { cmdLinkepicfor, runTeamstats } from "./handlers/stats";
+import { cmdLinkepicfor, runStats } from "./handlers/stats";
 import { maybeRoast } from "./handlers/roast";
 
 // Keep the public entrypoint stable for runtime and callers during the feature split.
 export { displayName, escapeHtml } from "./handlers/common";
 export { parseTargetHour, sweep_expired_sessions } from "./handlers/gatherings";
-export { appendTeamAnalysis, runTeamstats } from "./handlers/stats";
+export { appendTeamAnalysis, runStats } from "./handlers/stats";
 export {
   buildWeeklyView,
   computeTeamDeltas,
@@ -68,17 +65,7 @@ export function registerHandlers(bot: Bot): void {
     afk: cmdAfk,
     linkepicfor: cmdLinkepicfor,
     stats: async (ctx) => {
-      if (ctx.chat)
-        await ctx.reply(
-          messages.buildStatsText(
-            await db.get_chat_stats(ctx.chat.id),
-            await valueCheckpoint("stats-style", messages.randomStatsStyle),
-          ),
-          { reply_markup: statisticsKeyboard(ctx.chat.id) },
-        );
-    },
-    teamstats: async (ctx) => {
-      if (ctx.chat) await runTeamstats(bot, ctx.chat.id);
+      if (ctx.chat) await runStats(bot, ctx.chat.id);
     },
     rm: async (ctx) => {
       const argument = String(ctx.match ?? "")
@@ -136,7 +123,7 @@ export function registerHandlers(bot: Bot): void {
           : `<a href="tg://user?id=${member.id}">${escapeHtml(displayName(member))}</a>`;
       await ignoreTelegram(() =>
         ctx.reply(
-          `👋 Привет, ${mention}.\n\nЯ бот для сбора скуада в Fortnite. Команды:\n🎮 /fort — собрать отряд из 4 человек\n⚔️ /warcraft — собрать отряд в Warcraft\n🗑 /rm fort или /rm warcraft — отменить сбор\n📊 /stats — статистика чата\n\nТакже слежу за статусом серверов Epic и предупрежу, если они недоступны.`,
+          `👋 Привет, ${mention}.\n\nЯ бот для сбора скуада в Fortnite. Команды:\n🎮 /fort — собрать отряд из 4 человек\n⚔️ /warcraft — собрать отряд в Warcraft\n🗑 /rm fort или /rm warcraft — отменить сбор\n📊 /stats — сборы и результаты Fortnite за неделю\n\nТакже слежу за статусом серверов Epic и предупрежу, если они недоступны.`,
         ),
       );
     }

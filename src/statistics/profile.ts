@@ -11,6 +11,7 @@ export type Window = "season" | "lifetime";
 export type Input = (typeof inputs)[number];
 export type Mode = (typeof modes)[number];
 export interface Performance {
+  deaths?: number;
   matches: number;
   wins: number;
   kills: number;
@@ -88,6 +89,9 @@ export function normalizeProfile(
         if (n !== null && applicable) placements[key] = n;
       }
       mapped[input][mode] = {
+        ...(Number.isInteger(value.deaths) && value.deaths! >= 0
+          ? { deaths: value.deaths }
+          : {}),
         matches: value.matches,
         wins: value.wins,
         kills: value.kills,
@@ -120,9 +124,13 @@ export function normalizeProfile(
 export function profileToSeasonStats(profile: Profile): PlayerStats {
   if (profile.window !== "season")
     throw new Error("lifetime cannot contribute season snapshots");
+  return profileToStats(profile);
+}
+export function profileToStats(profile: Profile): PlayerStats {
   const convert = (p: Performance | null): ModeStats | null =>
     p
       ? {
+          ...(p.deaths === undefined ? {} : { deaths: p.deaths }),
           matches: p.matches,
           wins: p.wins,
           kills: p.kills,
@@ -139,6 +147,7 @@ export function profileToSeasonStats(profile: Profile): PlayerStats {
       profile.fetchedAt,
     );
   return {
+    time_window: profile.window,
     epic_account_id: profile.accountId,
     epic_name: profile.epicName,
     overall: convert(profile.inputs.all.overall)!,

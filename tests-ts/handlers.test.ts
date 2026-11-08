@@ -1,8 +1,10 @@
+import fixture from "./fixtures/messages-parity.json";
+import { runStats } from "../src/bot/handlers/stats";
 vi.mock("../src/bot/services/chat-access", async (original) => ({
   ...(await original<typeof import("../src/bot/services/chat-access")>()),
   isChatApproved: vi.fn().mockResolvedValue(true),
 }));
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Bot } from "grammy";
 import type { Update } from "grammy/types";
 import type { Session } from "../src/bot/db";
@@ -12,7 +14,6 @@ import {
   registerHandlers,
   buildWeeklyView,
   appendTeamAnalysis,
-  computeTeamDeltas,
 } from "../src/bot/handlers";
 
 vi.mock("@vercel/connect", () => ({
@@ -27,6 +28,10 @@ const state = vi.hoisted(() => ({
   sessions: new Map<string, Session>(),
   saveResponse: vi.fn(),
   snapshot: vi.fn(),
+  epicLinks: vi.fn(),
+  stats: vi.fn(),
+  provider: vi.fn(),
+  analysis: vi.fn(),
   callbackError: null as { error_code: number; description: string } | null,
   calls: [] as { method: string; payload: Record<string, unknown> }[],
 }));
@@ -34,7 +39,9 @@ vi.mock("../src/bot/db", () => ({
   getSessions: () => state.sessions,
   load_session: async () => null,
   save_response: (...args: unknown[]) => state.saveResponse(...args),
-  get_snapshot_before: (...args: unknown[]) => state.snapshot(...args),
+  get_lifetime_snapshots: (...args: unknown[]) => state.snapshot(...args),
+  get_chat_epic_links: (...args: unknown[]) => state.epicLinks(...args),
+  get_chat_stats: (...args: unknown[]) => state.stats(...args),
   get_fort_cooldown: async () => null,
   set_fort_cooldown: async () => undefined,
   get_chat_participants: async () => [],
@@ -53,6 +60,14 @@ vi.mock("../src/bot/db", () => ({
     fort_title: null,
     ...fields,
   }),
+}));
+vi.mock("../src/bot/fortnite", async (original) => ({
+  ...(await original<typeof import("../src/bot/fortnite")>()),
+  fetchLifetimeStats: state.provider,
+}));
+vi.mock("../src/bot/roast", async (original) => ({
+  ...(await original<typeof import("../src/bot/roast")>()),
+  generateTeamStatsRoast: state.analysis,
 }));
 vi.mock("../src/bot/work", () => ({
   valueCheckpoint: async (_name: string, factory: () => unknown) => factory(),
@@ -146,6 +161,13 @@ beforeEach(() => {
   state.saveResponse.mockReset();
   state.saveResponse.mockResolvedValue(undefined);
   state.snapshot.mockReset();
+  state.snapshot.mockResolvedValue([]);
+  state.stats.mockReset();
+  state.stats.mockResolvedValue(fixture.stats);
+  state.epicLinks.mockReset();
+  state.epicLinks.mockResolvedValue([]);
+  state.provider.mockReset();
+  state.analysis.mockReset();
 });
 it("does not advertise or process the retired personal statistics command", async () => {
   expect(
@@ -396,62 +418,102 @@ it("escapes analysis without splitting HTML entities at the message limit", () =
   expect(result.length).toBeLessThanOrEqual(4096);
   expect(result).not.toMatch(/&(amp|lt)?<\/i>/);
 });
-it("bounds daily and weekly baselines and skips counters that rolled back", async () => {
-  const mode = {
-    matches: 100,
-    wins: 10,
-    kills: 200,
-    kd: 2,
-    win_rate: 0.1,
-    minutes_played: 1000,
-  };
-  const successes: Parameters<typeof computeTeamDeltas>[0] = [
-    [
-      {
-        user_id: 1,
-        user_name: "one",
-        linked_at: 1,
-        epic_name: "one",
-        epic_account_id: "one",
+
+afterEach(() => vi.unstubAllEnvs());
+describe("unified stats command", () => {
+  it("serves gatherings even without configured game statistics and does not handle teamstats", async () => {
+    vi.stubEnv("FORTNITE_API_KEY", "");
+    await runStats(bot(), -100);
+    expect(state.calls.filter((c) => c.method === "sendMessage")).toHaveLength(
+      1,
+    );
+    expect(state.calls[0]!.payload.text).toContain("Сборы Fortnite");
+    expect(state.calls[0]!.payload.text).toContain("не настроена");
+    expect(state.stats).toHaveBeenCalledWith(
+      -100,
+      expect.objectContaining({
+        from: expect.any(Number),
+        to: expect.any(Number),
+      }),
+    );
+    state.calls = [];
+    await bot().handleUpdate({
+      update_id: 2,
+      message: {
+        message_id: 12,
+        date: 1,
+        chat: { id: -100, type: "supergroup", title: "friends" },
+        from: { id: 1, is_bot: false, first_name: "one" },
+        text: "/teamstats",
+        entities: [{ type: "bot_command", offset: 0, length: 10 }],
       },
-      {
-        epic_name: "one",
-        epic_account_id: "one",
-        overall: mode,
-        solo: null,
-        duo: null,
-        squad: mode,
-        fetched_at: 1,
-        image_url: null,
-      },
-    ],
-  ];
-  state.snapshot
-    .mockResolvedValueOnce({
-      overall_matches: 95,
-      overall_wins: 9,
-      overall_kills: 188,
-      overall_deaths_est: 96,
-    })
-    .mockResolvedValueOnce({
-      overall_matches: 200,
-      overall_wins: 20,
-      overall_kills: 400,
-      overall_deaths_est: 200,
     });
-  const [daily, weekly] = await computeTeamDeltas(successes, 1000000);
-  expect(daily.get("one")).toEqual([5, 1, 12, 3]);
-  expect(weekly.size).toBe(0);
-  expect(state.snapshot).toHaveBeenNthCalledWith(
-    1,
-    "one",
-    1000000 - 86400,
-    1000000 - 129600,
-  );
-  expect(state.snapshot).toHaveBeenNthCalledWith(
-    2,
-    "one",
-    1000000 - 604800,
-    1000000 - 864000,
-  );
+    expect(state.calls).toEqual([]);
+  });
+  it("reports provider failures explicitly without hiding gatherings", async () => {
+    vi.stubEnv("FORTNITE_API_KEY", "test");
+    const { StatsPrivate } = await import("../src/bot/fortnite");
+    state.epicLinks.mockResolvedValue([fixture.link]);
+    state.provider.mockRejectedValue(new StatsPrivate("private"));
+    await runStats(bot(), -100);
+    const text = state.calls.find((c) => c.method === "sendMessage")!.payload
+      .text as string;
+    expect(text).toContain("Сборы Fortnite");
+    expect(text).toContain("Профиль закрыт");
+    expect(text).not.toContain("история ещё копится");
+  });
+  it("limits Grok to two sentences in the combined message", async () => {
+    vi.stubEnv("FORTNITE_API_KEY", "test");
+    const now = Date.now() / 1000;
+    state.epicLinks.mockResolvedValue([fixture.link]);
+    state.provider.mockResolvedValue({
+      ...fixture.player,
+      time_window: "lifetime",
+      fetched_at: now,
+    });
+    state.snapshot.mockResolvedValue([
+      {
+        fetched_at: now - 604800 - 60,
+        matches: 1,
+        wins: 0,
+        kills: 0,
+        deaths_est: 0,
+      },
+    ]);
+    state.analysis.mockResolvedValue(
+      "Первое предложение. Второе предложение. Третье предложение.",
+    );
+    await runStats(bot(), -100);
+    const text = state.calls.find((c) => c.method === "sendMessage")!.payload
+      .text as string;
+    expect(text).toContain("Второе предложение.");
+    expect(text).not.toContain("Третье предложение.");
+  });
+  it("sends weekly facts even if Grok fails", async () => {
+    vi.stubEnv("FORTNITE_API_KEY", "test");
+    const now = Date.now() / 1000;
+    state.epicLinks.mockResolvedValue([fixture.link]);
+    state.provider.mockResolvedValue({
+      ...fixture.player,
+      time_window: "lifetime",
+      fetched_at: now,
+    });
+    state.snapshot.mockResolvedValue([
+      {
+        fetched_at: now - 604800 - 60,
+        matches: 1,
+        wins: 0,
+        kills: 0,
+        deaths_est: 0,
+      },
+    ]);
+    state.analysis.mockRejectedValue(new Error("Grok unavailable"));
+    await runStats(bot(), -100);
+    expect(state.analysis).toHaveBeenCalledOnce();
+    const text = state.calls.find((c) => c.method === "sendMessage")!.payload
+      .text as string;
+    expect(text).toContain("MVP недели");
+    expect(text).toContain("Сборы Fortnite");
+    expect(text).not.toContain("Grok unavailable");
+  });
 });

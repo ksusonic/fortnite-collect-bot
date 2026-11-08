@@ -7,15 +7,17 @@ import * as roast from "../roast";
 import { externalCheckpoint, valueCheckpoint } from "../work";
 import {
   buildWeeklyView,
-  computeTeamDeltas,
   type TeamStatsSuccess,
 } from "../services/weekly-stats";
+import { computeLifetimeReport } from "../../statistics/weekly";
+import { teamFacts } from "../../statistics/summary";
+import { logEvent, errorFields } from "../logging";
 import { escapeHtml, nowSeconds, reply } from "./common";
 
 import { isGeneralAdmin } from "../services/chat-access";
 
 export function appendTeamAnalysis(html: string, text: string): string {
-  const header = "\n────────────────────\n🤖 <b>Анализ Grok</b>\n";
+  const header = "\n\n💬 <b>Grok</b>\n";
   const budget =
     roast.TELEGRAM_MAX_MESSAGE_LEN - html.length - header.length - 7;
   if (budget <= 1) return html;
@@ -93,63 +95,95 @@ export async function cmdLinkepicfor(ctx: Context): Promise<void> {
     `✅ <a href="tg://user?id=${userId}">${escapeHtml(name)}</a> → Epic <b>${escapeHtml(epicName)}</b> (залинковал админ${empty ? ", у игрока ещё 0 матчей" : ""})`,
   );
 }
-export async function runTeamstats(
-  bot: Bot,
-  chat: number,
-  silentOnEmpty = false,
-): Promise<void> {
-  if (!fortnite.isConfigured()) {
-    if (!silentOnEmpty)
-      await bot.api.sendMessage(chat, "Fortnite-статистика не настроена.");
-    return;
-  }
-  const links = await db.get_chat_epic_links(chat);
-  if (!links.length) {
-    if (!silentOnEmpty)
-      await bot.api.sendMessage(
-        chat,
-        "Никто не залинкован. Админ может это сделать через /linkepicfor.",
-      );
-    return;
-  }
-  await bot.api.sendChatAction(chat, "typing");
-  const successes: TeamStatsSuccess[] = [],
-    failures: [db.EpicLink, fortnite.FortniteError][] = [];
+export async function runStats(bot: Bot, chat: number): Promise<void> {
+  const now = await valueCheckpoint("stats-report-time", nowSeconds);
+  const gatherings = await db.get_chat_stats(chat, {
+    from: now - 604800,
+    to: now,
+  });
+  const links = fortnite.isConfigured()
+    ? await db.get_chat_epic_links(chat)
+    : [];
+  const successes: TeamStatsSuccess[] = [];
+  const notices: [db.EpicLink, string][] = [];
   for (const link of links) {
     try {
       successes.push([
         link,
-        await fortnite.fetchStats({
-          account_id: link.epic_account_id,
-          with_image: false,
-        }),
+        await fortnite.fetchLifetimeStats(link.epic_account_id),
       ]);
     } catch (error) {
       if (!(error instanceof fortnite.FortniteError)) throw error;
-      failures.push([link, error]);
+      notices.push([
+        link,
+        error instanceof fortnite.EpicNameNotFound
+          ? "👻 Epic-аккаунт не найден"
+          : error instanceof fortnite.StatsPrivate
+            ? "🔒 Профиль закрыт"
+            : error instanceof fortnite.StatsEmpty
+              ? "🎮 Пока нет матчей"
+              : "🚧 Fortnite API временно недоступен",
+      ]);
     }
   }
-  const now = await valueCheckpoint("teamstats-time", nowSeconds);
-  const [daily, weekly] = await computeTeamDeltas(successes, now);
-  const [view, missing] = buildWeeklyView(successes, weekly);
-  if (!view.length) {
-    if (!silentOnEmpty)
-      await bot.api.sendMessage(
-        chat,
-        "Пока нет недельных данных — копим снапшоты, загляни позже.",
-      );
-    return;
-  }
-  const [baseHtml, facts] = messages.buildTeamFnStatsText(view, failures, {
-    weekly_missing: missing,
-    deltas_24h: daily,
+  const report = await computeLifetimeReport(successes, now);
+  const [view, missing] = buildWeeklyView(
+    successes,
+    report.weekly,
+    report.reasons,
+  );
+  notices.push(...missing);
+  let html = messages.buildUnifiedStatsText({
+    now,
+    gatherings,
+    successes,
+    weeklyView: view,
+    report,
+    notices,
+    status: !fortnite.isConfigured()
+      ? "⚙️ Fortnite-статистика не настроена."
+      : !links.length
+        ? "🔗 Нет привязанных Epic-аккаунтов. Админ может добавить их через /linkepicfor."
+        : !successes.length
+          ? "🚧 Нет доступных игровых данных — причины ниже."
+          : undefined,
   });
-  let html = baseHtml;
+  const facts = teamFacts(view, {
+    weekly_missing: missing,
+    deltas_24h: report.daily,
+  });
   if (facts) {
-    const analysis = await externalCheckpoint("team-roast", () =>
-      roast.generateTeamStatsRoast(facts),
-    );
-    if (analysis) html = appendTeamAnalysis(html, analysis);
+    // A model failure must not suppress the factual report. Cache the fallback too,
+    // so replay follows the same branch and Telegram checkpoint order.
+    const analysis = await externalCheckpoint("stats-analysis", async () => {
+      try {
+        return await roast.generateTeamStatsRoast(
+          facts +
+            "\nФактические периоды снимков:\n" +
+            view
+              .map(([link, stats]) => {
+                const p = report.periods.get(stats.epic_account_id)!;
+                return `${link.user_name}: ${messages.statsPeriod(p.baselineAt, p.fetchedAt)}`;
+              })
+              .join("\n"),
+        );
+      } catch (error) {
+        logEvent("warn", "stats.analysis_failed", errorFields(error));
+        return null;
+      }
+    });
+    if (analysis) {
+      const sentences = Array.from(
+        new Intl.Segmenter("ru", { granularity: "sentence" }).segment(analysis),
+        (part) => part.segment,
+      )
+        .slice(0, 2)
+        .join("");
+      html = appendTeamAnalysis(
+        html,
+        Array.from(sentences).slice(0, 400).join(""),
+      );
+    }
   }
   await bot.api.sendMessage(chat, html, {
     reply_markup: statisticsKeyboard(chat),

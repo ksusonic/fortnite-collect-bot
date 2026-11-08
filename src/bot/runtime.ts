@@ -10,13 +10,10 @@ import { Bot, BotError, type ApiClientOptions } from "grammy";
 import type { Update } from "grammy/types";
 import * as db from "./db";
 import { weeklyDue } from "./schedule-time";
+import { ensureReleaseCommands } from "./commands";
 import { executeSnapshot } from "./snapshots";
 import { isChatApproved, isOwnerInit } from "./services/chat-access";
-import {
-  registerHandlers,
-  runTeamstats,
-  sweep_expired_sessions,
-} from "./handlers";
+import { registerHandlers, runStats, sweep_expired_sessions } from "./handlers";
 import {
   advisoryLock,
   current,
@@ -60,6 +57,7 @@ export async function initializeBot(bot: Bot): Promise<void> {
   bot.botInfo = await bot.api.getMe(
     httpSignal(20_000) as unknown as Parameters<Bot["api"]["getMe"]>[0],
   );
+  await ensureReleaseCommands(bot);
 }
 export function updateChat(update: Update): number | null {
   if (update.message) return update.message.chat.id;
@@ -188,7 +186,7 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       else if (item.kind === "weekly") {
         const last = await db.get_last_weekly_drop(item.chat_id!);
         if (last === null || last <= Number(item.payload.now) - 6 * 86400) {
-          await runTeamstats(bot, item.chat_id!, true);
+          await runStats(bot, item.chat_id!);
           await db.set_last_weekly_drop(
             item.chat_id!,
             Number(item.payload.now),
