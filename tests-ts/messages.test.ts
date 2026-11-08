@@ -160,6 +160,25 @@ describe("unified weekly statistics", () => {
     expect(html).not.toMatch(/[─█░]|<pre>/);
     expect(html).not.toContain("MVP");
   });
+  it("does not equate a two-player gathering with failure or claim that signups prove play", () => {
+    const html = buildUnifiedStatsText({
+      now,
+      gatherings: {
+        ...fixture.stats,
+        total_sessions: 3,
+        company_sessions: 2,
+        completed_sessions: 0,
+        avg_fill_seconds: null,
+      } as ChatStats,
+      successes: [],
+      weeklyView: [],
+      report: empty(),
+      notices: [],
+    });
+    expect(html).toContain("👥 Записались 2+ человека: <b>2</b> из 3 сборов");
+    expect(html).toContain("🎯 Набрался сквад из 4: <b>0</b>");
+    expect(html).not.toMatch(/Успешных|Собрались|0%/);
+  });
   it("shows actual partial periods without weekly awards and escapes every name", () => {
     const entry = [fixture.link, fixture.player] as Success;
     const report = empty();

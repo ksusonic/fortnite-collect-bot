@@ -55,6 +55,7 @@ export function newSession(
 export interface ChatStats {
   total_sessions: number;
   completed_sessions: number;
+  company_sessions: number;
   expired_sessions: number;
   active_sessions: number;
   top_players: [string, number][];
@@ -525,6 +526,7 @@ export async function get_chat_stats(
   const result: ChatStats = {
     total_sessions: 0,
     completed_sessions: 0,
+    company_sessions: 0,
     expired_sessions: 0,
     active_sessions: 0,
     top_players: [],
@@ -551,7 +553,7 @@ export async function get_chat_stats(
   };
   const counts = (
     await scopedQuery(
-      `SELECT COUNT(*) AS total_sessions,COUNT(*) FILTER(WHERE is_complete AND NOT is_expired) AS completed_sessions,COUNT(*) FILTER(WHERE is_closed AND is_expired) AS expired_sessions,COUNT(*) FILTER(WHERE NOT is_closed) AS active_sessions FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite'`,
+      `SELECT COUNT(*) AS total_sessions,COUNT(*) FILTER(WHERE (SELECT count(*) FROM responses r WHERE r.chat_id=sessions.chat_id AND r.message_id=sessions.message_id AND r.response='go' AND NOT r.is_bot)>=2) AS company_sessions,COUNT(*) FILTER(WHERE is_complete AND NOT is_expired) AS completed_sessions,COUNT(*) FILTER(WHERE is_closed AND is_expired) AS expired_sessions,COUNT(*) FILTER(WHERE NOT is_closed) AS active_sessions FROM sessions WHERE chat_id=$1 AND COALESCE(gathering->>'game','fortnite')='fortnite'`,
       [chat],
     )
   )[0];
