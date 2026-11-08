@@ -267,6 +267,39 @@ suite("private statistics cache and snapshot integration", () => {
       expect((await db.get_chat_stats(-100)).total_sessions).toBe(4);
     });
   });
+  it("counts two- and three-player signups independently of full-squad completion", async () => {
+    await invocation(-100, async () => {
+      const to = Date.now() / 1000;
+      const from = to - 604800;
+      for (const [chat, mid, people, created, game] of [
+        [-100, 1, 1, to - 60, "fortnite"],
+        [-100, 2, 2, to - 60, "fortnite"],
+        [-100, 3, 3, to - 60, "fortnite"],
+        [-100, 4, 2, from - 1, "fortnite"],
+        [-100, 5, 2, to - 60, "warcraft"],
+        [-200, 6, 2, to - 60, "fortnite"],
+      ] as const) {
+        await raw(
+          `INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at,is_closed,gathering)
+          VALUES ($1,$2,1,'User',to_timestamp($3),true,$4)`,
+          [chat, mid, created, JSON.stringify({ game })],
+        );
+        for (let user = 1; user <= people; user++)
+          await raw(
+            `INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at)
+          VALUES ($1,$2,$3,'User','go',to_timestamp($4))`,
+            [chat, mid, user, created],
+          );
+      }
+      // A passer and a bot must not turn a one-human signup into a company.
+      await raw(`INSERT INTO responses(chat_id,message_id,user_id,user_name,response,responded_at,is_bot)
+        VALUES (-100,1,10,'Passer','pass',now(),false),(-100,1,11,'Bot','go',now(),true)`);
+      const stats = await db.get_chat_stats(-100, { from, to });
+      expect(stats.total_sessions).toBe(3);
+      expect(stats.completed_sessions).toBe(0);
+      expect(stats.company_sessions).toBe(2);
+    });
+  });
   it("returns partial weekly results with actual baseline timestamps and excludes provider failures", async () => {
     vi.stubGlobal(
       "fetch",

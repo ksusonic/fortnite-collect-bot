@@ -702,17 +702,17 @@ export function buildUnifiedStatsText(options: {
     `📅 ${statsPeriod(now - 604800, now)}`,
     "",
     "🎮 <b>Сборы Fortnite</b>",
-    `📣 Создали: <b>${g.total_sessions}</b> · ✅ Собрались: <b>${g.completed_sessions}</b>`,
+    `📣 Создали: <b>${g.total_sessions}</b>`,
+    `👥 Записались 2+ человека: <b>${g.company_sessions}</b> из ${g.total_sessions} сборов`,
+    `🎯 Набрался сквад из 4: <b>${g.completed_sessions}</b>`,
   ];
-  if (g.total_sessions)
-    lines.push(
-      `🙌 Успешных сборов: ${formatFixed((100 * g.completed_sessions) / g.total_sessions, 0)}%`,
-    );
   if (g.avg_fill_seconds !== null)
-    lines.push(`⏱ В среднем: ${Math.round(g.avg_fill_seconds / 60)} мин`);
+    lines.push(
+      `⏱ До полного сквада в среднем: ${Math.round(g.avg_fill_seconds / 60)} мин`,
+    );
   if (g.top_players.length)
     lines.push(
-      `🙌 Чаще участвовали: ${g.top_players
+      `🙌 Чаще записывались: ${g.top_players
         .slice(0, 3)
         .map(([n, c]) => `${name(n)} — ${c}`)
         .join(", ")}`,
