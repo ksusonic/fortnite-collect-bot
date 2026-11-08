@@ -1,6 +1,7 @@
 import { save_squad_snapshot } from "./db";
 import {
   callApi,
+  saveLifetimeSnapshot,
   EpicNameNotFound,
   isConfigured,
   StatsEmpty,
@@ -20,14 +21,14 @@ export async function enqueueDailySnapshots(nowSeconds: number): Promise<void> {
     .slice(0, 10);
   await raw(
     `INSERT INTO work_items(id,kind,chat_id,payload)
-     SELECT 'snapshot:' || $1 || ':' || account_id, 'snapshot', NULL,
-       jsonb_build_object('account_id', account_id, 'day', $1::text)
+     SELECT 'snapshot:lifetime:' || $1 || ':' || account_id, 'snapshot', NULL,
+       jsonb_build_object('account_id', account_id, 'day', $1::text, 'window', 'lifetime')
      FROM (
        SELECT DISTINCT epic_account_id AS account_id FROM epic_links l
        WHERE EXISTS (SELECT 1 FROM responses r JOIN approved_chats a ON a.chat_id=r.chat_id WHERE r.user_id=l.user_id AND NOT r.is_bot)
        AND NOT EXISTS (
          SELECT 1 FROM work_items
-         WHERE id = 'snapshot:' || $1 || ':' || l.epic_account_id
+         WHERE id = 'snapshot:lifetime:' || $1 || ':' || l.epic_account_id
        )
        ORDER BY account_id LIMIT 100
      ) accounts
@@ -59,11 +60,17 @@ export async function executeSnapshot(
     !/^\d{4}-\d{2}-\d{2}$/.test(day)
   )
     throw new Error("invalid snapshot payload");
+  const lifetime = payload.window === "lifetime";
   const result = await externalCheckpoint<
     { stats: PlayerStats } | { skipped: string }
-  >(`snapshot:${day}:${account}`, async () => {
+  >(`snapshot:${lifetime ? "lifetime:" : ""}${day}:${account}`, async () => {
     try {
-      return { stats: await callApi({ account_id: account }) };
+      return {
+        stats: await callApi({
+          account_id: account,
+          ...(lifetime ? { time_window: "lifetime" as const } : {}),
+        }),
+      };
     } catch (error) {
       // Retry network/rate-limit failures without caching their outcome. A
       // private, missing or empty profile can be checked again the next day.
@@ -80,6 +87,10 @@ export async function executeSnapshot(
   const stats = result.stats;
   if (stats.epic_account_id !== account)
     throw new Error("snapshot account differs from requested account");
+  if (lifetime) {
+    await saveLifetimeSnapshot(stats);
+    return;
+  }
   const squad = stats.squad;
   // This SQL write and its Work database checkpoint commit atomically, outside
   // the external checkpoint, so an interrupted save reuses the original fetch.

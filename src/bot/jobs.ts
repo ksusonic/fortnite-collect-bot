@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { diagnosticTags } from "../sentry-options";
 import { logEvent, workReference, errorFields } from "./logging";
 import * as db from "./db";
-import { syncReleaseCommands } from "./commands";
+import { ensureReleaseCommands } from "./commands";
 import { syncReleaseWebhook } from "./webhook";
 import { moscowDate, weeklyDue } from "./schedule-time";
 export { moscowDate, weeklyDue } from "./schedule-time";
@@ -229,7 +229,7 @@ export async function runJob(
               await enqueueDailySnapshots(now);
               await enqueueConversationMemory(now);
               const bot = createBot();
-              await syncReleaseCommands(bot);
+              await ensureReleaseCommands(bot);
               await syncReleaseWebhook(bot);
               await recoverPending(bot);
               await recoverJobs();

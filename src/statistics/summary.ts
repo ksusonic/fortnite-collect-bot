@@ -18,7 +18,9 @@ export function totals(stats: PlayerStats): Delta {
 export function rank(successes: Success[]): Success[] {
   return [...successes].sort(
     (a, b) =>
-      totals(b[1])[1] - totals(a[1])[1] || totals(b[1])[2] - totals(a[1])[2],
+      totals(b[1])[1] - totals(a[1])[1] ||
+      totals(b[1])[2] - totals(a[1])[2] ||
+      a[0].user_id - b[0].user_id,
   );
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   normalizeProfile,
   profileToSeasonStats,
+  profileToStats,
   type ProviderProfile,
 } from "../src/statistics/profile";
 import {
@@ -11,11 +12,15 @@ import {
   gatheringSummary,
   type Success,
 } from "../src/statistics/summary";
-import { buildWeeklyView, computeTeamDeltas } from "../src/statistics/weekly";
+import {
+  buildWeeklyView,
+  computeTeamDeltas,
+  computeLifetimeReport,
+} from "../src/statistics/weekly";
 import { buildTeamFnStatsText } from "../src/bot/messages";
 import { callProvider } from "../src/bot/fortnite";
 const state = vi.hoisted(() => ({ snapshot: vi.fn() }));
-vi.mock("../src/bot/db", () => ({ get_snapshot_before: state.snapshot }));
+vi.mock("../src/bot/db", () => ({ get_lifetime_snapshots: state.snapshot }));
 const raw: ProviderProfile = {
   account: { id: "test", name: "Sanitized" },
   battlePass: { level: 42, progress: 50 },
@@ -60,8 +65,8 @@ function success(
         },
       },
     },
-    "season",
-    1000,
+    "lifetime",
+    1000000,
   );
   return [
     {
@@ -71,7 +76,7 @@ function success(
       epic_account_id: profile.accountId,
       linked_at: 0,
     },
-    profileToSeasonStats(profile),
+    profileToStats(profile),
   ];
 }
 beforeEach(() => state.snapshot.mockReset());
@@ -155,29 +160,102 @@ describe("shared factual statistics", () => {
     expect(facts).toContain("MVP недели: Player 3");
     expect(facts).not.toContain("Epic 5");
   });
-  it("ignores season counter resets even when matches increased", async () => {
-    state.snapshot.mockResolvedValue({
-      overall_matches: 90,
-      overall_wins: 20,
-      overall_kills: 500,
-      overall_deaths_est: 100,
-    });
+  it("keeps rolling lifetime deltas independent of seasonal resets", async () => {
+    state.snapshot.mockResolvedValue([
+      {
+        fetched_at: 1000000 - 604800,
+        matches: 90,
+        wins: 1,
+        kills: 40,
+        deaths_est: 89,
+      },
+    ]);
     const [daily, weekly] = await computeTeamDeltas(
-      [success(1, 100, 1, 60, 3)],
+      [success(1, 100, 2, 60, 3)],
       1000000,
     );
     expect(daily.size).toBe(0);
-    expect(weekly.size).toBe(0);
+    expect(weekly.get("1")).toEqual([10, 1, 20, 20 / 9]);
+    expect(state.snapshot).toHaveBeenCalledWith("1", 1000000 - 691200, 1000000);
   });
-  it("uses bounded seven-day baseline and excludes missing baseline", async () => {
-    state.snapshot.mockResolvedValue(null);
-    const result = await computeTeamDeltas([success(1, 10, 2, 20, 2)], 1000000);
-    expect(result[1].size).toBe(0);
-    expect(state.snapshot).toHaveBeenCalledWith(
-      "1",
-      1000000 - 604800,
-      1000000 - 864000,
+  it("does not compare counters across a rollback even after they catch up", async () => {
+    state.snapshot.mockResolvedValue([
+      {
+        fetched_at: 1000000 - 604800,
+        matches: 90,
+        wins: 1,
+        kills: 40,
+        deaths_est: 89,
+      },
+      {
+        fetched_at: 1000000 - 86400,
+        matches: 5,
+        wins: 0,
+        kills: 10,
+        deaths_est: 5,
+      },
+    ]);
+    const report = await computeLifetimeReport(
+      [success(1, 100, 2, 60, 3)],
+      1000000,
     );
+    expect(report.weekly.size).toBe(0);
+    expect(report.partial.get("1")?.delta).toEqual([95, 2, 50, 50 / 93]);
+    expect(report.reasons.get("1")).toContain("счётчики изменились");
+  });
+  it("reports the observed partial period without promoting it into weekly rankings", async () => {
+    state.snapshot.mockResolvedValue([
+      {
+        fetched_at: 1000000 - 2 * 86400,
+        matches: 90,
+        wins: 1,
+        kills: 40,
+        deaths_est: 89,
+      },
+    ]);
+    const report = await computeLifetimeReport(
+      [success(1, 100, 2, 60, 3)],
+      1000000,
+    );
+    expect(report.partial.get("1")?.baselineAt).toBe(1000000 - 2 * 86400);
+    expect(report.weekly.size).toBe(0);
+    expect(
+      buildWeeklyView([success(1, 100, 2, 60, 3)], report.weekly)[0],
+    ).toEqual([]);
+  });
+  it("does not invent zero activity for the first snapshot or use an old baseline", async () => {
+    state.snapshot.mockResolvedValue([]);
+    const report = await computeLifetimeReport(
+      [success(1, 10, 2, 20, 2)],
+      1000000,
+    );
+    expect(report.weekly.size).toBe(0);
+    expect(report.partial.size).toBe(0);
+    expect(report.reasons.get("1")).toContain("начали наблюдение");
+  });
+  it("rejects seasonal input instead of mixing histories", async () => {
+    const entry = success(1, 10, 2, 20, 2);
+    entry[1].time_window = "season";
+    await expect(computeLifetimeReport([entry], 1000000)).rejects.toThrow(
+      "lifetime",
+    );
+  });
+  it("keeps an observed zero-match week distinct from missing history", async () => {
+    state.snapshot.mockResolvedValue([
+      {
+        fetched_at: 1000000 - 604800,
+        matches: 100,
+        wins: 2,
+        kills: 60,
+        deaths_est: 98,
+      },
+    ]);
+    const report = await computeLifetimeReport(
+      [success(1, 100, 2, 60, 3)],
+      1000000,
+    );
+    expect(report.weekly.get("1")).toEqual([0, 0, 0, 0]);
+    expect(report.reasons.get("1")).toBe("не играл за неделю");
   });
   it("shares gathering completion rate without dividing by zero", () => {
     const data = {

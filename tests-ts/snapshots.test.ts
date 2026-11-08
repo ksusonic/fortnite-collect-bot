@@ -26,9 +26,10 @@ vi.mock("../src/bot/fortnite", async (original) => ({
 const url = process.env.TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const now = Date.parse("2026-10-04T12:00:00Z") / 1000;
-const payload = { account_id: "shared", day: "2026-10-04" };
-const id = "snapshot:2026-10-04:shared";
+const payload = { account_id: "shared", day: "2026-10-04", window: "lifetime" };
+const id = "snapshot:lifetime:2026-10-04:shared";
 const stats: PlayerStats = {
+  time_window: "lifetime",
   epic_account_id: "shared",
   epic_name: "Shared",
   fetched_at: now,
@@ -64,7 +65,7 @@ suite("daily durable snapshots", () => {
     vi.stubEnv("FORTNITE_API_KEY", "test-key");
     await invocation(null, async () => {
       await raw(
-        "TRUNCATE sessions,responses,approved_chats,roast_profiles,work_steps,work_items,epic_links,squad_snapshots CASCADE",
+        "TRUNCATE sessions,responses,approved_chats,roast_profiles,work_steps,work_items,epic_links,lifetime_snapshots,squad_snapshots CASCADE",
       );
       await raw(
         "INSERT INTO sessions(chat_id,message_id,initiator_id,initiator_name,created_at) VALUES (-10,99999,1,'User',now()) ON CONFLICT DO NOTHING",
@@ -106,20 +107,19 @@ suite("daily durable snapshots", () => {
       expect((await raw("SELECT id FROM work_items")).rows).toEqual([{ id }]);
       await enqueueDailySnapshots(Date.parse("2026-10-04T21:00:00Z") / 1000);
       expect((await raw("SELECT id FROM work_items ORDER BY id")).rows).toEqual(
-        [{ id }, { id: "snapshot:2026-10-05:shared" }],
+        [{ id }, { id: "snapshot:lifetime:2026-10-05:shared" }],
       );
     });
     await collect();
     await collect();
     expect(provider).toHaveBeenCalledOnce();
     await invocation(null, async () => {
-      const snapshots = (await raw("SELECT * FROM squad_snapshots")).rows;
+      const snapshots = (await raw("SELECT * FROM lifetime_snapshots")).rows;
       expect(snapshots).toHaveLength(1);
       expect(snapshots[0]).toMatchObject({
         epic_account_id: "shared",
-        matches: 0,
-        overall_matches: 20,
-        overall_deaths_est: 22,
+        matches: 20,
+        deaths_est: 17,
       });
       expect(
         (await raw("SELECT step FROM work_steps WHERE work_id=$1", [id])).rows,
@@ -127,14 +127,14 @@ suite("daily durable snapshots", () => {
     });
   });
   it("replays the original fetch after a snapshot write fails", async () => {
-    const save = vi.spyOn(db, "save_squad_snapshot");
+    const save = vi.spyOn(db, "save_lifetime_snapshot");
     save.mockRejectedValueOnce(new Error("save interrupted"));
     await expect(collect()).rejects.toThrow("save interrupted");
     await collect();
     expect(provider).toHaveBeenCalledOnce();
     await invocation(null, async () => {
       expect(
-        (await raw("SELECT fetched_at FROM squad_snapshots")).rows,
+        (await raw("SELECT fetched_at FROM lifetime_snapshots")).rows,
       ).toEqual([{ fetched_at: new Date(now * 1000) }]);
     });
   });
@@ -150,7 +150,23 @@ suite("daily durable snapshots", () => {
     await collect();
     expect(provider).toHaveBeenCalledOnce();
     await invocation(null, async () => {
-      expect((await raw("SELECT * FROM squad_snapshots")).rows).toEqual([]);
+      expect((await raw("SELECT * FROM lifetime_snapshots")).rows).toEqual([]);
+    });
+  });
+  it("finishes legacy season jobs without writing them into lifetime history", async () => {
+    const legacyId = "snapshot:2026-10-04:shared";
+    const legacy = { account_id: "shared", day: "2026-10-04" };
+    provider.mockResolvedValue({ ...stats, time_window: "season" });
+    await invocation(null, async () => {
+      await raw(
+        "INSERT INTO work_items(id,kind,payload) VALUES ($1,'snapshot',$2)",
+        [legacyId, JSON.stringify(legacy)],
+      );
+      await withWork(new Work(legacyId), () => executeSnapshot(legacy));
+      expect((await raw("SELECT * FROM lifetime_snapshots")).rows).toEqual([]);
+      expect(
+        (await raw("SELECT overall_matches FROM squad_snapshots")).rows,
+      ).toEqual([{ overall_matches: 20 }]);
     });
   });
   it("bounds each enqueue batch while later ticks continue with other accounts", async () => {

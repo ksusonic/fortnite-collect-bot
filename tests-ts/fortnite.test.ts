@@ -5,6 +5,7 @@ const checkpointState = vi.hoisted(() => ({
 const invocation = vi.hoisted(() => ({
   signal: undefined as AbortSignal | undefined,
 }));
+const saveLifetime = vi.hoisted(() => vi.fn());
 const saveSnapshot = vi.hoisted(() => vi.fn());
 vi.mock("../src/bot/work", () => ({
   externalCheckpoint: async (key: string, action: () => Promise<unknown>) => {
@@ -18,10 +19,14 @@ vi.mock("../src/bot/storage", () => ({ maybeCurrent: () => invocation }));
 vi.mock("../src/bot/transport", () => ({
   scopedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
 }));
-vi.mock("../src/bot/db", () => ({ save_squad_snapshot: saveSnapshot }));
+vi.mock("../src/bot/db", () => ({
+  save_squad_snapshot: saveSnapshot,
+  save_lifetime_snapshot: saveLifetime,
+}));
 beforeEach(() => {
   checkpointState.saved.clear();
   saveSnapshot.mockReset();
+  saveLifetime.mockReset();
   invocation.signal = undefined;
 });
 afterEach(() => {
@@ -31,6 +36,9 @@ afterEach(() => {
 import {
   callApi,
   fetchStats,
+  fetchLifetimeStats,
+  saveLifetimeSnapshot,
+  saveSeasonSnapshot,
   EpicNameNotFound,
   FortniteUnavailable,
   StatsEmpty,
@@ -268,4 +276,48 @@ describe("Fortnite invocation and recovery", () => {
     ).toBe(raw.image);
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+});
+
+it("replays lifetime fetches after a SQL failure and keeps seasonal storage separate", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(new Response(JSON.stringify({ data: raw })));
+  vi.stubGlobal("fetch", fetcher);
+  saveLifetime.mockRejectedValueOnce(new Error("write interrupted"));
+  await expect(fetchLifetimeStats("account")).rejects.toThrow(
+    "write interrupted",
+  );
+  const stats = await fetchLifetimeStats("account");
+  expect(stats.time_window).toBe("lifetime");
+  expect(
+    new URL(String(fetcher.mock.calls[0]![0])).searchParams.get("timeWindow"),
+  ).toBe("lifetime");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(saveLifetime).toHaveBeenCalledTimes(2);
+  expect(saveSnapshot).not.toHaveBeenCalled();
+  await expect(saveSeasonSnapshot(stats)).rejects.toThrow("lifetime");
+  await expect(
+    saveLifetimeSnapshot({ ...stats, time_window: "season" }),
+  ).rejects.toThrow("lifetime");
+});
+
+it("keeps explicit provider deaths and avoids rounded lifetime KD for fallback counters", async () => {
+  const stats = toPlayerStats(
+    {
+      ...raw,
+      stats: { all: { overall: { ...raw.stats!.all!.overall!, deaths: 7 } } },
+    },
+    false,
+  );
+  await saveLifetimeSnapshot({ ...stats, time_window: "lifetime" });
+  expect(saveLifetime).toHaveBeenLastCalledWith(
+    expect.objectContaining({ deaths_est: 7 }),
+  );
+  await saveLifetimeSnapshot({
+    ...toPlayerStats(raw, false),
+    time_window: "lifetime",
+  });
+  expect(saveLifetime).toHaveBeenLastCalledWith(
+    expect.objectContaining({ deaths_est: 8 }),
+  );
 });

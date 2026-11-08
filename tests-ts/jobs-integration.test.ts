@@ -1,4 +1,4 @@
-vi.mock("../src/bot/commands", () => ({ syncReleaseCommands: vi.fn() }));
+vi.mock("../src/bot/commands", () => ({ ensureReleaseCommands: vi.fn() }));
 vi.mock("../src/bot/webhook", () => ({ syncReleaseWebhook: vi.fn() }));
 import {
   afterEach,
