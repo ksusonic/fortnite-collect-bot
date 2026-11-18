@@ -5,10 +5,7 @@ import { logEvent, errorFields } from "./logging";
 import { raw, advisoryLock } from "./storage";
 
 export const GROUP_COMMANDS = [
-  { command: "fort", description: "собрать сквад на катку" },
-  { command: "warcraft", description: "собрать отряд в Warcraft" },
-  { command: "afk", description: "AFK себе или @user: 1d, 2w или off" },
-  { command: "rm", description: "отменить сбор: fort или warcraft" },
+  { command: "fort", description: "отправиться играть в GTA 6" },
   { command: "stats", description: "📊 сборы и Fortnite за неделю" },
 ];
 

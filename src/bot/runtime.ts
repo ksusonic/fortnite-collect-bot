@@ -13,7 +13,7 @@ import { weeklyDue } from "./schedule-time";
 import { ensureReleaseCommands } from "./commands";
 import { executeSnapshot } from "./snapshots";
 import { isChatApproved, isOwnerInit } from "./services/chat-access";
-import { registerHandlers, runStats, sweep_expired_sessions } from "./handlers";
+import { registerHandlers, runStats } from "./handlers";
 import {
   advisoryLock,
   current,
@@ -24,7 +24,6 @@ import {
   type RoastEntry,
 } from "./storage";
 import { AmbiguousOutcome, telegramTransformer, Work } from "./work";
-import { gatheringTick } from "./handlers/gatherings";
 
 export function createBot(): Bot {
   const token = process.env.BOT_TOKEN;
@@ -154,6 +153,43 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
     return retired.rows.length ? "complete" : "failed";
   }
 
+  const update =
+    item.kind === "update" ? (item.payload as unknown as Update) : undefined;
+  const message = update && "message" in update ? update.message : undefined;
+  const callback =
+    update && "callback_query" in update ? update.callback_query : undefined;
+  const retiredUpdate = !!(
+    (message &&
+      "text" in message &&
+      /^\/(fort|warcraft|afk|rm)(?:@\w+)?(?:\s|$)/i.test(message.text ?? "")) ||
+    (callback &&
+      "data" in callback &&
+      /^(go|pass|slot:.*|gready(?::\d+)?|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/.test(
+        callback.data ?? "",
+      ))
+  );
+  if (
+    item.kind === "gathering" ||
+    item.kind === "expiry" ||
+    item.kind === "update"
+  ) {
+    // Deliberate migration: old gathering checkpoints cannot be replayed by the new handlers.
+    // Keep ambiguous work blocked for review and retain every historical checkpoint.
+    if (item.status === "ambiguous") return "ambiguous";
+    const retired = await raw(
+      `UPDATE work_items SET status='complete',error='gatherings retired',updated_at=now()
+       WHERE id=$1 AND status<>'ambiguous'
+       AND ($2 OR EXISTS (SELECT 1 FROM work_steps WHERE work_id=$1
+         AND ($3 OR signature LIKE 'gathering-%' OR signature LIKE 'active-gathering%'))) RETURNING id`,
+      [
+        item.id,
+        item.kind === "gathering" || item.kind === "expiry",
+        retiredUpdate,
+      ],
+    );
+    if (retired.rows.length) return "complete";
+  }
+
   await raw(
     "UPDATE work_items SET attempts=attempts+1,updated_at=now() WHERE id=$1",
     [item.id],
@@ -175,15 +211,7 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
           Number(item.payload.now),
         );
         await retryMemoryDeletions(item.chat_id!, Number(item.payload.now));
-      } else if (item.kind === "gathering")
-        await gatheringTick(bot, Number(item.payload.message_id));
-      else if (item.kind === "expiry")
-        await sweep_expired_sessions(
-          bot,
-          Number(item.payload.now),
-          Boolean(item.payload.past_deadline),
-        );
-      else if (item.kind === "weekly") {
+      } else if (item.kind === "weekly") {
         const last = await db.get_last_weekly_drop(item.chat_id!);
         if (last === null || last <= Number(item.payload.now) - 6 * 86400) {
           await runStats(bot, item.chat_id!);

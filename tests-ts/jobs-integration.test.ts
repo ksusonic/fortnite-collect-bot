@@ -59,72 +59,19 @@ const url = process.env.TEST_DATABASE_URL;
         await db.save_response(1, player, String(player), "go");
     });
   }
-  it("keeps old gatherings alive during the evening and archives after midnight", async () => {
-    await session(-10, 3601, 1);
-    await session(-11, 3601, 2);
-    await session(-12, 10801, 2);
+  it("never schedules gatherings, even ready or past midnight", async () => {
+    await session(-10, 3600, 2);
+    await session(-11, 86400, 4);
     await runJob("maintenance");
-    await invocation(null, async () => {
-      expect(
-        (await raw("SELECT id FROM work_items WHERE kind='gathering'")).rows,
-      ).toHaveLength(0);
-    });
-    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T21:00:00Z"));
-    await runJob("maintenance");
+    await runJob("expiry");
     await invocation(null, async () => {
       expect(
         (
           await raw(
-            "SELECT chat_id FROM work_items WHERE kind='gathering' ORDER BY chat_id",
+            "SELECT id FROM work_items WHERE kind IN ('gathering','expiry')",
           )
-        ).rows.map((r) => r.chat_id),
-      ).toEqual([-12, -11, -10]);
-    });
-    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T21:01:00Z"));
-    await runJob("maintenance");
-    await invocation(null, async () => {
-      expect(
-        (await raw("SELECT id FROM work_items WHERE kind='gathering'")).rows,
-      ).toHaveLength(3);
-    });
-  });
-  it("queues a start reminder only for two or more main players, once", async () => {
-    await session(-10, 3600, 1);
-    await session(-11, 3600, 2);
-    await session(-12, 3600, 5);
-    await invocation(null, () =>
-      raw(
-        "UPDATE responses SET available_at=to_timestamp($1) WHERE user_id<=2",
-        [Date.now() / 1000],
-      ),
-    );
-    // Reserve readiness must not make an otherwise future roster due.
-    await invocation(null, () =>
-      raw(
-        "UPDATE responses SET available_at=to_timestamp($1 + CASE WHEN user_id=5 THEN -3600 ELSE 3600 END) WHERE chat_id=-12",
-        [Date.now() / 1000],
-      ),
-    );
-    await runJob("maintenance");
-    await invocation(null, async () => {
-      expect(
-        (await raw("SELECT chat_id FROM work_items WHERE kind='gathering'"))
-          .rows,
-      ).toEqual([{ chat_id: -11 }]);
-      await raw(
-        "UPDATE work_items SET status='complete' WHERE kind='gathering'",
-      );
-      await raw(
-        `UPDATE sessions SET gathering=jsonb_set(gathering,'{notified_at}',to_jsonb($1::double precision)) WHERE chat_id=-11`,
-        [Date.now() / 1000],
-      );
-    });
-    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-10-04T14:01:00Z"));
-    await runJob("maintenance");
-    await invocation(null, async () => {
-      expect(
-        (await raw("SELECT id FROM work_items WHERE kind='gathering'")).rows,
-      ).toHaveLength(1);
+        ).rows,
+      ).toEqual([]);
     });
   });
   it("recovered Friday deadline scheduler cannot expire a new Sunday session", async () => {

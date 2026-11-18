@@ -316,88 +316,113 @@ suite("Postgres recovery and storage", () => {
       ).toEqual(response);
     });
   });
-  it("replays the original callback state after a committed response and failed edit", async () => {
-    const originalToken = process.env.BOT_TOKEN;
-    process.env.BOT_TOKEN = "123:fake-test-token";
-    let editAttempts = 0;
-    const fetcher = vi
-      .spyOn(undici, "fetch")
-      .mockImplementation(async (input) => {
-        const method = String(input).split("/").at(-1);
-        if (method === "editMessageText" && ++editAttempts === 1)
-          throw new Error("edit connection interrupted");
-        return new undici.Response(
-          JSON.stringify({
-            ok: true,
-            result:
-              method === "getMe"
-                ? {
-                    id: 123,
-                    is_bot: true,
-                    first_name: "Fort",
-                    username: "fort_test_bot",
-                  }
-                : true,
-          }),
-          { headers: { "Content-Type": "application/json" } },
-        );
-      });
-    try {
+  it.each(["gathering", "expiry", "update"])(
+    "retires checkpointed %s without replaying Telegram or altering history",
+    async (kind) => {
       await invocation(-10, async () => {
+        const item = {
+          id: "retired",
+          kind,
+          chat_id: -10,
+          status: "failed",
+          payload: {
+            update_id: 1,
+            callback_query: { data: "go" },
+            message_id: 20,
+          },
+        };
+        await enqueue(item.id, kind, -10, item.payload);
+        await raw(
+          "INSERT INTO work_steps(work_id,step,signature,status,result) VALUES ($1,'telegram:0','old-send','complete',$2)",
+          [item.id, JSON.stringify({ message_id: 21 })],
+        );
         await db.save_session(
           db.newSession({
             chat_id: -10,
             message_id: 20,
             initiator_id: 1,
             initiator_name: "one",
-            time_slots: ["now"],
           }),
         );
-        for (const id of [1, 2, 3])
-          await db.save_response(20, id, `user${id}`, "go");
-        const item = {
-          id: "callback-retry",
-          kind: "update",
-          chat_id: -10,
-          status: "pending",
-          payload: {
-            update_id: 1,
-            callback_query: {
-              id: "callback",
-              chat_instance: "chat",
-              data: "go",
-              from: { id: 4, is_bot: false, first_name: "four" },
-              message: {
-                message_id: 20,
-                date: 1,
-                chat: { id: -10, type: "group" },
-              },
-            },
-          },
-        };
-        await enqueue(item.id, item.kind, item.chat_id, item.payload);
-        const bot = createBot();
-        await bot.init();
-        expect(await executeItem(item, bot)).toBe("failed");
-        const committed = (await db.load_session(20))!;
-        expect(committed.is_complete).toBe(true);
-        expect([...committed.go_players.keys()]).toEqual([1, 2, 3, 4]);
+        await db.save_response(20, 1, "one", "go");
+        const before = (
+          await raw("SELECT * FROM work_steps WHERE work_id=$1", [item.id])
+        ).rows;
+        const bot = {
+          handleUpdate: vi.fn(),
+          api: { sendMessage: vi.fn() },
+        } as unknown as Bot;
         expect(await executeItem(item, bot)).toBe("complete");
-        const recovered = (await db.load_session(20))!;
-        expect(recovered.completed_at).toBe(committed.completed_at);
-        expect([...recovered.go_players.keys()]).toEqual([1, 2, 3, 4]);
-        expect(editAttempts).toBe(2);
+        expect(bot.handleUpdate).not.toHaveBeenCalled();
+        expect(bot.api.sendMessage).not.toHaveBeenCalled();
         expect(
-          fetcher.mock.calls.filter(([input]) =>
-            String(input).endsWith("answerCallbackQuery"),
-          ),
-        ).toHaveLength(1);
+          (await raw("SELECT status FROM work_items WHERE id=$1", [item.id]))
+            .rows[0].status,
+        ).toBe("complete");
+        expect(
+          (await raw("SELECT * FROM work_steps WHERE work_id=$1", [item.id]))
+            .rows,
+        ).toEqual(before);
+        expect(
+          (await raw("SELECT user_id FROM responses WHERE chat_id=-10")).rows,
+        ).toEqual([{ user_id: 1 }]);
       });
-    } finally {
-      fetcher.mockRestore();
-      if (originalToken === undefined) delete process.env.BOT_TOKEN;
-      else process.env.BOT_TOKEN = originalToken;
-    }
+    },
+  );
+  it("retires an interrupted natural-language gathering update", async () => {
+    await invocation(-10, async () => {
+      const item = {
+        id: "old-text",
+        kind: "update",
+        chat_id: -10,
+        status: "failed",
+        payload: {
+          update_id: 1,
+          message: {
+            text: "я в лобби",
+            chat: { id: -10, type: "group" },
+            message_id: 1,
+            date: 1,
+          },
+        },
+      };
+      await enqueue(item.id, item.kind, item.chat_id, item.payload);
+      await raw(
+        "INSERT INTO work_steps(work_id,step,signature,status,result) VALUES ($1,'value:0','gathering-message-time-v2','complete','123')",
+        [item.id],
+      );
+      const bot = { handleUpdate: vi.fn() } as unknown as Bot;
+      expect(await executeItem(item, bot)).toBe("complete");
+      expect(bot.handleUpdate).not.toHaveBeenCalled();
+    });
+  });
+  it("keeps ambiguous gathering work blocked", async () => {
+    await invocation(-10, async () => {
+      await enqueue("ambiguous-gathering", "gathering", -10, {});
+      await raw(
+        "UPDATE work_items SET status='ambiguous' WHERE id='ambiguous-gathering'",
+      );
+      const bot = { handleUpdate: vi.fn() } as unknown as Bot;
+      expect(
+        await executeItem(
+          {
+            id: "ambiguous-gathering",
+            kind: "gathering",
+            chat_id: -10,
+            status: "ambiguous",
+            payload: {},
+          },
+          bot,
+        ),
+      ).toBe("ambiguous");
+      expect(
+        (
+          await raw(
+            "SELECT status FROM work_items WHERE id='ambiguous-gathering'",
+          )
+        ).rows[0].status,
+      ).toBe("ambiguous");
+    });
   });
   it("propagates grammY-wrapped ambiguity and blocks later chat work", async () => {
     await invocation(-10, async () => {

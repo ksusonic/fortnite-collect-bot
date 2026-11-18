@@ -9,7 +9,6 @@ import { Bot } from "grammy";
 import type { Update } from "grammy/types";
 import type { Session } from "../src/bot/db";
 import { GROUP_COMMANDS } from "../src/bot/commands";
-import { gatheringTick } from "../src/bot/handlers/gatherings";
 import {
   registerHandlers,
   buildWeeklyView,
@@ -74,33 +73,6 @@ vi.mock("../src/bot/work", () => ({
   externalCheckpoint: async (_name: string, factory: () => Promise<unknown>) =>
     factory(),
 }));
-function session(): Session {
-  return {
-    chat_id: -100,
-    message_id: 20,
-    initiator_id: 1,
-    initiator_name: "one",
-    style: 0,
-    created_at: Date.now() / 1000,
-    completed_at: null,
-    is_complete: true,
-    is_closed: false,
-    is_expired: false,
-    time_slots: ["now", "30"],
-    go_players: new Map([
-      [1, "one"],
-      [2, "two"],
-      [3, "three"],
-      [4, "four"],
-      [5, "five"],
-    ]),
-    pass_players: new Map(),
-    player_slots: new Map(),
-    tagged_users: new Map(),
-    llm_header: null,
-    fort_title: null,
-  };
-}
 function bot(): Bot {
   const instance = new Bot("123:fake", {
     botInfo: {
@@ -186,187 +158,70 @@ it("does not advertise or process the retired personal statistics command", asyn
   });
   expect(state.calls).toEqual([]);
 });
-it("records the initiator, deletes the command and quietly pins the gathering", async () => {
-  await bot().handleUpdate({
-    update_id: 1,
-    message: {
-      message_id: 10,
-      date: 1,
-      chat: { id: -100, type: "supergroup", title: "friends" },
-      from: { id: 1, is_bot: false, first_name: "one" },
-      text: "/fort",
-      entities: [{ type: "bot_command", offset: 0, length: 5 }],
-    },
-  });
-  expect(state.sessions.get("-100:20")?.go_players.has(1)).toBe(true);
-  expect(
-    state.calls.find((c) => c.method === "pinChatMessage")?.payload,
-  ).toEqual({ chat_id: -100, message_id: 20, disable_notification: true });
-  expect(state.calls.map((call) => call.method)).toEqual([
-    "sendMessage",
-    "deleteMessage",
-    "pinChatMessage",
-  ]);
-});
-describe("gathering callbacks", () => {
-  it.each([{ ready: [] }, { ready: [1] }, { ready: [1, 5] }])(
-    "does not announce fewer than two ready main players: %j",
-    async ({ ready }) => {
-      const current = session();
-      current.ready_players = new Set(ready);
-      state.sessions.set("-100:20", current);
-      await gatheringTick(bot(), current.message_id, current.created_at);
-      expect(state.calls.some((call) => call.method === "sendMessage")).toBe(
-        false,
-      );
-    },
-  );
-  it("announces all four ready players once without a ready button", async () => {
-    const current = session();
-    current.ready_players = new Set([1, 2, 3, 4]);
-    state.sessions.set("-100:20", current);
-    const instance = bot();
-    await gatheringTick(instance, current.message_id, current.created_at);
-    await gatheringTick(instance, current.message_id, current.created_at);
-    const notices = state.calls.filter((call) => call.method === "sendMessage");
-    expect(notices).toHaveLength(1);
-    expect(notices[0].payload.text).toContain("Готовы 4 — можно залетать");
-    expect(notices[0].payload.reply_markup).toBeUndefined();
-  });
-  it("adds a ready button to the start notice and updates the pinned card on click", async () => {
-    const current = session();
-    current.availability = new Map([[1, current.created_at]]);
-    current.ready_players = new Set([1, 3]);
-    state.sessions.set("-100:20", current);
-    const instance = bot();
-    await gatheringTick(instance, current.message_id, current.created_at);
-    const notice = state.calls.find((call) => call.method === "sendMessage")!;
-    expect(notice.payload.reply_markup).toEqual({
-      inline_keyboard: [
-        [{ text: "✅ Готов играть", callback_data: "gready:20" }],
-      ],
+it.each(["/fort", "/fort через час"])(
+  "redirects %s to GTA without creating a gathering",
+  async (text) => {
+    await bot().handleUpdate({
+      update_id: 1,
+      message: {
+        message_id: 10,
+        date: 1,
+        chat: { id: -100, type: "supergroup", title: "friends" },
+        from: { id: 1, is_bot: false, first_name: "user1" },
+        text,
+        entities: [{ type: "bot_command", offset: 0, length: 5 }],
+      },
     });
-    expect(current.ready_players?.size ?? 0).toBe(2);
-    const update = callback(2, "gready:20");
-    update.callback_query!.message!.message_id = 99;
-    await instance.handleUpdate(update);
-    expect([...current.ready_players!]).toEqual([1, 3, 2]);
-    expect(state.saveResponse).toHaveBeenCalledTimes(1);
-    expect(
-      state.calls.find((call) => call.method === "editMessageText")?.payload,
-    ).toMatchObject({ chat_id: -100, message_id: 20 });
-    expect(
-      state.calls.some((call) => call.method === "answerCallbackQuery"),
-    ).toBe(true);
-  });
-  it.each(["closed", "missing", "other-chat"])(
-    "rejects a ready button for a %s gathering without changing the current card",
-    async (kind) => {
-      const current = session();
-      state.sessions.set("-100:20", current);
-      if (kind === "closed") current.is_closed = true;
-      if (kind === "other-chat") {
-        state.sessions.delete("-100:20");
-        current.chat_id = -200;
-        state.sessions.set("-200:20", current);
-      }
-      await bot().handleUpdate(
-        callback(2, kind === "missing" ? "gready:19" : "gready:20"),
-      );
-      expect(state.saveResponse).not.toHaveBeenCalled();
-      expect(state.calls.map((call) => call.method)).toEqual([
-        "answerCallbackQuery",
-      ]);
-      expect(state.calls[0]?.payload.text).toContain("Сбор завершён");
-    },
-  );
-  it("finishes a persisted response when Telegram rejects an expired acknowledgement", async () => {
-    const current = session();
-    state.sessions.set("-100:20", current);
-    state.callbackError = {
-      error_code: 400,
-      description:
-        "Bad Request: query is too old and response timeout expired or query ID is invalid",
-    };
-    await bot().handleUpdate(callback(2, "pass"));
-    expect(current.pass_players.get(2)).toBe("user2");
-    expect([...current.go_players.keys()]).toEqual([1, 3, 4, 5]);
-    expect(state.saveResponse).toHaveBeenCalledTimes(1);
-    expect(state.calls.map((call) => call.method)).toEqual([
-      "editMessageText",
-      "answerCallbackQuery",
-    ]);
-    // The same terminal rejection is harmless on an early-return branch too.
-    await bot().handleUpdate(callback(2, "pass"));
-    expect(state.saveResponse).toHaveBeenCalledTimes(1);
-  });
-  it.each([
-    [400, "Bad Request: message is too long"],
-    [403, "Forbidden"],
-    [429, "Too Many Requests: retry after 1"],
-    [500, "Internal Server Error"],
-  ])(
-    "propagates other acknowledgement failures (%s)",
-    async (error_code, description) => {
-      state.sessions.set("-100:20", session());
-      state.callbackError = { error_code, description };
-      await expect(bot().handleUpdate(callback(2, "pass"))).rejects.toThrow(
-        description,
-      );
-    },
-  );
-  it("promotes the earliest reserve when a squad member passes", async () => {
-    const current = session();
-    state.sessions.set("-100:20", current);
-    await bot().handleUpdate(callback(2, "pass"));
-    expect([...current.go_players.keys()]).toEqual([1, 3, 4, 5]);
-    expect(current.pass_players.get(2)).toBe("user2");
-    expect(state.saveResponse).toHaveBeenCalledWith(
-      20,
-      2,
-      "user2",
-      "pass",
-      expect.objectContaining({ chat_id: -100 }),
-    );
-    expect(state.calls.some((call) => call.method === "editMessageText")).toBe(
-      true,
-    );
-  });
-  it("changing readiness preserves FIFO position in the reserve", async () => {
-    const current = session();
-    current.go_players.set(6, "six");
-    state.sessions.set("-100:20", current);
-    await bot().handleUpdate(callback(5, "slot:30"));
-    expect([...current.go_players.keys()]).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(current.player_slots.get(5)).toMatch(/^\d\d:\d\d$/);
-    expect(
-      state.calls.find((call) => call.method === "answerCallbackQuery")?.payload
-        .text,
-    ).toContain("резерве №1");
-  });
-  it("rejects excess reserve players without modifying state", async () => {
-    const current = session();
-    for (let id = 6; id <= 8; id++) current.go_players.set(id, String(id));
-    state.sessions.set("-100:20", current);
-    await bot().handleUpdate(callback(9, "go"));
-    expect(current.go_players.size).toBe(8);
+    expect(state.sessions.size).toBe(0);
     expect(state.saveResponse).not.toHaveBeenCalled();
-    expect(
-      state.calls.find((call) => call.method === "answerCallbackQuery")?.payload
-        .text,
-    ).toBe("Резерв заполнен.");
-  });
-  it("restores invocation state and propagates persistence failures", async () => {
-    const current = session();
-    state.sessions.set("-100:20", current);
-    state.saveResponse.mockRejectedValue(new Error("database unavailable"));
-    await expect(bot().handleUpdate(callback(2, "pass"))).rejects.toThrow(
-      "database unavailable",
-    );
-    expect([...current.go_players.keys()]).toEqual([1, 2, 3, 4, 5]);
-    expect(current.pass_players.size).toBe(0);
-    expect(state.calls).toHaveLength(0);
-  });
+    expect(state.calls.map((c) => c.method)).toEqual(["sendMessage"]);
+    expect(state.calls[0]!.payload.text).toContain("GTA 6");
+    expect(state.calls[0]!.payload.reply_markup).toBeUndefined();
+  },
+);
+it.each(["/warcraft", "/warcraft 19", "/afk 1d", "/rm"])(
+  "ignores retired command %s",
+  async (text) => {
+    await bot().handleUpdate({
+      update_id: 1,
+      message: {
+        message_id: 10,
+        date: 1,
+        chat: { id: -100, type: "supergroup", title: "friends" },
+        from: { id: 1, is_bot: false, first_name: "user1" },
+        text,
+        entities: [
+          {
+            type: "bot_command",
+            offset: 0,
+            length: text.split(" ")[0]!.length,
+          },
+        ],
+      },
+    });
+    expect(state.calls).toEqual([]);
+    expect(state.sessions.size).toBe(0);
+  },
+);
+it.each([
+  "go",
+  "pass",
+  "gready:20",
+  "gtime",
+  "gat:30",
+  "gconfirm:old",
+  "gdismiss:old",
+  "slot:30",
+  "gslot:30",
+])("disables old gathering button %s", async (data) => {
+  await bot().handleUpdate(callback(1, data));
+  expect(state.saveResponse).not.toHaveBeenCalled();
+  expect(state.calls.map((c) => c.method)).toEqual([
+    "answerCallbackQuery",
+    "editMessageReplyMarkup",
+  ]);
+  expect(state.calls[0]!.payload.text).toContain("Сборы отключены");
+  expect(state.calls[1]!.payload.reply_markup).toEqual({ inline_keyboard: [] });
 });
 it("excludes missing and inactive weekly baselines from rankings", () => {
   const mode = {

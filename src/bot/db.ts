@@ -1,7 +1,7 @@
 import type { QueryResultRow } from "pg";
 import { query, chatId, getSessions, timestamp } from "./storage";
 import { valueCheckpoint } from "./work";
-import type { GatheringGame, GatheringState } from "./services/gathering";
+import type { GatheringState } from "./services/gathering";
 export { getSessions };
 export interface Session {
   availability?: Map<number, number>;
@@ -325,35 +325,6 @@ export async function get_last_weekly_drop(chat: number) {
 }
 export async function set_last_weekly_drop(chat: number, time: number) {
   await set_feature(chat, "weekly_drop", true, time);
-}
-export async function get_fort_cooldown(
-  chat: number,
-  uid: number,
-  game: GatheringGame = "fortnite",
-): Promise<number | null> {
-  if (game === "warcraft")
-    return await get_feature_value(chat, `warcraft_cooldown:${uid}`);
-  return (
-    (
-      await query(
-        "SELECT attempted_at FROM fort_cooldowns WHERE chat_id=$1 AND user_id=$2",
-        [chat, uid],
-      )
-    )[0]?.attempted_at ?? null
-  );
-}
-export async function set_fort_cooldown(
-  chat: number,
-  uid: number,
-  time: number,
-  game: GatheringGame = "fortnite",
-) {
-  if (game === "warcraft")
-    return set_feature(chat, `warcraft_cooldown:${uid}`, true, time);
-  await query(
-    "INSERT INTO fort_cooldowns(chat_id,user_id,attempted_at) VALUES ($1,$2,$3) ON CONFLICT(chat_id,user_id) DO UPDATE SET attempted_at=excluded.attempted_at",
-    [chat, uid, timestamp(time)],
-  );
 }
 export async function save_roast_state(
   chat: number,
