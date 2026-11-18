@@ -96,24 +96,16 @@ describe("durable job orchestration", () => {
       expect.anything(),
     );
   });
-  it("enqueues only query-selected due gatherings, using fresh tick identities", async () => {
-    const now = vi
-      .spyOn(Date, "now")
-      .mockReturnValue(Date.parse("2026-10-02T20:00:00Z"));
+  it("keeps expiry compatible without scheduling gatherings", async () => {
     mocks.due.mockReturnValue([{ chat_id: -100, message_id: 9 }]);
     await runJob("expiry");
-    expect(mocks.enqueue).toHaveBeenCalledWith(
-      expect.stringContaining("gathering:-100:9:"),
-      "gathering",
-      -100,
-      { now: now() / 1000, message_id: 9 },
+    expect(mocks.enqueue.mock.calls.some((c) => c[1] === "gathering")).toBe(
+      false,
     );
-    expect(mocks.raw).toHaveBeenCalledWith(
-      expect.stringContaining("AND NOT EXISTS"),
-      [now() / 1000],
-    );
+    expect(
+      mocks.raw.mock.calls.some(([sql]) => sql.includes("SELECT s.chat_id")),
+    ).toBe(false);
     expect(mocks.recover).toHaveBeenCalledOnce();
-    vi.restoreAllMocks();
   });
   it("calculates the most recent due Friday across the deadline and week boundary", () => {
     expect(weeklyDue(Date.parse("2026-10-02T17:59:00Z") / 1000).date).toBe(
@@ -154,7 +146,7 @@ describe("durable job orchestration", () => {
     expect(mocks.chats).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
-  it("recovers failed durable expiry jobs with current scheduling time", async () => {
+  it("retires failed durable expiry jobs without scheduling gatherings", async () => {
     const original = Date.parse("2026-10-02T18:00:00Z") / 1000;
     mocks.jobs.mockReturnValue([
       {
@@ -182,10 +174,9 @@ describe("durable job orchestration", () => {
     });
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-04T14:00:00Z"));
     await runJob("maintenance");
-    expect(mocks.raw).toHaveBeenCalledWith(
-      expect.stringContaining("SELECT s.chat_id"),
-      [Date.now() / 1000],
-    );
+    expect(
+      mocks.raw.mock.calls.some(([sql]) => sql.includes("SELECT s.chat_id")),
+    ).toBe(false);
     vi.restoreAllMocks();
     expect(mocks.raw).toHaveBeenCalledWith(
       expect.stringContaining("status='complete'"),

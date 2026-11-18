@@ -1,7 +1,6 @@
 import type { LifetimeReport } from "../statistics/weekly";
 import {
   availability,
-  gatheringGame,
   clock,
   eveningEnd,
   rosterTimes,
@@ -27,16 +26,7 @@ import {
 } from "./fortnite";
 
 function fortTitleFor(session: Session): string {
-  return gatheringGame(session) === "warcraft"
-    ? `${warcraftEmoji(session)} <b>Warcraft · Сбор у таверны</b>`
-    : session.fort_title || defaultFortTitle(session.style);
-}
-
-function warcraftEmoji(session: Session): string {
-  const id = session.gathering?.emoji_id;
-  return id && /^\d+$/.test(id)
-    ? `<tg-emoji emoji-id="${id}">⚔️</tg-emoji>`
-    : "⚔️";
+  return session.fort_title || defaultFortTitle(session.style);
 }
 
 export const STYLES = [
@@ -285,12 +275,7 @@ function styleFor(session: Session) {
 export function buildGatherText(session: Session, now = nowSeconds()): string {
   const [squad, reserve] = splitRoster(session);
   const times = rosterTimes(session);
-  const warcraft = gatheringGame(session) === "warcraft";
-  const header = (
-    warcraft
-      ? "🏰 {name} бьёт в боевой барабан — герои Азерота, к оружию!"
-      : session.llm_header || styleFor(session).header
-  ).replaceAll(
+  const header = (session.llm_header || styleFor(session).header).replaceAll(
     "{name}",
     userLink(session.initiator_id, session.initiator_name),
   );
@@ -331,18 +316,18 @@ export function buildGatherText(session: Session, now = nowSeconds()): string {
       : "   (пока пусто)";
   lines.push(
     DIVIDER,
-    `${warcraft ? warcraftEmoji(session) : fortEmoji("✅")} <b>${warcraft ? "Отряд" : "Состав"} ${squad.size}/${SQUAD_SIZE} · готовы играть ${times.ready}/${squad.size}</b>`,
+    `${fortEmoji("✅")} <b>Состав ${squad.size}/${SQUAD_SIZE} · готовы играть ${times.ready}/${squad.size}</b>`,
     list(squad),
   );
   if (reserve.size)
     lines.push(
       DIVIDER,
-      `${warcraft ? "🛡" : fortEmoji("🪑")} <b>Резерв ${reserve.size}/${RESERVE_SIZE}</b>`,
+      `${fortEmoji("🪑")} <b>Резерв ${reserve.size}/${RESERVE_SIZE}</b>`,
       list(reserve),
     );
   lines.push(
     DIVIDER,
-    `${warcraft ? "💤" : fortEmoji("❌")} <b>Пас</b>`,
+    `${fortEmoji("❌")} <b>Пас</b>`,
     playerList(session.pass_players),
   );
   const pending = new Map(
@@ -350,19 +335,8 @@ export function buildGatherText(session: Session, now = nowSeconds()): string {
       ([id]) => !session.go_players.has(id) && !session.pass_players.has(id),
     ),
   );
-  const invites = (session.gathering?.invite_usernames ?? []).filter(
-    (name) =>
-      ![...session.go_players.values(), ...session.pass_players.values()].some(
-        (player) => player.toLowerCase() === name.toLowerCase(),
-      ),
-  );
-  if (squad.size < SQUAD_SIZE && (pending.size || invites.length))
-    lines.push(
-      "",
-      warcraft
-        ? `📯 ${[...[...pending].map(([id, name]) => userLink(id, name)), ...invites.map(escapeHtml)].join(" ")}`
-        : buildTagLine(pending),
-    );
+  if (squad.size < SQUAD_SIZE && pending.size)
+    lines.push("", buildTagLine(pending));
   return lines.join("\n");
 }
 export function buildGatheringKeyboard(session: Session, now = nowSeconds()) {
@@ -374,10 +348,7 @@ export function buildGatheringKeyboard(session: Session, now = nowSeconds()) {
       callback_data: `gat:${start}`,
     });
   first.push({
-    text:
-      gatheringGame(session) === "warcraft"
-        ? "⚔️ Готов играть"
-        : "⚡ Готов играть",
+    text: "⚡ Готов играть",
     callback_data: "gready",
   });
   const relative = SLOT_OFFERS_MIN.filter(

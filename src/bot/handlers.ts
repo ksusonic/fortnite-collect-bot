@@ -1,3 +1,5 @@
+import { gtaRoast } from "./services/gta";
+import { valueCheckpoint } from "./work";
 import {
   archiveMessage,
   usesConversation,
@@ -7,31 +9,21 @@ import {
   isChatApproved,
   isGeneralAdmin,
 } from "./services/chat-access";
-import { gatheringGame } from "./services/gathering";
 import type { Bot, Context } from "grammy";
-import * as db from "./db";
 import {
   GROUP_ONLY,
+  answerCallback,
   displayName,
   escapeHtml,
   ignoreTelegram,
   isGroup,
   reply,
+  nowSeconds,
 } from "./handlers/common";
-import {
-  closeSession,
-  cmdFort,
-  cmdWarcraft,
-  onCallback,
-  maybeGatheringMessage,
-} from "./handlers/gatherings";
-import { cmdAfk } from "./handlers/settings";
 import { cmdLinkepicfor, runStats } from "./handlers/stats";
 import { maybeRoast } from "./handlers/roast";
 
-// Keep the public entrypoint stable for runtime and callers during the feature split.
 export { displayName, escapeHtml } from "./handlers/common";
-export { parseTargetHour, sweep_expired_sessions } from "./handlers/gatherings";
 export { appendTeamAnalysis, runStats } from "./handlers/stats";
 export {
   buildWeeklyView,
@@ -60,46 +52,13 @@ export function registerHandlers(bot: Bot): void {
   });
 
   const commands: Record<string, (ctx: Context) => Promise<void>> = {
-    fort: cmdFort,
-    warcraft: cmdWarcraft,
-    afk: cmdAfk,
+    fort: async (ctx) => {
+      const now = await valueCheckpoint("gta-redirect-time-v1", nowSeconds);
+      await reply(ctx, gtaRoast(now));
+    },
     linkepicfor: cmdLinkepicfor,
     stats: async (ctx) => {
       if (ctx.chat) await runStats(bot, ctx.chat.id);
-    },
-    rm: async (ctx) => {
-      const argument = String(ctx.match ?? "")
-        .trim()
-        .toLowerCase();
-      if (argument && !["fort", "fortnite", "warcraft"].includes(argument)) {
-        await reply(
-          ctx,
-          "Используй /rm fort или /rm warcraft, либо ответь /rm на карточку сбора.",
-        );
-        return;
-      }
-      const candidates = [...db.getSessions().values()].filter(
-        (s) => s.chat_id === ctx.chat?.id && !s.is_closed,
-      );
-      const replyId = ctx.message?.reply_to_message?.message_id;
-      const selected = argument
-        ? candidates.filter(
-            (s) =>
-              gatheringGame(s) ===
-              (argument === "warcraft" ? "warcraft" : "fortnite"),
-          )
-        : replyId !== undefined
-          ? candidates.filter((s) => s.message_id === replyId)
-          : candidates;
-      if (selected.length > 1) {
-        await reply(
-          ctx,
-          "Открыты два сбора. Укажи /rm fort или /rm warcraft, либо ответь /rm на нужную карточку.",
-        );
-        return;
-      }
-      if (selected[0]) await closeSession(bot, selected[0], true);
-      await ignoreTelegram(() => ctx.deleteMessage());
     },
   };
   for (const [command, handler] of Object.entries(commands))
@@ -112,7 +71,12 @@ export function registerHandlers(bot: Bot): void {
     });
   bot.callbackQuery(
     /^(go|pass|slot:.*|gready(?::\d+)?|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/,
-    onCallback,
+    async (ctx) => {
+      await answerCallback(ctx, "Сборы отключены. Идите играть в GTA 6!");
+      await ignoreTelegram(() =>
+        ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }),
+      );
+    },
   );
   bot.on("message:new_chat_members", async (ctx) => {
     for (const member of ctx.message.new_chat_members) {
@@ -123,12 +87,13 @@ export function registerHandlers(bot: Bot): void {
           : `<a href="tg://user?id=${member.id}">${escapeHtml(displayName(member))}</a>`;
       await ignoreTelegram(() =>
         ctx.reply(
-          `👋 Привет, ${mention}.\n\nЯ бот для сбора скуада в Fortnite. Команды:\n🎮 /fort — собрать отряд из 4 человек\n⚔️ /warcraft — собрать отряд в Warcraft\n🗑 /rm fort или /rm warcraft — отменить сбор\n📊 /stats — сборы и результаты Fortnite за неделю\n\nТакже слежу за статусом серверов Epic и предупрежу, если они недоступны.`,
+          `👋 Привет, ${mention}. Идите нахер играть в GTA 6 вместо фортика!\n\n📊 /stats — результаты Fortnite за неделю. Сборы отключены.`,
         ),
       );
     }
   });
   bot.on(["message:text", "message:caption"], async (ctx) => {
-    if (!(await maybeGatheringMessage(ctx))) await maybeRoast(ctx);
+    if (ctx.message?.text?.startsWith("/")) return;
+    await maybeRoast(ctx);
   });
 }

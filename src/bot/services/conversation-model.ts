@@ -1,3 +1,4 @@
+import { gtaReleaseContext } from "./gta";
 import { logEvent } from "../logging";
 import {
   CONVERSATION_REACTIONS,
@@ -276,6 +277,7 @@ export async function decideConversation(data: {
   const sources = [...data.history, ...data.candidates];
   const result = await json(
     `${dataRules}
+Факт о релизе: ${gtaReleaseContext(data.now)}.
 Ты участник чата друзей. Отвечай по-русски коротко и по делу. На фактический вопрос дай полезный ответ,
 не превращай его в обязательный roast. Для шутки или просьбы "разнеси" используй стиль ниже.
 ${SYSTEM_PROMPT}

@@ -2,7 +2,7 @@ import { DEFAULT_ROAST_POLICY } from "../src/bot/services/roast-policy";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   buildTurns,
-  generateFortHeader,
+  complete,
   generateRoastDecision,
   isRoastMessage,
   rememberMessage,
@@ -104,27 +104,13 @@ it("does not duplicate the target message in generated dialog", async () => {
     ),
   ).toHaveLength(0);
 });
-it("normalizes generated headers to one line with the initiator placeholder", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: "играть\nsecond line" } }],
-        }),
-        { status: 200 },
-      ),
-    ),
-  );
-  expect(await generateFortHeader(1, 100)).toBe("{name} играть");
-});
 it("degrades optional Grok without leaking token acquisition errors", async () => {
   tokenMock.mockRejectedValue(new Error("connection failed with secret-token"));
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
   const warn = vi.spyOn(console, "warn"),
     error = vi.spyOn(console, "error");
-  expect(await generateFortHeader(1, 100)).toBeNull();
+  expect(await complete([], 10)).toBeNull();
   expect(fetcher).not.toHaveBeenCalled();
   expect(warn).not.toHaveBeenCalled();
   expect(error).not.toHaveBeenCalled();

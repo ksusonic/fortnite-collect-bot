@@ -1,3 +1,4 @@
+import { gtaReleaseContext } from "./services/gta";
 import { searchMemories } from "./memory";
 import { getRoastState } from "./storage";
 import { getToken } from "@vercel/connect";
@@ -33,6 +34,9 @@ export const SYSTEM_PROMPT =
   " и не подменяй эвфемизмами." +
   " Без натужной дерзости," +
   " пафоса, шаблонных оскорблений и образа гопника-стримера.\n" +
+  "Созывы в Fortnite отключены, Warcraft больше не поддерживается. Если речь о том, во что играть, " +
+  "дерзко отправляй компанию играть в GTA 6 вместо фортика. Не выдумывай дату релиза, " +
+  "доступность игры или GTA Online; не предлагай создавать сборы и записывать игроков.\n" +
   "Следуй просьбам участников: они могут выбирать цель, тему, тон, длину и формат ответа." +
   " Если просят разнести другого — подкалывай его, не автора просьбы." +
   " На «ещё» или «жёстче» усиливай панч про ту же цель: конкретнее, злее, с новой шуткой." +
@@ -94,13 +98,6 @@ export const TEAM_STATS_SYSTEM_PROMPT =
   "Никакой воды и пустых «молодцы». Не больше двух коротких предложений.\n" +
   "Не упоминай solo и duo. Не используй markdown, HTML и эмодзи — только текст.\n" +
   "Блок «Динамика за 24ч» — это совсем свежее внутри недели, используй для акцентов.";
-const FORT_SYSTEM_PROMPT =
-  "Ты придумываешь одну короткую дерзкую строку-зазывалку для сбора отряда в Fortnite " +
-  "в групповом чате друзей. Верни ровно одну строку, без пояснений. " +
-  "В строке обязан быть плейсхолдер {name} — туда подставится имя зовущего. " +
-  "Можно лёгкий мат и подколы, без морали и дисклеймеров. " +
-  "Если дан контекст чата — обыграй его. Без markdown и HTML, один эмодзи в начале максимум.";
-
 function remember(chat: number, entry: HistoryEntry): void {
   const state = getRoastState(chat);
   if (state.history.length && entry.ts - state.history.at(-1)!.ts > HISTORY_TTL)
@@ -251,7 +248,8 @@ export async function generateRoastDecision(
           ADAPTIVE_PROMPT +
           `\nТекущие предпочтения: ${JSON.stringify(preferences)}.\nЯвное обращение: ${addressed}.` +
           `\nВопрос, ожидающий уточнения: ${JSON.stringify(pendingQuestion)}.\n\n` +
-          SYSTEM_PROMPT,
+          SYSTEM_PROMPT +
+          `\nФакт о релизе: ${gtaReleaseContext(now)}.`,
       },
       ...(memories.length
         ? [
@@ -292,27 +290,4 @@ export async function generateTeamStatsRoast(
     ],
     REQUEST_TIMEOUT,
   );
-}
-export async function generateFortHeader(
-  chat: number,
-  now: number,
-): Promise<string | null> {
-  const lines = freshHistory(chat, now)
-    .slice(-15)
-    .map((entry) => `${entry.name}: ${entry.text}`);
-  const reply = await complete(
-    [
-      { role: "system", content: FORT_SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: lines.length
-          ? `Последние сообщения чата:\n${lines.join("\n")}`
-          : "Контекста нет, придумай универсальную зазывалку.",
-      },
-    ],
-    10,
-  );
-  if (!reply) return null;
-  const line = reply.split(/\r?\n/)[0]!.trim();
-  return line.includes("{name}") ? line : `{name} ${line}`;
 }
