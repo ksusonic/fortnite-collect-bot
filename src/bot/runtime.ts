@@ -23,6 +23,7 @@ import {
   withWork,
   type RoastEntry,
 } from "./storage";
+import { gatheringTick } from "./handlers/gatherings";
 import { AmbiguousOutcome, telegramTransformer, Work } from "./work";
 
 export function createBot(): Bot {
@@ -98,7 +99,8 @@ export async function enqueue(
   payload: unknown,
 ) {
   await raw(
-    "INSERT INTO work_items(id,kind,chat_id,payload,conversation_version) VALUES ($1,$2,$3,$4,2) ON CONFLICT(id) DO NOTHING",
+    `INSERT INTO work_items(id,kind,chat_id,payload,conversation_version) VALUES ($1,$2,$3,
+       CASE WHEN $2 IN ('update','gathering') THEN $4::jsonb || '{"fortnite_gatherings":true}'::jsonb ELSE $4::jsonb END,2) ON CONFLICT(id) DO NOTHING`,
     [id, kind, chat, JSON.stringify(payload)],
   );
 }
@@ -158,10 +160,13 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
   const message = update && "message" in update ? update.message : undefined;
   const callback =
     update && "callback_query" in update ? update.callback_query : undefined;
+  if (item.status === "ambiguous") return "ambiguous";
   const retiredUpdate = !!(
     (message &&
       "text" in message &&
-      /^\/(fort|warcraft|afk|rm)(?:@\w+)?(?:\s|$)/i.test(message.text ?? "")) ||
+      (!message.text?.startsWith("/") ||
+        /^\/(fort|warcraft|afk|rm)(?:@\w+)?(?:\s|$)/i.test(message.text))) ||
+    (message && "new_chat_members" in message) ||
     (callback &&
       "data" in callback &&
       /^(go|pass|slot:.*|gready(?::\d+)?|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/.test(
@@ -169,13 +174,12 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
       ))
   );
   if (
-    item.kind === "gathering" ||
     item.kind === "expiry" ||
-    item.kind === "update"
+    (!item.payload.fortnite_gatherings &&
+      (item.kind === "gathering" || item.kind === "update"))
   ) {
     // Deliberate migration: old gathering checkpoints cannot be replayed by the new handlers.
-    // Keep ambiguous work blocked for review and retain every historical checkpoint.
-    if (item.status === "ambiguous") return "ambiguous";
+    // Keep historical checkpoints and retire interrupted handlers whose steps changed.
     const retired = await raw(
       `UPDATE work_items SET status='complete',error='gatherings retired',updated_at=now()
        WHERE id=$1 AND status<>'ambiguous'
@@ -191,7 +195,9 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
   }
 
   await raw(
-    "UPDATE work_items SET attempts=attempts+1,updated_at=now() WHERE id=$1",
+    `UPDATE work_items SET attempts=attempts+1,updated_at=now(),
+       payload=CASE WHEN kind='update' THEN payload || '{"fortnite_gatherings":true}'::jsonb ELSE payload END
+       WHERE id=$1`,
     [item.id],
   );
   try {
@@ -211,7 +217,9 @@ export async function executeItem(item: Item, bot: Bot): Promise<string> {
           Number(item.payload.now),
         );
         await retryMemoryDeletions(item.chat_id!, Number(item.payload.now));
-      } else if (item.kind === "weekly") {
+      } else if (item.kind === "gathering")
+        await gatheringTick(bot, Number(item.payload.message_id));
+      else if (item.kind === "weekly") {
         const last = await db.get_last_weekly_drop(item.chat_id!);
         if (last === null || last <= Number(item.payload.now) - 6 * 86400) {
           await runStats(bot, item.chat_id!);

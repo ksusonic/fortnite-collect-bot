@@ -51,6 +51,14 @@ describe("message rendering fixtures", () => {
         "Сбор отменён",
       );
     });
+  it("escapes generated invitations while preserving the initiator link", () => {
+    const session = hydrate(fixture.sessions[0]!.session);
+    session.initiator_name = "$& <host>";
+    session.llm_header = "<b>{name}</b> & squad";
+    expect(buildGatherText(session, fixture.now).split("\n")).toContain(
+      `&lt;b&gt;<a href="tg://user?id=${session.initiator_id}">$&amp; &lt;host&gt;</a>&lt;/b&gt; &amp; squad`,
+    );
+  });
   it("preserves every chat stats template", () => {
     fixture.stats_texts.forEach((expected, i) =>
       expect(buildStatsText(fixture.stats as ChatStats, i)).toBe(expected),

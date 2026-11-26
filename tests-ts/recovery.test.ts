@@ -331,7 +331,10 @@ suite("Postgres recovery and storage", () => {
             message_id: 20,
           },
         };
-        await enqueue(item.id, kind, -10, item.payload);
+        await raw(
+          "INSERT INTO work_items(id,kind,chat_id,payload) VALUES($1,$2,$3,$4)",
+          [item.id, kind, -10, JSON.stringify(item.payload)],
+        );
         await raw(
           "INSERT INTO work_steps(work_id,step,signature,status,result) VALUES ($1,'telegram:0','old-send','complete',$2)",
           [item.id, JSON.stringify({ message_id: 21 })],
@@ -386,7 +389,10 @@ suite("Postgres recovery and storage", () => {
           },
         },
       };
-      await enqueue(item.id, item.kind, item.chat_id, item.payload);
+      await raw(
+        "INSERT INTO work_items(id,kind,chat_id,payload) VALUES($1,$2,$3,$4)",
+        [item.id, item.kind, item.chat_id, JSON.stringify(item.payload)],
+      );
       await raw(
         "INSERT INTO work_steps(work_id,step,signature,status,result) VALUES ($1,'value:0','gathering-message-time-v2','complete','123')",
         [item.id],

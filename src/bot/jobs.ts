@@ -68,6 +68,39 @@ async function saveStatus(state: EpicState) {
     [JSON.stringify(state)],
   );
 }
+async function enqueueExpirations(now: number) {
+  // Evaluate only the first four FIFO players. Unknown availability and reserve
+  // members never manufacture an early start. Execution rechecks under the chat lock.
+  const sessions = (
+    await raw(
+      `SELECT s.chat_id,s.message_id FROM sessions s
+    LEFT JOIN LATERAL (
+      SELECT count(*) AS players,count(ready_at) AS ready,min(available_at) AS first_at
+      FROM (SELECT r.available_at,r.ready_at FROM responses r
+        WHERE r.chat_id=s.chat_id AND r.message_id=s.message_id AND r.response='go'
+        ORDER BY joined_at NULLS LAST,responded_at,user_id LIMIT 4) roster
+    ) t ON true
+    WHERE NOT s.is_closed AND COALESCE(s.gathering->>'game', 'fortnite') = 'fortnite'
+    AND EXISTS (SELECT 1 FROM approved_chats a WHERE a.chat_id=s.chat_id)
+    AND ((s.created_at AT TIME ZONE 'Europe/Moscow')::date < (to_timestamp($1) AT TIME ZONE 'Europe/Moscow')::date
+      OR (s.gathering->>'notified_at' IS NULL AND t.players>=2 AND t.ready<t.players AND t.first_at IS NOT NULL
+        AND CASE WHEN t.ready>0 OR t.first_at<=s.created_at OR
+          ceil(EXTRACT(EPOCH FROM t.first_at)/300)*300 >= EXTRACT(EPOCH FROM (((s.created_at AT TIME ZONE 'Europe/Moscow')::date+1)::timestamp AT TIME ZONE 'Europe/Moscow'))
+          THEN EXTRACT(EPOCH FROM t.first_at) ELSE ceil(EXTRACT(EPOCH FROM t.first_at)/300)*300 END <= $1))
+    AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.chat_id=s.chat_id
+      AND w.kind IN ('gathering','expiry') AND w.status<>'complete')
+    ORDER BY s.created_at,s.chat_id LIMIT 100`,
+      [now],
+    )
+  ).rows;
+  for (const session of sessions)
+    await enqueue(
+      `gathering:${session.chat_id}:${session.message_id}:${Math.floor(now / 60)}`,
+      "gathering",
+      session.chat_id,
+      { now, message_id: session.message_id },
+    );
+}
 async function enqueueWeekly(now: number) {
   const due = weeklyDue(now);
   // One compact cursor replaces a job record for every quiet minute. The cursor
@@ -114,9 +147,8 @@ async function executeJob(
       await db.cleanup_old_snapshots(30);
       await cleanupConversations();
     } else if (name === "status") await statusCheck(Date.now());
-    else if (name === "expiry") {
-      // Compatibility URL: gathering scheduling has been retired.
-    } else await enqueueWeekly(Date.now() / 1000);
+    else if (name === "expiry") await enqueueExpirations(Date.now() / 1000);
+    else await enqueueWeekly(Date.now() / 1000);
     await raw(
       "UPDATE work_items SET status='complete',error=NULL,updated_at=now() WHERE id=$1",
       [item.id],
@@ -193,6 +225,7 @@ export async function runJob(
           `job:${name}`,
           async () => {
             if (name === "maintenance") {
+              await enqueueExpirations(now);
               await enqueueWeekly(now);
               await enqueueDailySnapshots(now);
               await enqueueConversationMemory(now);

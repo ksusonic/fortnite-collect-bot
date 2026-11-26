@@ -275,8 +275,9 @@ function styleFor(session: Session) {
 export function buildGatherText(session: Session, now = nowSeconds()): string {
   const [squad, reserve] = splitRoster(session);
   const times = rosterTimes(session);
-  const header = (session.llm_header || styleFor(session).header).replaceAll(
-    "{name}",
+  const header = escapeHtml(
+    session.llm_header || styleFor(session).header,
+  ).replaceAll("{name}", () =>
     userLink(session.initiator_id, session.initiator_name),
   );
   const lines = [fortTitleFor(session), header, DIVIDER];

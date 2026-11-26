@@ -14,13 +14,3 @@ export function gtaReleaseContext(now: number): string {
   if (elapsed < 3600) return "GTA 6 только что вышла по МСК";
   return `GTA 6 вышла уже ${hoursText(Math.floor(elapsed / 3600))} назад по МСК`;
 }
-export function gtaRoast(now: number): string {
-  const elapsed = now - GTA_RELEASE_AT;
-  const timing =
-    elapsed < 0
-      ? `До GTA 6 ещё ${hoursText(Math.ceil(-elapsed / 3600))}! Готовьте консоли`
-      : elapsed < 3600
-        ? "GTA 6 только что вышла!"
-        : `GTA 6 вышла уже ${hoursText(Math.floor(elapsed / 3600))} назад!`;
-  return `Какой нахуй Fortnite? ${timing} Хватит строить сараи — идите нахер в Вайс-Сити.`;
-}

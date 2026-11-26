@@ -36,9 +36,9 @@ All chats require explicit owner approval via hidden `/init`; only the numeric
 Enforce approval for handlers, callbacks, proactive sends, queued work and snapshots.
 Do not advertise `/init` in command menus; preserve approvals durably in private Postgres.
 
-- `/fort` — a GTA 6 roast with elapsed hours since 19 November 2026, midnight MSK; before release show hours remaining. Checkpoint the clock. No gathering creation, invitations, readiness or status updates.
-- Warcraft support and `/warcraft`, `/afk`, `/rm` commands are removed. Old card callbacks only acknowledge retirement and remove buttons.
-- Gathering/expiry queued work is retired without Telegram sends; checkpointed old gathering updates are deliberately retired while preserving checkpoints. Ambiguous outcomes remain blocked for review.
+- `/fort [time]` — create or update the evening Fortnite gathering with availability, readiness, FIFO squad and reserve. Some cards include a Vice City easter egg. Checkpoint the choice and keep it on the card.
+- `/rm` cancels the Fortnite gathering. `/afk` controls mentions in new gatherings. Warcraft stays retired and old Warcraft buttons are cleared on use.
+- Maintenance schedules Fortnite start notices and closes cards at Moscow midnight. Legacy gathering/expiry work and incompatible interrupted updates retain their checkpoints and are retired without Telegram sends. Ambiguous outcomes remain blocked for review.
 - Historical gathering data and game discrimination remain for statistics; never delete history or relabel Warcraft as Fortnite.
 - `/stats` — one compact emoji-led report: Fortnite gatherings created in the last 7 days, fill times/top participants, counts of 2+ human signups and full four-player squads, and rolling Fortnite results from private lifetime snapshots. Show actual sample periods; daily samples give daily precision. Partial history is shown separately without weekly ranking/MVP. Never label four-player squad completion as gathering success or infer actual play from signups. Never treat missing history or API errors as zero activity. Optional Grok commentary is at most two sentences. `/teamstats` is retired and not handled.
 - `/linkepicfor @user <EpicName>` — admin-only (`ADMIN_USER_ID`); link `@user` to a public Epic Games account (requires `FORTNITE_API_KEY`). `@user` must have responded at least once to `/fort` in this chat (resolved via `responses` table). The Epic account must have Public Game Stats enabled.

@@ -326,6 +326,29 @@ export async function get_last_weekly_drop(chat: number) {
 export async function set_last_weekly_drop(chat: number, time: number) {
   await set_feature(chat, "weekly_drop", true, time);
 }
+export async function get_fort_cooldown(
+  chat: number,
+  uid: number,
+): Promise<number | null> {
+  return (
+    (
+      await query(
+        "SELECT attempted_at FROM fort_cooldowns WHERE chat_id=$1 AND user_id=$2",
+        [chat, uid],
+      )
+    )[0]?.attempted_at ?? null
+  );
+}
+export async function set_fort_cooldown(
+  chat: number,
+  uid: number,
+  time: number,
+) {
+  await query(
+    "INSERT INTO fort_cooldowns(chat_id,user_id,attempted_at) VALUES ($1,$2,$3) ON CONFLICT(chat_id,user_id) DO UPDATE SET attempted_at=excluded.attempted_at",
+    [chat, uid, timestamp(time)],
+  );
+}
 export async function save_roast_state(
   chat: number,
   history: unknown[],
