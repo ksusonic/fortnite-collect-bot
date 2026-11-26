@@ -1,5 +1,3 @@
-import { gtaRoast } from "./services/gta";
-import { valueCheckpoint } from "./work";
 import {
   archiveMessage,
   usesConversation,
@@ -9,20 +7,29 @@ import {
   isChatApproved,
   isGeneralAdmin,
 } from "./services/chat-access";
+import { gatheringGame } from "./services/gathering";
 import type { Bot, Context } from "grammy";
+import * as db from "./db";
+import { valueCheckpoint } from "./work";
 import {
   GROUP_ONLY,
-  answerCallback,
   displayName,
   escapeHtml,
   ignoreTelegram,
   isGroup,
   reply,
-  nowSeconds,
 } from "./handlers/common";
+import {
+  closeSession,
+  cmdFort,
+  onCallback,
+  maybeGatheringMessage,
+} from "./handlers/gatherings";
+import { cmdAfk } from "./handlers/settings";
 import { cmdLinkepicfor, runStats } from "./handlers/stats";
 import { maybeRoast } from "./handlers/roast";
 
+// Keep the public entrypoint stable for runtime and callers during the feature split.
 export { displayName, escapeHtml } from "./handlers/common";
 export { appendTeamAnalysis, runStats } from "./handlers/stats";
 export {
@@ -52,13 +59,43 @@ export function registerHandlers(bot: Bot): void {
   });
 
   const commands: Record<string, (ctx: Context) => Promise<void>> = {
-    fort: async (ctx) => {
-      const now = await valueCheckpoint("gta-redirect-time-v1", nowSeconds);
-      await reply(ctx, gtaRoast(now));
-    },
+    fort: cmdFort,
+    afk: cmdAfk,
     linkepicfor: cmdLinkepicfor,
     stats: async (ctx) => {
       if (ctx.chat) await runStats(bot, ctx.chat.id);
+    },
+    rm: async (ctx) => {
+      const argument = String(ctx.match ?? "")
+        .trim()
+        .toLowerCase();
+      if (argument && !["fort", "fortnite"].includes(argument)) {
+        await reply(
+          ctx,
+          "Используй /rm fort или ответь /rm на карточку сбора.",
+        );
+        return;
+      }
+      const replyId = ctx.message?.reply_to_message?.message_id;
+      const chat = ctx.chat!.id;
+      const id = await valueCheckpoint(
+        "cancel-gathering-id-v1",
+        () =>
+          [...db.getSessions().values()].find(
+            (s) =>
+              s.chat_id === chat &&
+              !s.is_closed &&
+              gatheringGame(s) === "fortnite" &&
+              (argument !== "" ||
+                replyId === undefined ||
+                s.message_id === replyId),
+          )?.message_id ?? null,
+      );
+      if (id !== null) {
+        const session = await db.load_session(id, chat);
+        if (session) await closeSession(bot, session, true);
+      }
+      await ignoreTelegram(() => ctx.deleteMessage());
     },
   };
   for (const [command, handler] of Object.entries(commands))
@@ -71,12 +108,7 @@ export function registerHandlers(bot: Bot): void {
     });
   bot.callbackQuery(
     /^(go|pass|slot:.*|gready(?::\d+)?|gtime|gat:.*|gslot:.*|gconfirm:.*|gdismiss:.*)$/,
-    async (ctx) => {
-      await answerCallback(ctx, "Сборы отключены. Идите играть в GTA 6!");
-      await ignoreTelegram(() =>
-        ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }),
-      );
-    },
+    onCallback,
   );
   bot.on("message:new_chat_members", async (ctx) => {
     for (const member of ctx.message.new_chat_members) {
@@ -87,13 +119,13 @@ export function registerHandlers(bot: Bot): void {
           : `<a href="tg://user?id=${member.id}">${escapeHtml(displayName(member))}</a>`;
       await ignoreTelegram(() =>
         ctx.reply(
-          `👋 Привет, ${mention}. Идите нахер играть в GTA 6 вместо фортика!\n\n📊 /stats — результаты Fortnite за неделю. Сборы отключены.`,
+          `👋 Привет, ${mention}.\n\nЯ бот для сбора скуада в Fortnite. Команды:\n🎮 /fort — собрать отряд из 4 человек\n🗑 /rm — отменить сбор\n📊 /stats — сборы и результаты Fortnite за неделю\n\nТакже слежу за статусом серверов Epic и предупрежу, если они недоступны.`,
         ),
       );
     }
   });
   bot.on(["message:text", "message:caption"], async (ctx) => {
     if (ctx.message?.text?.startsWith("/")) return;
-    await maybeRoast(ctx);
+    if (!(await maybeGatheringMessage(ctx))) await maybeRoast(ctx);
   });
 }

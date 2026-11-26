@@ -158,28 +158,7 @@ it("does not advertise or process the retired personal statistics command", asyn
   });
   expect(state.calls).toEqual([]);
 });
-it.each(["/fort", "/fort через час"])(
-  "redirects %s to GTA without creating a gathering",
-  async (text) => {
-    await bot().handleUpdate({
-      update_id: 1,
-      message: {
-        message_id: 10,
-        date: 1,
-        chat: { id: -100, type: "supergroup", title: "friends" },
-        from: { id: 1, is_bot: false, first_name: "user1" },
-        text,
-        entities: [{ type: "bot_command", offset: 0, length: 5 }],
-      },
-    });
-    expect(state.sessions.size).toBe(0);
-    expect(state.saveResponse).not.toHaveBeenCalled();
-    expect(state.calls.map((c) => c.method)).toEqual(["sendMessage"]);
-    expect(state.calls[0]!.payload.text).toContain("GTA 6");
-    expect(state.calls[0]!.payload.reply_markup).toBeUndefined();
-  },
-);
-it.each(["/warcraft", "/warcraft 19", "/afk 1d", "/rm"])(
+it.each(["/warcraft", "/warcraft 19"])(
   "ignores retired command %s",
   async (text) => {
     await bot().handleUpdate({
@@ -213,15 +192,11 @@ it.each([
   "gdismiss:old",
   "slot:30",
   "gslot:30",
-])("disables old gathering button %s", async (data) => {
+])("rejects a gathering button without a session: %s", async (data) => {
   await bot().handleUpdate(callback(1, data));
   expect(state.saveResponse).not.toHaveBeenCalled();
-  expect(state.calls.map((c) => c.method)).toEqual([
-    "answerCallbackQuery",
-    "editMessageReplyMarkup",
-  ]);
-  expect(state.calls[0]!.payload.text).toContain("Сборы отключены");
-  expect(state.calls[1]!.payload.reply_markup).toEqual({ inline_keyboard: [] });
+  expect(state.calls.map((c) => c.method)).toEqual(["answerCallbackQuery"]);
+  expect(state.calls[0]!.payload.text).toContain("Сбор завершён");
 });
 it("excludes missing and inactive weekly baselines from rankings", () => {
   const mode = {

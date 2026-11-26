@@ -30,7 +30,12 @@ beforeEach(() => {
 });
 it("removes retired commands and verifies the three maintained Telegram scopes", async () => {
   const b = bot();
-  expect(GROUP_COMMANDS.map((c) => c.command)).toEqual(["fort", "stats"]);
+  expect(GROUP_COMMANDS.map((c) => c.command)).toEqual([
+    "fort",
+    "rm",
+    "afk",
+    "stats",
+  ]);
   await setupBotCommands(b as unknown as Bot);
   expect(b.api.setMyCommands).toHaveBeenCalledWith(
     GROUP_COMMANDS,
